@@ -1,0 +1,19 @@
+{{- /* Rendered once per device. Vars come from -var name=value. */ -}}
+{{- if eq .Vendor "cisco" }}
+hostname {{ .Hostname }}
+ntp server {{ .Vars.ntp }}
+logging host {{ .Vars.syslog }}
+{{- else if eq .Vendor "arista" }}
+hostname {{ .Hostname }}
+ntp server {{ .Vars.ntp }}
+logging host {{ .Vars.syslog }}
+{{- else if eq .Vendor "junos" }}
+set system host-name {{ .Hostname }}
+set system ntp server {{ .Vars.ntp }}
+set system syslog host {{ .Vars.syslog }} any notice
+{{- else if eq .Vendor "huawei" }}
+sysname {{ .Hostname }}
+ntp-service unicast-server {{ .Vars.ntp }}
+info-center loghost {{ .Vars.syslog }}
+{{- end }}
+{{- /* fortinet renders nothing here, so those devices are reported as SKIPPED (NO_COMMANDS) */ -}}
