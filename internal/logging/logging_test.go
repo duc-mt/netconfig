@@ -164,16 +164,16 @@ func TestConcurrentUseKeepsLinesIntact(t *testing.T) {
 
 func TestRedactCommand(t *testing.T) {
 	cases := map[string]string{
-		"hostname sw1":                                  "hostname sw1",
-		"service password-encryption":                   "service password-encryption",
-		"username admin password 0 hunter2":             "username admin password 0 <redacted>",
-		"username admin secret 5 $1$abcd$xyz":           "username admin secret 5 <redacted>",
-		"enable secret s3cr3t":                          "enable secret <redacted>",
-		"snmp-server community public RO":               "snmp-server community <redacted> RO",
+		"hostname sw1":                                                     "hostname sw1",
+		"service password-encryption":                                      "service password-encryption",
+		"username admin password 0 hunter2":                                "username admin password 0 <redacted>",
+		"username admin secret 5 $1$abcd$xyz":                              "username admin secret 5 <redacted>",
+		"enable secret s3cr3t":                                             "enable secret <redacted>",
+		"snmp-server community public RO":                                  "snmp-server community <redacted> RO",
 		`set system root-authentication encrypted-password "$6$salt$hash"`: "set system root-authentication encrypted-password <redacted>",
-		"set psksecret topsecret":                       "set psksecret <redacted>",
-		"no password":                                   "no password",
-		"password 1234":                                 "password <redacted>",
+		"set psksecret topsecret":                                          "set psksecret <redacted>",
+		"no password":                                                      "no password",
+		"password 1234":                                                    "password <redacted>",
 	}
 	for in, want := range cases {
 		if got := RedactCommand(in); got != want {

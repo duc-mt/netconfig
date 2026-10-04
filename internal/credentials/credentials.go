@@ -56,9 +56,9 @@ type outcome struct {
 // Resolver implements the three-tier lookup. It is safe for concurrent use;
 // prompts are serialised, and each group is resolved (or fails) only once.
 type Resolver struct {
-	DotEnv    map[string]string              // tier 1 (values of the .env file; never exported to the process env)
-	LookupEnv func(string) (string, bool)    // tier 2 (os.LookupEnv); nil disables the tier
-	Prompter  Prompter                       // tier 3; nil disables prompting
+	DotEnv    map[string]string           // tier 1 (values of the .env file; never exported to the process env)
+	LookupEnv func(string) (string, bool) // tier 2 (os.LookupEnv); nil disables the tier
+	Prompter  Prompter                    // tier 3; nil disables prompting
 
 	mu    sync.Mutex
 	cache map[string]outcome
@@ -175,7 +175,7 @@ func LoadDotEnv(path string) (*DotEnv, error) {
 func ParseDotEnv(r io.Reader) (map[string]string, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read env stream: %w", err)
 	}
 	out := make(map[string]string)
 	for i, raw := range strings.Split(string(data), "\n") {

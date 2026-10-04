@@ -111,12 +111,12 @@ type Profile struct {
 }
 
 var (
-	reIOSPrompt     = regexp.MustCompile(`^[\w.\-/:~()]+[#>]\s*$`)
-	reIOSUserPrompt = regexp.MustCompile(`^[\w.\-/:~()]+>\s*$`)
-	reJunosPrompt   = regexp.MustCompile(`^[\w.\-]+@[\w.\-:]+[>#%]\s*$`)
-	reHuaweiPrompt  = regexp.MustCompile(`^[<\[][~*\w.\-/:]+[>\]]\s*$`)
-	reFortiPrompt   = regexp.MustCompile(`^\S+(?: \([^()]+\))? ?[#$]\s*$`)
-	reVyOSPrompt    = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:(?::\S*)?[$#]|#)\s*$`)
+	reIOSPrompt        = regexp.MustCompile(`^[\w.\-/:~()]+[#>]\s*$`)
+	reIOSUserPrompt    = regexp.MustCompile(`^[\w.\-/:~()]+>\s*$`)
+	reJunosPrompt      = regexp.MustCompile(`^[\w.\-]+@[\w.\-:]+[>#%]\s*$`)
+	reHuaweiPrompt     = regexp.MustCompile(`^[<\[][~*\w.\-/:]+[>\]]\s*$`)
+	reFortiPrompt      = regexp.MustCompile(`^\S+(?: \([^()]+\))? ?[#$]\s*$`)
+	reVyOSPrompt       = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:(?::\S*)?[$#]|#)\s*$`)
 	reCheckPointPrompt = regexp.MustCompile(`^[\w.\-]+>\s*$`)
 
 	rePagerMore   = regexp.MustCompile(`--\s*More\s*--`)
@@ -142,7 +142,7 @@ var genericConfirms = []Confirm{
 	{regexp.MustCompile(`(?i)\(y/n\)\s*:?\s*$`), "y"},                          // FortiOS
 	{regexp.MustCompile(`(?i)\[confirm\]\s*$`), ""},                            // Cisco: press Enter
 	{regexp.MustCompile(`(?i)please input the file name.*\]\s*:?\s*$`), ""},    // Huawei save: accept default name
-	{regexp.MustCompile(`(?i)destination filename \[[^\]]*\]\??\s*$`), ""},    // Cisco copy
+	{regexp.MustCompile(`(?i)destination filename \[[^\]]*\]\??\s*$`), ""},     // Cisco copy
 }
 
 // BuildPlan expands the vendor template for the given configuration commands.

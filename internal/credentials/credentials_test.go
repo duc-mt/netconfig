@@ -11,10 +11,10 @@ import (
 )
 
 type fakePrompter struct {
-	user, pass          string
-	err                 error
+	user, pass           string
+	err                  error
 	userCalls, passCalls int
-	lastGroup, lastUser string
+	lastGroup, lastUser  string
 }
 
 func (f *fakePrompter) Username(group string) (string, error) {
@@ -38,10 +38,10 @@ func mapEnv(m map[string]string) func(string) (string, bool) {
 
 func TestEnvKey(t *testing.T) {
 	cases := map[string]string{
-		"dc1":        "NETCONFIG_DC1_USERNAME",
-		"dc-1.east":  "NETCONFIG_DC_1_EAST_USERNAME",
-		"Site A":     "NETCONFIG_SITE_A_USERNAME",
-		"default":    "NETCONFIG_DEFAULT_USERNAME",
+		"dc1":       "NETCONFIG_DC1_USERNAME",
+		"dc-1.east": "NETCONFIG_DC_1_EAST_USERNAME",
+		"Site A":    "NETCONFIG_SITE_A_USERNAME",
+		"default":   "NETCONFIG_DEFAULT_USERNAME",
 	}
 	for group, want := range cases {
 		if got := EnvKey(group, "USERNAME"); got != want {
@@ -102,8 +102,8 @@ func TestGroupOverrideBeatsGlobalAcrossTiers(t *testing.T) {
 func TestEnablePassword(t *testing.T) {
 	r := &Resolver{
 		LookupEnv: mapEnv(map[string]string{
-			"NETCONFIG_USERNAME":           "u",
-			"NETCONFIG_PASSWORD":           "p",
+			"NETCONFIG_USERNAME":            "u",
+			"NETCONFIG_PASSWORD":            "p",
 			"NETCONFIG_DC1_ENABLE_PASSWORD": "en",
 		}),
 	}
