@@ -1,0 +1,11 @@
+bin/netconfig
+logs/
+backups/
+.env
+*.env
+known_hosts
+inventory.csv
+commands.txt
+.DS_Store
+Thumbs.db
+
