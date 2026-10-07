@@ -174,6 +174,8 @@ func TestRedactCommand(t *testing.T) {
 		"set psksecret topsecret":                                          "set psksecret <redacted>",
 		"no password":                                                      "no password",
 		"password 1234":                                                    "password <redacted>",
+		"tacacs-server key 7 secretPass":                                   "tacacs-server key 7 <redacted>",
+		"radius-server key secretPass":                                     "radius-server key <redacted>",
 	}
 	for in, want := range cases {
 		if got := RedactCommand(in); got != want {

@@ -1,0 +1,12 @@
+# Sample inventory file for netconfig
+# Header is optional. Format: hostname,address,port,vendor[,credential_group]
+#   - port: optional, defaults to 22 if empty
+#   - vendor: required (cisco, junos, huawei, fortinet, arista, vyos, ruijie, aruba, checkpoint)
+#   - credential_group: optional, defaults to "default" if empty
+hostname,address,port,vendor,credential_group
+core-sw1,10.10.0.11,22,cisco,dc1
+edge-mx1,10.20.0.1,,junos,dc2
+dist-sw1,10.10.0.12,22,arista,dc1
+access-sw1,10.30.0.11,22,huawei,default
+sec-gw1,10.40.0.1,22,fortinet,dc2
+edge-rtr1,10.50.0.1,22,vyos,default

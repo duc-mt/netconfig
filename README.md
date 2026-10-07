@@ -35,10 +35,21 @@ This automatically initializes `.env` (with `chmod 600`), `inventory.csv`, and `
 
 Or manually:
 ```sh
-cp examples/env.example .env && chmod 600 .env     # credentials
-cp examples/inventory.csv inventory.csv           # device inventory
-cp examples/commands.txt commands.txt             # commands to push
+cp examples/env.example .env && chmod 600 .env       # credentials
+cp examples/inventory.csv inventory.csv              # device inventory
+cp examples/commands.txt commands.txt                # commands to push
 ```
+
+Available example files in `examples/`:
+
+| File | Purpose |
+|---|---|
+| `env.example` | Credential template; copy to `.env` and `chmod 600` |
+| `inventory.csv` | Device inventory template; copy to `inventory.csv` |
+| `inventory.example` | Same as above (kept as reference; never overwritten by `make init`) |
+| `commands.txt` | Command file template; copy to `commands.txt` |
+| `commands.example` | Same as above (reference copy) |
+| `config.tmpl` | Go template example for per-device commands |
 
 ### 2. Configure credentials and inventory
 

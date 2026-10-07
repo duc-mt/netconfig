@@ -1,0 +1,4 @@
+# Configuration commands to push to network devices
+# One command per line. Blank lines and lines starting with '#' or '!' are ignored.
+ntp server 10.0.0.1
+logging host 10.0.0.2
