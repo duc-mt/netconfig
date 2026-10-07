@@ -51,8 +51,11 @@ type Options struct {
 	CommandTimeout time.Duration
 	SlowFactor     int // commit/save/backup get CommandTimeout*SlowFactor (default 3)
 	DryRun         bool
+	OpMode         bool   // run commands in operational shell; no configure/commit/save
 	Backup         bool
 	BackupDir      string
+	RollbackOnFail bool   // restore from pre-change backup if a device fails (requires -backup)
+	OutputDir      string // write per-device command output to <OutputDir>/<hostname>.txt
 }
 
 // Runner executes jobs.
@@ -141,10 +144,16 @@ func (r *Runner) runGuarded(ctx context.Context, job Job) (res Result) {
 func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
 	host := job.Device.Hostname
 	prof := job.Profile
-	plan := prof.BuildPlan(job.Commands, vendor.PlanOptions{
-		DryRun: r.Opts.DryRun,
-		Token:  strconv.FormatInt(r.now().Unix(), 36),
-	})
+
+	var plan vendor.Plan
+	if r.Opts.OpMode {
+		plan = prof.BuildOpPlan(job.Commands)
+	} else {
+		plan = prof.BuildPlan(job.Commands, vendor.PlanOptions{
+			DryRun: r.Opts.DryRun,
+			Token:  strconv.FormatInt(r.now().Unix(), 36),
+		})
+	}
 
 	r.Log.Infof(host, "connecting to %s (%s)", job.Device.Endpoint(), prof.Display)
 	sess, err := r.Transport.Open(ctx, Target{
@@ -162,7 +171,9 @@ func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
 	defer sess.Close()
 	r.Log.Infof(host, "session established (user %s)", job.Cred.Username)
 
-	if r.Opts.DryRun {
+	if r.Opts.OpMode {
+		r.Log.Infof(host, "OPERATIONAL-MODE: commands run in operational shell; no configure/commit/save")
+	} else if r.Opts.DryRun {
 		if plan.Validates {
 			r.Log.Infof(host, "DRY-RUN: validating on the device; the candidate configuration is discarded afterwards")
 		} else {
@@ -183,17 +194,31 @@ func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
 		res.BackupPath = path
 	}
 
+	// outputLines accumulates all StepBody responses for -output-dir.
+	var outputLines strings.Builder
+
 	announced := false
 	for _, step := range plan.Steps {
 		if step.Kind == vendor.StepBody {
 			if !announced {
 				announced = true
-				r.Log.Infof(host, "sending %d configuration command(s)", len(job.Commands))
+				if r.Opts.OpMode {
+					r.Log.Infof(host, "sending %d operational command(s)", len(job.Commands))
+				} else {
+					r.Log.Infof(host, "sending %d configuration command(s)", len(job.Commands))
+				}
 			}
 		} else {
 			r.Log.Infof(host, "%s: %s", step.Kind, logging.RedactCommand(step.Line))
 		}
 		out, cat, err := r.runStep(ctx, sess, prof, host, step)
+		if step.Kind == vendor.StepBody && strings.TrimSpace(out) != "" {
+			// Accumulate for -output-dir; also print for -op with -verbose.
+			fmt.Fprintf(&outputLines, "=== %s ===\n%s\n", logging.RedactCommand(step.Line), redactText(out))
+			if r.Opts.OpMode {
+				r.Log.Block(logging.LevelInfo, host, "  | ", redactText(out))
+			}
+		}
 		if step.Kind == vendor.StepInspect && strings.TrimSpace(out) != "" {
 			r.Log.Block(logging.LevelInfo, host, "  | ", redactText(out))
 		}
@@ -202,8 +227,26 @@ func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
 			if step.Kind == vendor.StepPersist && cat == CatTimeout {
 				r.Log.Warnf(host, "the outcome of %q is unknown; verify the device state before retrying", step.Line)
 			}
-			r.cleanup(sess, host, plan)
+			if !r.Opts.OpMode {
+				r.cleanup(sess, host, plan)
+				// Attempt rollback if we took a backup and the option is set.
+				if r.Opts.RollbackOnFail && res.BackupPath != "" {
+					r.Log.Warnf(host, "attempting rollback from backup: %s", res.BackupPath)
+					if rbErr := r.rollback(ctx, sess, job, res.BackupPath); rbErr != nil {
+						r.Log.Errorf(host, "rollback failed: %v", rbErr)
+					} else {
+						r.Log.Infof(host, "rollback succeeded; device restored to pre-change state")
+					}
+				}
+			}
 			return
+		}
+	}
+
+	// Write per-device output file if requested.
+	if r.Opts.OutputDir != "" && outputLines.Len() > 0 {
+		if err := r.writeOutput(host, outputLines.String()); err != nil {
+			r.Log.Warnf(host, "could not write output file: %v", err)
 		}
 	}
 
@@ -216,6 +259,8 @@ func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
 
 	res.Status = StatusSucceeded
 	switch {
+	case r.Opts.OpMode:
+		res.Detail = fmt.Sprintf("%d operational command(s) executed", len(job.Commands))
 	case !r.Opts.DryRun:
 		res.Detail = fmt.Sprintf("%d command(s) applied", len(job.Commands))
 	case plan.Validates:
@@ -311,6 +356,79 @@ func (r *Runner) backup(ctx context.Context, sess Session, job Job) (string, err
 }
 
 var unsafeFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+// rollback re-opens a fresh session and re-applies the saved backup content as
+// configuration commands, effectively reverting the device to its pre-change
+// state. It is best-effort: failures are logged but never propagate back to the
+// main result (which already reflects the original failure).
+func (r *Runner) rollback(ctx context.Context, _ Session, job Job, backupPath string) error {
+	host := job.Device.Hostname
+	prof := job.Profile
+
+	data, err := os.ReadFile(backupPath)
+	if err != nil {
+		return fmt.Errorf("read backup %s: %w", backupPath, err)
+	}
+	cmds := parseRawConfig(string(data))
+	if len(cmds) == 0 {
+		return fmt.Errorf("backup file %s is empty or unparseable", backupPath)
+	}
+
+	// Open a new session; the old one was already handed to cleanup().
+	rbCtx, cancel := context.WithTimeout(ctx, r.Opts.ConnectTimeout+r.Opts.CommandTimeout*time.Duration(len(cmds)+5))
+	defer cancel()
+	sess, err := r.Transport.Open(rbCtx, Target{
+		Device:         job.Device,
+		Profile:        prof,
+		Cred:           job.Cred,
+		ConnectTimeout: r.Opts.ConnectTimeout,
+		LoginTimeout:   r.Opts.CommandTimeout,
+		Logf:           func(format string, args ...any) { r.Log.Tracef(host, "(rollback) "+format, args...) },
+	})
+	if err != nil {
+		return fmt.Errorf("open rollback session: %w", err)
+	}
+	defer sess.Close()
+
+	plan := prof.BuildPlan(cmds, vendor.PlanOptions{})
+	for _, step := range plan.Steps {
+		out, _, stepErr := r.runStep(rbCtx, sess, prof, host, step)
+		if out != "" {
+			r.Log.Block(logging.LevelTrace, host, "(rollback) << ", redactText(out))
+		}
+		if stepErr != nil && step.Kind != vendor.StepPersist {
+			return fmt.Errorf("rollback step %q: %w", step.Line, stepErr)
+		}
+	}
+	return nil
+}
+
+// parseRawConfig extracts non-empty, non-comment lines from a raw config dump
+// for use as rollback commands.
+func parseRawConfig(s string) []string {
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "!") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+// writeOutput saves the accumulated command output for one device to
+// <OutputDir>/<hostname>.txt, creating the directory if needed.
+func (r *Runner) writeOutput(host, content string) error {
+	dir := r.Opts.OutputDir
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	name := unsafeFileChars.ReplaceAllString(host, "_") + ".txt"
+	dst := filepath.Join(dir, name)
+	return writeFileAtomic(dst, []byte(content), 0o600)
+}
+
 
 // writeFileAtomic writes via a temporary file and rename so a crash never
 // leaves a truncated backup that looks valid.

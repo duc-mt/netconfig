@@ -106,6 +106,7 @@ type Profile struct {
 	probe         string
 	apply         []Step // StepBody is a placeholder for the user's commands
 	applyCleanup  []Step
+	opApply       []Step // operational (read-only/show) command plan — no config mode
 	dryRun        []Step // nil: vendor has no way to validate without applying
 	dryRunCleanup []Step
 }
@@ -181,6 +182,35 @@ func (p *Profile) BuildPlan(commands []string, opts PlanOptions) Plan {
 		Steps:     expand(p.dryRun),
 		Cleanup:   expand(p.dryRunCleanup),
 	}
+}
+
+// BuildOpPlan returns an operational-mode execution plan: commands run in the
+// device's operational shell without entering configuration mode, so no
+// commit or save is ever issued. Suitable for show/display/get commands.
+// If the vendor has no dedicated operational plan the commands run directly
+// (which is already correct for FortiOS and Check Point that have no config
+// mode wrapper). For vendors that normally enter configure automatically
+// (Cisco, Junos, VyOS, …) this avoids that entirely.
+func (p *Profile) BuildOpPlan(commands []string) Plan {
+	steps := p.opApply
+	if len(steps) == 0 {
+		// Fallback: run commands bare in the operational shell.
+		steps = []Step{{Kind: StepBody}}
+	}
+	expand := func(tmpl []Step) []Step {
+		var out []Step
+		for _, s := range tmpl {
+			if s.Kind == StepBody {
+				for _, c := range commands {
+					out = append(out, Step{Kind: StepBody, Line: c})
+				}
+				continue
+			}
+			out = append(out, s)
+		}
+		return out
+	}
+	return Plan{Steps: expand(steps)}
 }
 
 // FindError returns the first output line that matches a vendor error signature.

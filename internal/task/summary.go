@@ -1,7 +1,9 @@
 package task
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -192,4 +194,77 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string(r[:n-3]) + "..."
+}
+
+// JSONDeviceResult is the JSON representation of one device's run outcome.
+type JSONDeviceResult struct {
+	Hostname   string `json:"hostname"`
+	Address    string `json:"address"`
+	Vendor     string `json:"vendor"`
+	Status     string `json:"status"`
+	Category   string `json:"category,omitempty"`
+	Detail     string `json:"detail,omitempty"`
+	DurationMs int64  `json:"duration_ms"`
+	BackupPath string `json:"backup_path,omitempty"`
+	OutputFile string `json:"output_file,omitempty"`
+}
+
+// JSONReport is the top-level structure written to the JSON report file.
+type JSONReport struct {
+	GeneratedAt string             `json:"generated_at"`
+	Succeeded   int                `json:"succeeded"`
+	Failed      int                `json:"failed"`
+	Skipped     int                `json:"skipped"`
+	Total       int                `json:"total"`
+	Devices     []JSONDeviceResult `json:"devices"`
+}
+
+// WriteJSONReport marshals the run results to a JSON file at path.
+// outputDir is used to annotate each result with its output file path (if any).
+func WriteJSONReport(path string, results []Result, outputDir string) error {
+	sum := Summarize(results)
+	safeHost := func(host string) string {
+		var b strings.Builder
+		for _, r := range host {
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+				b.WriteRune(r)
+			} else {
+				b.WriteByte('_')
+			}
+		}
+		return b.String()
+	}
+	devices := make([]JSONDeviceResult, 0, len(results))
+	for _, r := range results {
+		jr := JSONDeviceResult{
+			Hostname:   r.Device.Hostname,
+			Address:    r.Device.Endpoint(),
+			Vendor:     r.Device.Vendor,
+			Status:     r.Status.String(),
+			Category:   string(r.Category),
+			Detail:     r.Detail,
+			DurationMs: r.Duration.Milliseconds(),
+			BackupPath: r.BackupPath,
+		}
+		if outputDir != "" && r.Status == StatusSucceeded {
+			jr.OutputFile = outputDir + "/" + safeHost(r.Device.Hostname) + ".txt"
+		}
+		devices = append(devices, jr)
+	}
+	report := JSONReport{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Succeeded:   sum.Succeeded,
+		Failed:      sum.Failed,
+		Skipped:     sum.Skipped,
+		Total:       len(results),
+		Devices:     devices,
+	}
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal JSON report: %w", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		return fmt.Errorf("write JSON report %s: %w", path, err)
+	}
+	return nil
 }

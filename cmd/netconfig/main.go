@@ -34,6 +34,7 @@ const usageText = `netconfig - apply configuration commands to many network devi
 Usage:
   netconfig -commands commands.txt [flags]
   netconfig -template config.tmpl -var ntp=10.0.0.1 [flags]
+  netconfig -op -commands <(echo "show ip ospf route") [flags]
 
 Supported vendors: %s
 
@@ -75,27 +76,31 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var vars stringList
 	fs.Var(&vars, "var", "template variable `name=value` (repeatable)")
 	var (
-		invPath       = fs.String("inventory", "inventory.csv", "inventory CSV: hostname,address,port,vendor,credential_group")
-		cmdsPath      = fs.String("commands", "", "plain text file with one configuration command per line")
-		tmplPath      = fs.String("template", "", "Go text/template rendered once per device (alternative to -commands)")
-		limit         = fs.String("limit", "", "only these devices: comma-separated hostname globs, or @group")
-		dryRun        = fs.Bool("dry-run", false, "validate connectivity and simulate; never commits or saves anything")
-		yes           = fs.Bool("yes", false, "skip the [y/N] confirmation prompt")
-		force         = fs.Bool("force", false, "same as -yes")
-		backup        = fs.Bool("backup", false, "save each device's running configuration before changing it")
-		backupDir     = fs.String("backup-dir", "backups", "directory for -backup snapshots")
-		concurrency   = fs.Int("concurrency", 5, "maximum number of devices configured at the same time")
-		connectTO     = fs.Duration("connect-timeout", 10*time.Second, "TCP connect + SSH handshake budget per device")
-		commandTO     = fs.Duration("command-timeout", 30*time.Second, "budget per command (commit/save/backup get 3x)")
-		logDir        = fs.String("log-dir", "logs", "directory for the timestamped audit log file")
-		envFile       = fs.String("env-file", ".env", "credentials file (KEY=VALUE lines); missing is fine")
-		knownHosts    = fs.String("known-hosts", "known_hosts", "OpenSSH-format known_hosts file for host key checks")
-		hostKeyPolicy = fs.String("host-key-policy", "strict", "strict | accept-new (trust on first use) | insecure (no verification)")
-		legacy        = fs.Bool("legacy-algorithms", false, "also offer SHA-1 key exchange and CBC ciphers for old devices")
-		autoConfirm   = fs.Bool("auto-confirm", true, "answer [y/n] / [confirm] dialogs raised by devices")
-		verbose       = fs.Bool("verbose", false, "show command/response traces on the console (always in the log file)")
-		noColor       = fs.Bool("no-color", false, "disable coloured console output")
-		showVersion   = fs.Bool("version", false, "print the version and exit")
+		invPath        = fs.String("inventory", "inventory.csv", "inventory CSV: hostname,address,port,vendor,credential_group")
+		cmdsPath       = fs.String("commands", "", "plain text file with one configuration command per line")
+		tmplPath       = fs.String("template", "", "Go text/template rendered once per device (alternative to -commands)")
+		limit          = fs.String("limit", "", "only these devices: comma-separated hostname globs, or @group")
+		opMode         = fs.Bool("op", false, "operational mode: run commands in the operational shell without configure/commit/save")
+		dryRun         = fs.Bool("dry-run", false, "validate connectivity and simulate; never commits or saves anything")
+		yes            = fs.Bool("yes", false, "skip the [y/N] confirmation prompt")
+		force          = fs.Bool("force", false, "same as -yes")
+		backup         = fs.Bool("backup", false, "save each device's running configuration before changing it")
+		backupDir      = fs.String("backup-dir", "backups", "directory for -backup snapshots")
+		rollbackOnFail = fs.Bool("rollback-on-fail", false, "restore pre-change backup if a device fails (requires -backup)")
+		outputDir      = fs.String("output-dir", "", "write per-device command output to <dir>/<hostname>.txt")
+		jsonReport     = fs.String("json-report", "", "write a JSON run report to this file path")
+		concurrency    = fs.Int("concurrency", 5, "maximum number of devices configured at the same time")
+		connectTO      = fs.Duration("connect-timeout", 10*time.Second, "TCP connect + SSH handshake budget per device")
+		commandTO      = fs.Duration("command-timeout", 30*time.Second, "budget per command (commit/save/backup get 3x)")
+		logDir         = fs.String("log-dir", "logs", "directory for the timestamped audit log file")
+		envFile        = fs.String("env-file", ".env", "credentials file (KEY=VALUE lines); missing is fine")
+		knownHosts     = fs.String("known-hosts", "known_hosts", "OpenSSH-format known_hosts file for host key checks")
+		hostKeyPolicy  = fs.String("host-key-policy", "strict", "strict | accept-new (trust on first use) | insecure (no verification)")
+		legacy         = fs.Bool("legacy-algorithms", false, "also offer SHA-1 key exchange and CBC ciphers for old devices")
+		autoConfirm    = fs.Bool("auto-confirm", true, "answer [y/n] / [confirm] dialogs raised by devices")
+		verbose        = fs.Bool("verbose", false, "show command/response traces on the console (always in the log file)")
+		noColor        = fs.Bool("no-color", false, "disable coloured console output")
+		showVersion    = fs.Bool("version", false, "print the version and exit")
 	)
 
 	if err := fs.Parse(args); err != nil {
@@ -124,6 +129,12 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 	if *connectTO <= 0 || *commandTO <= 0 {
 		return fatal("-connect-timeout and -command-timeout must be positive")
+	}
+	if *opMode && *dryRun {
+		return fatal("-op and -dry-run are mutually exclusive")
+	}
+	if *rollbackOnFail && !*backup {
+		return fatal("-rollback-on-fail requires -backup")
 	}
 	policy, err := sshclient.ParsePolicy(*hostKeyPolicy)
 	if err != nil {
@@ -172,8 +183,8 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return die("%v", err)
 	}
 
-	log.Infof("", "%d device(s) selected; concurrency=%d connect-timeout=%s command-timeout=%s dry-run=%t backup=%t",
-		len(jobs), *concurrency, *connectTO, *commandTO, *dryRun, *backup)
+	log.Infof("", "%d device(s) selected; concurrency=%d connect-timeout=%s command-timeout=%s dry-run=%t op=%t backup=%t",
+		len(jobs), *concurrency, *connectTO, *commandTO, *dryRun, *opMode, *backup)
 
 	// ---- confirmation ----------------------------------------------------
 	runnable := 0
@@ -182,7 +193,9 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 			runnable++
 		}
 	}
-	if !*dryRun && !*yes && !*force && runnable > 0 {
+	// Op-mode runs are read-only; skip the destructive-change prompt.
+	needConfirm := !*dryRun && !*opMode && !*yes && !*force && runnable > 0
+	if needConfirm {
 		if !credentials.IsTerminal(stdin) {
 			return die("refusing to change devices: stdin is not a terminal, so there is nobody to confirm; pass -yes (or -force) to run unattended, or use -dry-run")
 		}
@@ -232,8 +245,11 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 			ConnectTimeout: *connectTO,
 			CommandTimeout: *commandTO,
 			DryRun:         *dryRun,
+			OpMode:         *opMode,
 			Backup:         *backup,
 			BackupDir:      *backupDir,
+			RollbackOnFail: *rollbackOnFail,
+			OutputDir:      *outputDir,
 		},
 	}
 
@@ -257,6 +273,16 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	log.Raw("\n"+sum.Render(color, *dryRun), "\n"+sum.Render(false, *dryRun))
 	if *backup {
 		log.Infof("", "pre-change backups: %s", *backupDir)
+	}
+	if *outputDir != "" {
+		log.Infof("", "per-device output: %s/", *outputDir)
+	}
+	if *jsonReport != "" {
+		if err := task.WriteJSONReport(*jsonReport, results, *outputDir); err != nil {
+			log.Errorf("", "JSON report: %v", err)
+		} else {
+			log.Infof("", "JSON report: %s", *jsonReport)
+		}
 	}
 	log.Infof("", "audit log: %s", log.Path())
 	return task.ExitCode(results)

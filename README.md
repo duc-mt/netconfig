@@ -65,6 +65,16 @@ Available example files in `examples/`:
 
 # Production run: push commands with automatic pre-change configuration backup
 ./bin/netconfig -commands commands.txt -backup
+
+# Operational (show) commands — no configure/commit/save triggered
+./bin/netconfig -op -commands <(echo "show ip ospf route | match 248") -yes -host-key-policy accept-new
+
+# Write per-device output files and a JSON run report
+./bin/netconfig -op -commands <(echo "show version") -yes \
+  -output-dir results/ -json-report run.json -host-key-policy accept-new
+
+# Config change with auto-rollback on failure
+./bin/netconfig -commands commands.txt -backup -rollback-on-fail -yes
 ```
 
 Templates (rendered once per device):
@@ -72,6 +82,74 @@ Templates (rendered once per device):
 ```sh
 ./bin/netconfig -template examples/config.tmpl -var ntp=10.0.0.1 -var syslog=10.0.0.2 -limit '@dc1' -backup
 ```
+
+## Features
+
+### Operational Mode (`-op`)
+
+Run read-only commands (e.g. `show`, `display`, `get`) without ever entering
+configuration mode. No `configure`, no `commit`, no `save` is issued — the
+command runs directly in the device's operational shell.
+
+```sh
+./bin/netconfig -op -commands <(echo "show ip ospf route | match 248") \
+  -yes -host-key-policy accept-new
+```
+
+Output is printed live on the console (at `INFO` level) and always captured in
+the audit log. Combine with `-output-dir` to save per-device output files.
+`-op` and `-dry-run` are mutually exclusive.
+
+### Per-Device Output Files (`-output-dir DIR`)
+
+Save each device's command responses to `<dir>/<hostname>.txt` for easy
+offline review, diffing, or scripting:
+
+```sh
+./bin/netconfig -op -commands commands.txt -yes -output-dir results/
+ls results/
+# NHG-HO-GW-01.txt  NHG-TRANSIT-GW-01.txt  ...
+```
+
+Files are written atomically (temp-file + rename) with mode `0600`. The
+directory is created automatically. This flag works for both `-op` and normal
+configuration runs.
+
+### JSON Run Report (`-json-report FILE`)
+
+Write a machine-readable summary of the entire run to a JSON file — useful for
+CI/CD pipelines, dashboards, or post-processing:
+
+```sh
+./bin/netconfig -commands commands.txt -backup -json-report run.json
+cat run.json
+```
+
+The report contains: `generated_at`, `succeeded`/`failed`/`skipped` counts,
+and a `devices` array with `hostname`, `address`, `vendor`, `status`,
+`category`, `detail`, `duration_ms`, `backup_path`, and `output_file` (if
+`-output-dir` was also set).
+
+### Auto-Rollback on Failure (`-rollback-on-fail`)
+
+Requires `-backup`. When a device fails mid-configuration, netconfig
+immediately re-opens an SSH session and re-applies the pre-change backup
+content as configuration commands, reverting the device to its known-good
+state:
+
+```sh
+./bin/netconfig -commands commands.txt -backup -rollback-on-fail -yes
+```
+
+Rollback is best-effort: the original failure is still recorded in the result
+table, and any rollback errors are logged as warnings without masking the root
+cause. Use `-verbose` to see full rollback traces.
+
+> **Note:** Platforms without atomic candidate configuration (Cisco IOS,
+> Huawei VRP, FortiOS) apply commands immediately to the running config. The
+> rollback re-applies the entire backup as individual commands, which may not
+> be identical to a native rollback on every platform. Test in a lab before
+> relying on this in production.
 
 ## Inventory
 
@@ -205,6 +283,15 @@ declined at the prompt, refused to run unattended), **2** at least one device fa
 `-connect-timeout 10s`, `-command-timeout 30s`, `-log-dir logs`, `-backup-dir backups`,
 `-env-file .env`, `-known-hosts known_hosts`, `-host-key-policy strict`.
 
+Key new flags:
+
+| Flag | Default | Description |
+|---|---|---|
+| `-op` | `false` | Operational mode: run commands without configure/commit/save |
+| `-output-dir DIR` | `""` | Write per-device output to `<dir>/<hostname>.txt` |
+| `-json-report FILE` | `""` | Write a JSON run report to the given file path |
+| `-rollback-on-fail` | `false` | Re-apply pre-change backup on failure (requires `-backup`) |
+
 ## Layout
 
 ```
@@ -212,8 +299,9 @@ cmd/netconfig            flags, confirmation prompt, wiring, exit codes
 internal/inventory       CSV parsing and filtering
 internal/credentials     .env parsing, 3-tier resolution, terminal prompter
 internal/vendor          per-vendor prompts, pagers, confirmations, errors, config-mode plans
+                           + BuildOpPlan() for operational mode
 internal/sshclient       dial/handshake/auth, PTY shell, expect loop, host key policies, SafeBuffer
-internal/task            jobs, worker pool, backup, dry-run, categorisation, summary
+internal/task            jobs, worker pool, backup, dry-run, rollback, per-device output, JSON report
 internal/logging         console + file logger, secret masking
 ```
 
