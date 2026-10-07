@@ -107,7 +107,10 @@ func Connect(ctx context.Context, cfg Config) (*Shell, error) {
 
 	// The handshake budget is part of -connect-timeout and is enforced with a
 	// connection deadline; cancelling ctx closes the connection to abort it.
-	_ = conn.SetDeadline(time.Now().Add(cfg.ConnectTimeout))
+	if err := conn.SetDeadline(time.Now().Add(cfg.ConnectTimeout)); err != nil {
+		_ = conn.Close()
+		return nil, &Error{Kind: KindConnect, Op: "connect", Err: fmt.Errorf("set deadline: %w", err)}
+	}
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	sshConn, chans, reqs, err := ssh.NewClientConn(conn, cfg.Address, cc)
 	stop()
@@ -118,6 +121,9 @@ func Connect(ctx context.Context, cfg Config) (*Shell, error) {
 		}
 		return nil, classifyHandshake(err, cfg.Username)
 	}
+	// Clearing the deadline isn't load-bearing: the shell layer applies its own
+	// per-command timeouts over this same connection, so a failure here (which
+	// would only happen on an already-dead conn) has no effect either way.
 	_ = conn.SetDeadline(time.Time{})
 	client := ssh.NewClient(sshConn, chans, reqs)
 
