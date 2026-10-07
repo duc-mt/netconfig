@@ -1,4 +1,4 @@
-bin/netconfig
+bin/
 logs/
 backups/
 .env
