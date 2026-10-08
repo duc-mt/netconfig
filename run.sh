@@ -24,12 +24,26 @@ fi
 
 if [ ! -f "$BINARY" ]; then
     echo "Binary $BINARY not found. Building..."
+    
+    if ! command -v go >/dev/null 2>&1; then
+        echo "Error: 'go' is not installed but is required to build the binary."
+        echo "Please install Go to proceed."
+        exit 1
+    fi
+    
+    echo "Checking and installing required dependencies..."
+    go mod tidy
+    go mod vendor
+
     if command -v make >/dev/null 2>&1; then
         make build
         BINARY="bin/netconfig"
     else
-        echo "Error: Binary $BINARY not found and make is unavailable."
-        exit 1
+        echo "make is unavailable, building directly with go..."
+        VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+        LDFLAGS="-s -w -X main.version=$VERSION"
+        CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags "$LDFLAGS" -o bin/netconfig ./cmd/netconfig
+        BINARY="bin/netconfig"
     fi
 fi
 
