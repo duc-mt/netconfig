@@ -31,14 +31,14 @@ const (
 type StepKind int
 
 const (
-	StepUnknown  StepKind = iota
+	StepUnknown StepKind = iota
 	StepProbe
-	StepEnter                    // enter configuration mode
-	StepBody                     // one user-supplied configuration command
-	StepInspect                  // read-only look inside config mode (diff)
-	StepValidate                 // device-side validation without persisting (commit check)
-	StepExit                     // leave configuration mode / discard candidate
-	StepPersist                  // commit / write memory / save
+	StepEnter    // enter configuration mode
+	StepBody     // one user-supplied configuration command
+	StepInspect  // read-only look inside config mode (diff)
+	StepValidate // device-side validation without persisting (commit check)
+	StepExit     // leave configuration mode / discard candidate
+	StepPersist  // commit / write memory / save
 )
 
 func (k StepKind) String() string {
