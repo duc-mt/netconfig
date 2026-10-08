@@ -50,13 +50,16 @@ const (
 type Status int
 
 const (
-	StatusSucceeded Status = iota
+	StatusUnknown Status = iota
+	StatusSucceeded
 	StatusFailed
 	StatusSkipped
 )
 
 func (s Status) String() string {
 	switch s {
+	case StatusUnknown:
+		return "UNKNOWN"
 	case StatusSucceeded:
 		return "SUCCEEDED"
 	case StatusFailed:

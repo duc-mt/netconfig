@@ -20,15 +20,16 @@ import (
 type Level int
 
 const (
-	LevelTrace Level = iota // command/response traces: file always, console only with Verbose
+	LevelInvalid Level = iota
+	LevelTrace
 	LevelInfo
 	LevelWarn
 	LevelError
 )
 
-var levelNames = [...]string{"TRACE", "INFO", "WARN", "ERROR"}
+var levelNames = [...]string{"INVALID", "TRACE", "INFO", "WARN", "ERROR"}
 
-var levelColors = [...]string{"\x1b[90m", "\x1b[32m", "\x1b[33m", "\x1b[31m"}
+var levelColors = [...]string{"\x1b[0m", "\x1b[90m", "\x1b[32m", "\x1b[33m", "\x1b[31m"}
 
 const (
 	colorReset   = "\x1b[0m"

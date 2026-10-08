@@ -31,7 +31,8 @@ const (
 type StepKind int
 
 const (
-	StepProbe    StepKind = iota // read-only command proving the CLI answers
+	StepUnknown  StepKind = iota
+	StepProbe
 	StepEnter                    // enter configuration mode
 	StepBody                     // one user-supplied configuration command
 	StepInspect                  // read-only look inside config mode (diff)
@@ -42,6 +43,8 @@ const (
 
 func (k StepKind) String() string {
 	switch k {
+	case StepUnknown:
+		return "unknown"
 	case StepProbe:
 		return "probe"
 	case StepEnter:
