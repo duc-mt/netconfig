@@ -90,6 +90,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		outputDir      = fs.String("output-dir", "", "write per-device command output to <dir>/<hostname>.txt")
 		jsonReport     = fs.String("json-report", "", "write a JSON run report to this file path")
 		concurrency    = fs.Int("concurrency", 5, "maximum number of devices configured at the same time")
+		maxRetries     = fs.Int("max-retries", 0, "maximum automatic retries for transient SSH connection/session errors")
 		connectTO      = fs.Duration("connect-timeout", 10*time.Second, "TCP connect + SSH handshake budget per device")
 		commandTO      = fs.Duration("command-timeout", 30*time.Second, "budget per command (commit/save/backup get 3x)")
 		logDir         = fs.String("log-dir", "logs", "directory for the timestamped audit log file")
@@ -242,6 +243,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		Log:       log,
 		Opts: task.Options{
 			Concurrency:    *concurrency,
+			MaxRetries:     *maxRetries,
 			ConnectTimeout: *connectTO,
 			CommandTimeout: *commandTO,
 			DryRun:         *dryRun,

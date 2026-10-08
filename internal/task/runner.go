@@ -47,6 +47,7 @@ type Transport interface {
 // Options tunes a run.
 type Options struct {
 	Concurrency    int
+	MaxRetries     int
 	ConnectTimeout time.Duration
 	CommandTimeout time.Duration
 	SlowFactor     int // commit/save/backup get CommandTimeout*SlowFactor (default 3)
@@ -142,6 +143,34 @@ func (r *Runner) runGuarded(ctx context.Context, job Job) (res Result) {
 }
 
 func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
+	for attempt := 0; ; attempt++ {
+		r.executeAttempt(ctx, job, res)
+		if res.Status != StatusFailed || r.Opts.MaxRetries <= 0 || attempt >= r.Opts.MaxRetries {
+			break
+		}
+		if res.Category != CatConnectFailed && res.Category != CatSessionError && res.Category != CatTimeout {
+			break
+		}
+		if ctx.Err() != nil {
+			break
+		}
+
+		delay := time.Duration(1<<attempt) * time.Second
+		r.Log.Warnf(job.Device.Hostname, "transient error (%s): %s; retrying %d/%d in %v...", res.Category, res.Detail, attempt+1, r.Opts.MaxRetries, delay)
+
+		res.Status = StatusUnknown
+		res.Category = ""
+		res.Detail = ""
+		res.BackupPath = ""
+
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+		}
+	}
+}
+
+func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 	host := job.Device.Hostname
 	prof := job.Profile
 
@@ -350,6 +379,9 @@ func (r *Runner) backup(ctx context.Context, sess Session, job Job) (string, err
 	if strings.TrimSpace(out) == "" {
 		return "", fmt.Errorf("%q returned no output", prof.BackupCommand)
 	}
+	if !hasConfigMarkers(out) {
+		return "", fmt.Errorf("%q output does not contain valid configuration markers", prof.BackupCommand)
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
@@ -539,4 +571,14 @@ func oneLine(s string, max int) string {
 		return string(r[:max-3]) + "..."
 	}
 	return s
+}
+
+func hasConfigMarkers(out string) bool {
+	markers := []string{"version ", "!", "#", "system", "interface", "config ", "set "}
+	for _, m := range markers {
+		if strings.Contains(out, "\n"+m) || strings.HasPrefix(out, m) {
+			return true
+		}
+	}
+	return false
 }

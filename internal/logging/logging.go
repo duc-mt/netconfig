@@ -225,7 +225,7 @@ func splitLines(s string) []string {
 // "username a password 0 hunter2", "enable secret 5 $1$...", "snmp-server
 // community public RO", "set encrypted-password \"$6$...\"", FortiOS "set psksecret x",
 // Cisco "tacacs-server key 7 secret", "radius-server key secret".
-var secretCommand = regexp.MustCompile(`(?i)\b((?:(?:tacacs|radius)-server\s+)?key|password|passwd|secret|psksecret|community|pre-shared-key|psk|passphrase|encrypted-password|authentication-key|auth-password|priv-password|key-string)(\s+(?:\d+|encrypted|hash)\b)?\s+("[^"]*"|\S+)`)
+var secretCommand = regexp.MustCompile(`(?i)\b((?:(?:tacacs|radius)-server\s+)?key|password|passwd|secret|psksecret|community|pre-shared-key|psk|passphrase|encrypted-password|authentication-key|auth-password|priv-password|key-string|api-key|auth-token|bearer|aws_secret_access_key|auth-key|priv-key)(\s+(?:\d+|encrypted|hash)\b)?\s+("[^"]*"|\S+)`)
 
 // RedactCommand masks the value of well-known secret-bearing configuration
 // keywords so audit logs can show the exact command structure without
