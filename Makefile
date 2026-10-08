@@ -58,3 +58,6 @@ init:
 		echo "  [.] commands.txt already exists, skipping"; \
 	fi
 	@echo "Initialization complete! Edit .env, inventory.csv, and commands.txt to match your environment."
+
+run: build
+	./bin/$(BINARY) commands.txt
