@@ -51,7 +51,7 @@ type Options struct {
 	CommandTimeout time.Duration
 	SlowFactor     int // commit/save/backup get CommandTimeout*SlowFactor (default 3)
 	DryRun         bool
-	OpMode         bool   // run commands in operational shell; no configure/commit/save
+	OpMode         bool // run commands in operational shell; no configure/commit/save
 	Backup         bool
 	BackupDir      string
 	RollbackOnFail bool   // restore from pre-change backup if a device fails (requires -backup)
@@ -211,7 +211,7 @@ func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
 		} else {
 			r.Log.Infof(host, "%s: %s", step.Kind, logging.RedactCommand(step.Line))
 		}
-		out, cat, err := r.runStep(ctx, sess, prof, host, step)
+		out, cat, err := r.runStep(ctx, stepContext{sess: sess, prof: prof, host: host, step: step})
 		if step.Kind == vendor.StepBody && strings.TrimSpace(out) != "" {
 			// Accumulate for -output-dir; also print for -op with -verbose.
 			fmt.Fprintf(&outputLines, "=== %s ===\n%s\n", logging.RedactCommand(step.Line), redactText(out))
@@ -271,26 +271,33 @@ func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
 	r.Log.Infof(host, "OK: %s", res.Detail)
 }
 
+type stepContext struct {
+	sess Session
+	prof *vendor.Profile
+	host string
+	step vendor.Step
+}
+
 // runStep sends one step and classifies a failure. The returned category is
 // only meaningful when err != nil.
-func (r *Runner) runStep(ctx context.Context, sess Session, prof *vendor.Profile, host string, step vendor.Step) (string, Category, error) {
+func (r *Runner) runStep(ctx context.Context, sc stepContext) (string, Category, error) {
 	timeout := r.Opts.CommandTimeout
-	if step.Slow {
+	if sc.step.Slow {
 		timeout *= r.slow()
 	}
-	shown := logging.RedactCommand(step.Line)
+	shown := logging.RedactCommand(sc.step.Line)
 
-	r.Log.Tracef(host, ">> %s", shown)
-	out, err := sess.Send(ctx, step.Line, timeout)
+	r.Log.Tracef(sc.host, ">> %s", shown)
+	out, err := sc.sess.Send(ctx, sc.step.Line, timeout)
 	if out != "" {
-		r.Log.Block(logging.LevelTrace, host, "<< ", redactText(out))
+		r.Log.Block(logging.LevelTrace, sc.host, "<< ", redactText(out))
 	}
 	if err != nil {
 		return out, classify(err, CatSessionError), fmt.Errorf("%s: %w", shown, err)
 	}
-	if !step.IgnoreError {
-		if bad, ok := prof.FindError(out); ok {
-			return out, categoryForStep(step.Kind), fmt.Errorf("device rejected %q: %s", shown, bad)
+	if !sc.step.IgnoreError {
+		if bad, ok := sc.prof.FindError(out); ok {
+			return out, categoryForStep(sc.step.Kind), fmt.Errorf("device rejected %q: %s", shown, bad)
 		}
 	}
 	return out, "", nil
@@ -392,7 +399,7 @@ func (r *Runner) rollback(ctx context.Context, _ Session, job Job, backupPath st
 
 	plan := prof.BuildPlan(cmds, vendor.PlanOptions{})
 	for _, step := range plan.Steps {
-		out, _, stepErr := r.runStep(rbCtx, sess, prof, host, step)
+		out, _, stepErr := r.runStep(rbCtx, stepContext{sess: sess, prof: prof, host: host, step: step})
 		if out != "" {
 			r.Log.Block(logging.LevelTrace, host, "(rollback) << ", redactText(out))
 		}
@@ -428,7 +435,6 @@ func (r *Runner) writeOutput(host, content string) error {
 	dst := filepath.Join(dir, name)
 	return writeFileAtomic(dst, []byte(content), 0o600)
 }
-
 
 // writeFileAtomic writes via a temporary file and rename so a crash never
 // leaves a truncated backup that looks valid.
