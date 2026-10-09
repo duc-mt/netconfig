@@ -4,7 +4,7 @@ Apply configuration commands to many network devices over SSH, concurrently, fro
 single static binary. Built for air-gapped management networks: no runtime
 dependencies, no network access other than SSH to the devices.
 
-Supported platforms: Cisco IOS/IOS-XE, Juniper Junos, Huawei VRP, Fortinet FortiOS, Arista EOS, VyOS, Ruijie RGOS, Aruba AOS-CX/AOS-S, Check Point Gaia.
+Supported platforms: Cisco IOS/IOS-XE, Juniper Junos, Huawei VRP, Fortinet FortiOS, Arista EOS, VyOS, Ruijie RGOS, Aruba AOS-CX/AOS-S, Check Point Gaia, Palo Alto PAN-OS, pfSense, Sophos.
 
 > **Status:** written without access to a Go toolchain or real devices. Nothing here has
 > been compiled or run yet. Follow [Verify before first use](#verify-before-first-use)

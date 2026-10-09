@@ -24,6 +24,9 @@ const (
 	Ruijie     = "ruijie"
 	Aruba      = "aruba"
 	CheckPoint = "checkpoint"
+	PaloAlto   = "paloalto"
+	PfSense    = "pfsense"
+	Sophos     = "sophos"
 )
 
 // StepKind classifies one command of an execution plan; the runner uses it to
@@ -123,6 +126,11 @@ var (
 	reVyOSPrompt       = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:(?::\S*)?[$#]|#)\s*$`)
 	reCheckPointPrompt = regexp.MustCompile(`^[\w.\-]+>\s*$`)
 
+	rePaloAltoPrompt   = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:>|#)\s*$`)
+	rePfSensePrompt    = regexp.MustCompile(`^(?:\[[\w.\-]+@[\w.\-]+\][^#$]*[#$]\s*$|Enter an option:\s*$)`)
+	reSophosPrompt     = regexp.MustCompile(`^(?:[a-zA-Z0-9.\-]+_)?console>\s*$`)
+	reSophosMenu       = regexp.MustCompile(`(?i)^Select Menu Number \[[0-9\-]+\]:\s*$`)
+
 	rePagerMore   = regexp.MustCompile(`--\s*More\s*--`)
 	rePagerHuawei = regexp.MustCompile(`----\s*More\s*----`)
 	rePagerJunos  = regexp.MustCompile(`---\(more(?:\s+\d+%)?\)---`)
@@ -134,6 +142,10 @@ var (
 	reFortiErr      = regexp.MustCompile(`(?i)^\s*(?:command fail|command parse error|value parse error|unknown action|object check operator error|node_check_object fail|entry not found)`)
 	reVyOSErr       = regexp.MustCompile(`(?i)^\s*(?:syntax error|invalid command|configuration error|commit failed|failed to parse|error:|\.\.\. failed)`)
 	reCheckPointErr = regexp.MustCompile(`(?i)^\s*(?:CLISH|syntax error|unknown command|error:)`)
+	rePaloAltoErr   = regexp.MustCompile(`(?i)^\s*(?:Invalid syntax\.|Unknown command:|Server error)`)
+	rePfSenseMenu   = regexp.MustCompile(`^Enter an option:\s*$`)
+	rePfSenseErr    = regexp.MustCompile(`(?i)^\s*(?:[/\w.\-]+:\s*(?:not found|command not found|Permission denied|syntax error)|usage:)`)
+	reSophosErr     = regexp.MustCompile(`(?i)^\s*(?:% Error:|Unknown parameter|Syntax Error)`)
 )
 
 // genericConfirms are shared by all vendors. Each regexp is anchored to the end
@@ -422,6 +434,62 @@ func newCheckPoint() *Profile {
 	}
 }
 
+func newPaloAlto() *Profile {
+	return &Profile{
+		Name:          PaloAlto,
+		Display:       "Palo Alto PAN-OS",
+		Prompt:        rePaloAltoPrompt,
+		DisablePaging: []string{"set cli pager off"},
+		Confirms:      genericConfirms,
+		ErrorPatterns: []*regexp.Regexp{rePaloAltoErr},
+		BackupCommand: "show config running",
+		probe:         "show system info",
+		apply: []Step{
+			{Kind: StepEnter, Line: "configure"},
+			{Kind: StepBody},
+			{Kind: StepPersist, Line: "commit", Slow: true},
+			{Kind: StepExit, Line: "exit"},
+		},
+		applyCleanup: []Step{
+			{Kind: StepExit, Line: "exit", IgnoreError: true},
+		},
+	}
+}
+
+func newPfSense() *Profile {
+	return &Profile{
+		Name:          PfSense,
+		Display:       "pfSense",
+		Prompt:        rePfSensePrompt,
+		UserPrompt:    rePfSenseMenu,
+		EnableCommand: "8",
+		Confirms:      genericConfirms,
+		ErrorPatterns: []*regexp.Regexp{rePfSenseErr},
+		BackupCommand: "cat /conf/config.xml",
+		probe:         "uname -a",
+		apply: []Step{
+			{Kind: StepBody},
+		},
+	}
+}
+
+func newSophos() *Profile {
+	return &Profile{
+		Name:          Sophos,
+		Display:       "Sophos",
+		Prompt:        reSophosPrompt,
+		UserPrompt:    reSophosMenu,
+		EnableCommand: "4",
+		Confirms:      genericConfirms,
+		ErrorPatterns: []*regexp.Regexp{reSophosErr},
+		BackupCommand: "show network interfaces",
+		probe:         "show version",
+		apply: []Step{
+			{Kind: StepBody},
+		},
+	}
+}
+
 var registry = map[string]*Profile{}
 
 var aliases = map[string]string{
@@ -434,12 +502,15 @@ var aliases = map[string]string{
 	"ruijie": Ruijie, "rgos": Ruijie,
 	"aruba": Aruba, "aruba-cx": Aruba, "aruba-s": Aruba, "aos-cx": Aruba, "aos-s": Aruba,
 	"checkpoint": CheckPoint, "checkpoint-gaia": CheckPoint, "gaia": CheckPoint, "clish": CheckPoint,
+	"paloalto": PaloAlto, "panos": PaloAlto, "pan-os": PaloAlto,
+	"pfsense": PfSense,
+	"sophos": Sophos, "sophos-xg": Sophos, "sfos": Sophos,
 }
 
 func init() {
 	for _, p := range []*Profile{
 		newCisco(), newJunos(), newHuawei(), newFortinet(), newArista(),
-		newVyOS(), newRuijie(), newAruba(), newCheckPoint(),
+		newVyOS(), newRuijie(), newAruba(), newCheckPoint(), newPaloAlto(), newPfSense(), newSophos(),
 	} {
 		registry[p.Name] = p
 	}

@@ -35,6 +35,9 @@ func TestLookupAliases(t *testing.T) {
 		"ruijie": Ruijie, "RGOS": Ruijie,
 		"aruba": Aruba, "AOS-CX": Aruba,
 		"checkpoint": CheckPoint, "checkpoint-gaia": CheckPoint, "clish": CheckPoint,
+		"paloalto": PaloAlto, "panos": PaloAlto,
+		"pfsense": PfSense,
+		"sophos": Sophos, "sfos": Sophos,
 	}
 	for in, want := range cases {
 		p, ok := Lookup(in)
@@ -45,7 +48,7 @@ func TestLookupAliases(t *testing.T) {
 	if _, ok := Lookup("nokia"); ok {
 		t.Error("Lookup(nokia) should fail")
 	}
-	if got := Names(); !slices.Equal(got, []string{"arista", "aruba", "checkpoint", "cisco", "fortinet", "huawei", "junos", "ruijie", "vyos"}) {
+	if got := Names(); !slices.Equal(got, []string{"arista", "aruba", "checkpoint", "cisco", "fortinet", "huawei", "junos", "paloalto", "pfsense", "ruijie", "sophos", "vyos"}) {
 		t.Errorf("Names() = %v", got)
 	}
 }
@@ -65,6 +68,9 @@ func TestApplyPlans(t *testing.T) {
 		{"huawei", []string{"system-view", "hostname lab1", "ntp server 10.0.0.9", "return", "save"}},
 		{"fortinet", []string{"hostname lab1", "ntp server 10.0.0.9"}},
 		{"vyos", []string{"configure", "hostname lab1", "ntp server 10.0.0.9", "commit", "save", "exit"}},
+		{"paloalto", []string{"configure", "hostname lab1", "ntp server 10.0.0.9", "commit", "exit"}},
+		{"pfsense", []string{"hostname lab1", "ntp server 10.0.0.9"}},
+		{"sophos", []string{"hostname lab1", "ntp server 10.0.0.9"}},
 		{"checkpoint", []string{"hostname lab1", "ntp server 10.0.0.9", "save config"}},
 	}
 	for _, c := range cases {
