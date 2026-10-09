@@ -126,10 +126,10 @@ var (
 	reVyOSPrompt       = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:(?::\S*)?[$#]|#)\s*$`)
 	reCheckPointPrompt = regexp.MustCompile(`^[\w.\-]+>\s*$`)
 
-	rePaloAltoPrompt   = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:>|#)\s*$`)
-	rePfSensePrompt    = regexp.MustCompile(`^(?:\[[\w.\-]+@[\w.\-]+\][^#$]*[#$]\s*$|Enter an option:\s*$)`)
-	reSophosPrompt     = regexp.MustCompile(`^(?:[a-zA-Z0-9.\-]+_)?console>\s*$`)
-	reSophosMenu       = regexp.MustCompile(`(?i)^Select Menu Number \[[0-9\-]+\]:\s*$`)
+	rePaloAltoPrompt = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:>|#)\s*$`)
+	rePfSensePrompt  = regexp.MustCompile(`^(?:\[[\w.\-]+@[\w.\-]+\][^#$]*[#$]\s*$|Enter an option:\s*$)`)
+	reSophosPrompt   = regexp.MustCompile(`^(?:[a-zA-Z0-9.\-]+_)?console>\s*$`)
+	reSophosMenu     = regexp.MustCompile(`(?i)^Select Menu Number \[[0-9\-]+\]:\s*$`)
 
 	rePagerMore   = regexp.MustCompile(`--\s*More\s*--`)
 	rePagerHuawei = regexp.MustCompile(`----\s*More\s*----`)
@@ -504,7 +504,7 @@ var aliases = map[string]string{
 	"checkpoint": CheckPoint, "checkpoint-gaia": CheckPoint, "gaia": CheckPoint, "clish": CheckPoint,
 	"paloalto": PaloAlto, "panos": PaloAlto, "pan-os": PaloAlto,
 	"pfsense": PfSense,
-	"sophos": Sophos, "sophos-xg": Sophos, "sfos": Sophos,
+	"sophos":  Sophos, "sophos-xg": Sophos, "sfos": Sophos,
 }
 
 func init() {

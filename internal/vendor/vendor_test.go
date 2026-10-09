@@ -37,7 +37,7 @@ func TestLookupAliases(t *testing.T) {
 		"checkpoint": CheckPoint, "checkpoint-gaia": CheckPoint, "clish": CheckPoint,
 		"paloalto": PaloAlto, "panos": PaloAlto,
 		"pfsense": PfSense,
-		"sophos": Sophos, "sfos": Sophos,
+		"sophos":  Sophos, "sfos": Sophos,
 	}
 	for in, want := range cases {
 		p, ok := Lookup(in)
