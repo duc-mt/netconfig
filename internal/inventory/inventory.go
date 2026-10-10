@@ -43,8 +43,11 @@ type Device struct {
 	Line     int    // 1-based source line, for diagnostics
 }
 
-// Endpoint returns host:port for net.Dial (IPv6-safe).
+// Endpoint returns host:port for net.Dial (IPv6-safe). If Port is 0, Address is returned as-is.
 func (d Device) Endpoint() string {
+	if d.Port == 0 {
+		return d.Address
+	}
 	return net.JoinHostPort(d.Address, strconv.Itoa(d.Port))
 }
 
