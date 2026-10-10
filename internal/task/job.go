@@ -100,6 +100,42 @@ type Result struct {
 	Detail     string
 	Duration   time.Duration
 	BackupPath string
+
+	// CommandsTotal is the number of commands the job was given.
+	// CommandsApplied is how many of those were actually sent to the
+	// device and accepted before the job finished -- whether it finished
+	// by succeeding or by failing partway through. Both are 0 for a
+	// skipped device, or for one that never got past connecting.
+	CommandsTotal   int
+	CommandsApplied int
+
+	// Rollback reports the outcome of an automatic post-failure rollback
+	// (-rollback-on-fail). It is RollbackNone unless one was attempted.
+	Rollback RollbackOutcome
+}
+
+// RollbackOutcome is the outcome of an automatic rollback attempted after a
+// failed change (see Options.RollbackOnFail in runner.go).
+type RollbackOutcome int
+
+const (
+	RollbackNone   RollbackOutcome = iota // not attempted: no failure, -rollback-on-fail unset, or no backup to restore from
+	RollbackOK                            // the pre-change backup was re-applied successfully
+	RollbackFailed                        // rollback was attempted but did not complete; the device may be left mid-change
+)
+
+// String renders the outcome the way the result table and reports show it.
+// It is empty for RollbackNone so callers can treat "" as "not applicable"
+// without a special case.
+func (r RollbackOutcome) String() string {
+	switch r {
+	case RollbackOK:
+		return "ROLLED_BACK"
+	case RollbackFailed:
+		return "ROLLBACK_FAILED"
+	default:
+		return ""
+	}
 }
 
 // BuildJobs renders the commands for every device and resolves its vendor

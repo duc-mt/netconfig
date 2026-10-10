@@ -22,6 +22,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"netconfig/internal/credentials"
 	"netconfig/internal/inventory"
@@ -587,7 +588,7 @@ func TestSummaryAndExitCode(t *testing.T) {
 		t.Errorf("AUTH_FAILED hosts = %v", got)
 	}
 
-	plain := sum.Render(false, false)
+	plain := sum.Render(RenderOptions{})
 	for _, want := range []string{
 		"Succeeded: 1", "Failed: 3", "Skipped: 1", "(total 5)",
 		"Failure reasons:", "AUTH_FAILED", "TIMEOUT", "Skipped reasons:", "NO_CREDENTIALS",
@@ -600,10 +601,10 @@ func TestSummaryAndExitCode(t *testing.T) {
 	if strings.Contains(plain, "\x1b[") {
 		t.Errorf("plain summary contains ANSI codes:\n%q", plain)
 	}
-	if !strings.Contains(sum.Render(true, false), "\x1b[31m") {
+	if !strings.Contains(sum.Render(RenderOptions{Color: true}), "\x1b[31m") {
 		t.Error("coloured summary should contain red for failures")
 	}
-	if !strings.Contains(sum.Render(false, true), "DRY-RUN") {
+	if !strings.Contains(sum.Render(RenderOptions{DryRun: true}), "DRY-RUN") {
 		t.Error("dry-run banner missing")
 	}
 
@@ -615,5 +616,238 @@ func TestSummaryAndExitCode(t *testing.T) {
 	}
 	if ExitCode(results[4:]) != ExitPartial {
 		t.Errorf("only skipped: exit %d, want %d", ExitCode(results[4:]), ExitPartial)
+	}
+}
+
+// ---- commands-applied progress ----------------------------------------------
+
+func TestCommandsAppliedOnSuccess(t *testing.T) {
+	tr := newFakeTransport()
+	r := newRunner(t, tr, Options{})
+	res := r.Run(context.Background(), mkJobs(t, "cisco", []string{"hostname lab1", "ntp server 10.9.9.9"}, "sw1"))
+
+	if res[0].CommandsApplied != 2 || res[0].CommandsTotal != 2 {
+		t.Errorf("CommandsApplied/Total = %d/%d, want 2/2", res[0].CommandsApplied, res[0].CommandsTotal)
+	}
+}
+
+func TestCommandsAppliedTracksMidPlanFailure(t *testing.T) {
+	tr := newFakeTransport()
+	tr.respond = func(host, line string) (string, error) {
+		if line == "bogus" {
+			return "% Invalid input detected at '^' marker.\n", nil
+		}
+		return "", nil
+	}
+	r := newRunner(t, tr, Options{})
+	res := r.Run(context.Background(), mkJobs(t, "cisco", []string{"hostname x", "bogus", "ntp server 1.1.1.1"}, "sw1"))
+
+	if res[0].Status != StatusFailed {
+		t.Fatalf("result = %+v", res[0])
+	}
+	if res[0].CommandsTotal != 3 {
+		t.Errorf("CommandsTotal = %d, want 3", res[0].CommandsTotal)
+	}
+	if res[0].CommandsApplied != 1 {
+		t.Errorf("CommandsApplied = %d, want 1 (only %q got through before %q was rejected)",
+			res[0].CommandsApplied, "hostname x", "bogus")
+	}
+}
+
+func TestCommandsTotalSetEvenOnConnectFailure(t *testing.T) {
+	tr := newFakeTransport()
+	tr.openErr = map[string]error{"sw1": &fakeErr{kind: "connect", msg: "no route to host"}}
+	r := newRunner(t, tr, Options{})
+	res := r.Run(context.Background(), mkJobs(t, "cisco", []string{"hostname x", "ntp server 1.1.1.1"}, "sw1"))
+
+	if res[0].Status != StatusFailed || res[0].Category != CatConnectFailed {
+		t.Fatalf("result = %+v", res[0])
+	}
+	if res[0].CommandsTotal != 2 || res[0].CommandsApplied != 0 {
+		t.Errorf("CommandsApplied/Total = %d/%d, want 0/2", res[0].CommandsApplied, res[0].CommandsTotal)
+	}
+}
+
+// ---- rollback outcome --------------------------------------------------------
+
+func TestRollbackOutcomeRecorded(t *testing.T) {
+	t.Run("succeeds", func(t *testing.T) {
+		tr := newFakeTransport()
+		tr.respond = func(host, line string) (string, error) {
+			switch line {
+			case "show configuration | no-more":
+				return "set system host-name old\n", nil
+			case "commit":
+				return "error: configuration check-out failed\n", nil
+			}
+			return "", nil
+		}
+		r := newRunner(t, tr, Options{Backup: true, BackupDir: t.TempDir(), RollbackOnFail: true})
+		res := r.Run(context.Background(), mkJobs(t, "junos", []string{"set system host-name x"}, "mx1"))
+
+		if res[0].Status != StatusFailed || res[0].Category != CatCommitFailed {
+			t.Fatalf("result = %+v", res[0])
+		}
+		if res[0].Rollback != RollbackOK {
+			t.Errorf("Rollback = %v, want RollbackOK", res[0].Rollback)
+		}
+	})
+
+	t.Run("fails", func(t *testing.T) {
+		tr := newFakeTransport()
+		tr.respond = func(host, line string) (string, error) {
+			switch line {
+			case "show configuration | no-more":
+				return "set system host-name old\n", nil
+			case "commit":
+				return "error: configuration check-out failed\n", nil
+			case "set system host-name old":
+				// Only the rollback plan re-sends the backed-up line; a hard
+				// transport error there (as opposed to a device-rejected
+				// pattern match) is what makes the rollback itself fail.
+				return "", errors.New("connection reset by peer")
+			}
+			return "", nil
+		}
+		r := newRunner(t, tr, Options{Backup: true, BackupDir: t.TempDir(), RollbackOnFail: true})
+		res := r.Run(context.Background(), mkJobs(t, "junos", []string{"set system host-name x"}, "mx1"))
+
+		if res[0].Status != StatusFailed || res[0].Category != CatCommitFailed {
+			t.Fatalf("result = %+v", res[0])
+		}
+		if res[0].Rollback != RollbackFailed {
+			t.Errorf("Rollback = %v, want RollbackFailed", res[0].Rollback)
+		}
+	})
+}
+
+// ---- result table rendering --------------------------------------------------
+
+func TestRenderShowsFailedFirst(t *testing.T) {
+	mk := func(host string, st Status) Result {
+		return Result{Device: inventory.Device{Hostname: host, Vendor: "cisco"}, Status: st}
+	}
+	results := []Result{
+		mk("ok1", StatusSucceeded),
+		mk("skip1", StatusSkipped),
+		mk("fail1", StatusFailed),
+		mk("ok2", StatusSucceeded),
+		mk("fail2", StatusFailed),
+	}
+	out := Summarize(results).Render(RenderOptions{})
+
+	wantOrder := []string{"fail1", "fail2", "skip1", "ok1", "ok2"}
+	last := -1
+	for _, host := range wantOrder {
+		idx := strings.Index(out, host)
+		if idx < 0 {
+			t.Fatalf("host %q missing from table:\n%s", host, out)
+		}
+		if idx < last {
+			t.Errorf("rows out of order at %q; want FAILED, then SKIPPED, then SUCCEEDED (original order kept within each group):\n%s", host, out)
+		}
+		last = idx
+	}
+}
+
+func TestRenderAppliedAndBackupColumns(t *testing.T) {
+	results := []Result{
+		{
+			Device: inventory.Device{Hostname: "sw1", Vendor: "cisco"}, Status: StatusSucceeded,
+			CommandsApplied: 3, CommandsTotal: 3, BackupPath: "/backups/sw1.cfg",
+		},
+		{
+			Device: inventory.Device{Hostname: "sw2", Vendor: "cisco"}, Status: StatusFailed, Category: CatCommitFailed,
+			CommandsApplied: 1, CommandsTotal: 3, BackupPath: "/backups/sw2.cfg", Rollback: RollbackOK,
+		},
+	}
+	out := Summarize(results).Render(RenderOptions{})
+
+	for _, want := range []string{"APPLIED", "3/3", "1/3", "BACKUP", "SAVED", "ROLLED_BACK"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderHidesBackupColumnWhenUnused(t *testing.T) {
+	results := []Result{
+		{Device: inventory.Device{Hostname: "sw1", Vendor: "cisco"}, Status: StatusSucceeded, CommandsApplied: 1, CommandsTotal: 1},
+	}
+	out := Summarize(results).Render(RenderOptions{})
+	if strings.Contains(out, "BACKUP") {
+		t.Errorf("BACKUP column should be hidden when no result used -backup:\n%s", out)
+	}
+}
+
+func TestRenderNarrowWidthDropsColumnsAndShrinksDetail(t *testing.T) {
+	// Under 90 chars so it survives the table's normal cap untouched at full
+	// (Width: 0) width; long enough that a 60-column terminal still has to
+	// shrink it further.
+	longDetail := "device rejected a configuration command with a long explanatory message"
+	results := []Result{
+		{
+			Device: inventory.Device{Hostname: "edge-sw01", Address: "10.0.0.1", Vendor: "cisco"},
+			Status: StatusFailed, Category: CatSyntaxError, Detail: longDetail,
+		},
+	}
+	sum := Summarize(results)
+
+	wide := sum.Render(RenderOptions{})
+	if !strings.Contains(wide, "ADDRESS") || !strings.Contains(wide, "VENDOR") {
+		t.Fatalf("expected ADDRESS and VENDOR columns with no width limit:\n%s", wide)
+	}
+	if !strings.Contains(wide, longDetail) {
+		t.Fatalf("expected the full detail message with no width limit:\n%s", wide)
+	}
+
+	narrow := sum.Render(RenderOptions{Width: 60})
+	lines := strings.Split(narrow, "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least a title and header line:\n%s", narrow)
+	}
+	if n := utf8.RuneCountInString(lines[1]); n > 60 {
+		t.Errorf("header row exceeds the requested width 60 (got %d): %q", n, lines[1])
+	}
+	if strings.Contains(narrow, "VENDOR") {
+		t.Errorf("expected VENDOR to be dropped at width 60:\n%s", narrow)
+	}
+	if strings.Contains(narrow, longDetail) {
+		t.Errorf("expected DETAIL to be truncated at width 60:\n%s", narrow)
+	}
+}
+
+// ---- CSV report ---------------------------------------------------------------
+
+func TestWriteCSVReport(t *testing.T) {
+	results := []Result{
+		{
+			Device: inventory.Device{Hostname: "sw1", Address: "10.0.0.1", Vendor: "cisco"},
+			Status: StatusSucceeded, Duration: 2 * time.Second,
+			CommandsApplied: 3, CommandsTotal: 3,
+		},
+		{
+			Device: inventory.Device{Hostname: "sw2", Address: "10.0.0.2", Vendor: "junos"},
+			Status: StatusFailed, Category: CatAuthFailed, Detail: "authentication failed",
+			CommandsTotal: 2,
+		},
+	}
+	path := filepath.Join(t.TempDir(), "report.csv")
+	if err := WriteCSVReport(path, results, ""); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		"hostname,address,vendor,status,category,detail,duration_ms,commands_applied,commands_total,backup_path,rollback,output_file",
+		"sw1,10.0.0.1,cisco,SUCCEEDED,,,2000,3,3,,,",
+		"sw2,10.0.0.2,junos,FAILED,AUTH_FAILED,authentication failed,0,0,2,,,",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("CSV report missing %q in:\n%s", want, text)
+		}
 	}
 }

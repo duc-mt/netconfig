@@ -28,6 +28,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/term"
+
 	"netconfig/internal/credentials"
 	"netconfig/internal/inventory"
 	"netconfig/internal/logging"
@@ -99,6 +101,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		rollbackOnFail = fs.Bool("rollback-on-fail", false, "restore pre-change backup if a device fails (requires -backup)")
 		outputDir      = fs.String("output-dir", "", "write per-device command output to <dir>/<hostname>.txt")
 		jsonReport     = fs.String("json-report", "", "write a JSON run report to this file path")
+		csvReport      = fs.String("csv-report", "", "write a CSV run report to this file path")
 		concurrency    = fs.Int("concurrency", 5, "maximum number of devices configured at the same time")
 		maxRetries     = fs.Int("max-retries", 0, "maximum automatic retries for transient SSH connection/session errors")
 		connectTO      = fs.Duration("connect-timeout", 10*time.Second, "TCP connect + SSH handshake budget per device")
@@ -282,7 +285,9 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 
 	// ---- summary ---------------------------------------------------------
 	sum := task.Summarize(results)
-	log.Raw("\n"+sum.Render(color, *dryRun), "\n"+sum.Render(false, *dryRun))
+	consoleOpts := task.RenderOptions{Color: color, DryRun: *dryRun, Width: terminalWidth(stderr)}
+	fileOpts := task.RenderOptions{Color: false, DryRun: *dryRun} // Width 0: a log file isn't screen-width constrained
+	log.Raw("\n"+sum.Render(consoleOpts), "\n"+sum.Render(fileOpts))
 	if *backup {
 		log.Infof("", "pre-change backups: %s", *backupDir)
 	}
@@ -294,6 +299,13 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 			log.Errorf("", "JSON report: %v", err)
 		} else {
 			log.Infof("", "JSON report: %s", *jsonReport)
+		}
+	}
+	if *csvReport != "" {
+		if err := task.WriteCSVReport(*csvReport, results, *outputDir); err != nil {
+			log.Errorf("", "CSV report: %v", err)
+		} else {
+			log.Infof("", "CSV report: %s", *csvReport)
 		}
 	}
 	log.Infof("", "audit log: %s", log.Path())
@@ -316,6 +328,22 @@ func parseVars(list []string) (map[string]string, error) {
 func isTerminalWriter(w io.Writer) bool {
 	f, ok := w.(*os.File)
 	return ok && credentials.IsTerminal(f)
+}
+
+// terminalWidth returns w's terminal width in columns, or 0 if w isn't a
+// real terminal (piped output, a log file, redirected to /dev/null) or its
+// size can't be determined -- 0 tells Summary.Render to use natural column
+// widths instead of trying to fit a size that doesn't apply.
+func terminalWidth(w io.Writer) int {
+	f, ok := w.(*os.File)
+	if !ok || !credentials.IsTerminal(f) {
+		return 0
+	}
+	width, _, err := term.GetSize(int(f.Fd()))
+	if err != nil || width <= 0 {
+		return 0
+	}
+	return width
 }
 
 // hintPasswordFlag explains why -password does not exist.

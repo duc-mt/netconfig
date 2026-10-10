@@ -172,6 +172,8 @@ func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
 		res.Category = ""
 		res.Detail = ""
 		res.BackupPath = ""
+		res.CommandsApplied = 0
+		res.Rollback = RollbackNone
 
 		select {
 		case <-time.After(delay):
@@ -183,6 +185,7 @@ func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
 func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 	host := job.Device.Hostname
 	prof := job.Profile
+	res.CommandsTotal = len(job.Commands)
 
 	var plan vendor.Plan
 	if r.Opts.OpMode {
@@ -236,6 +239,10 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 	// outputLines accumulates all StepBody responses for -output-dir.
 	var outputLines strings.Builder
 
+	// applied counts StepBody steps (one per user command) that were sent
+	// and accepted, so a mid-plan failure still reports how far it got.
+	applied := 0
+
 	announced := false
 	for _, step := range plan.Steps {
 		if step.Kind == vendor.StepBody {
@@ -262,6 +269,7 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 			r.Log.Block(logging.LevelInfo, host, "  | ", redactText(out))
 		}
 		if err != nil {
+			res.CommandsApplied = applied
 			r.fail(res, host, cat, err)
 			if step.Kind == vendor.StepPersist && cat == CatTimeout {
 				r.Log.Warnf(host, "the outcome of %q is unknown; verify the device state before retrying", step.Line)
@@ -272,13 +280,18 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 				if r.Opts.RollbackOnFail && res.BackupPath != "" {
 					r.Log.Warnf(host, "attempting rollback from backup: %s", res.BackupPath)
 					if rbErr := r.rollback(ctx, sess, job, res.BackupPath); rbErr != nil {
+						res.Rollback = RollbackFailed
 						r.Log.Errorf(host, "rollback failed: %v", rbErr)
 					} else {
+						res.Rollback = RollbackOK
 						r.Log.Infof(host, "rollback succeeded; device restored to pre-change state")
 					}
 				}
 			}
 			return
+		}
+		if step.Kind == vendor.StepBody {
+			applied++
 		}
 	}
 
@@ -296,6 +309,7 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 		}
 	}
 
+	res.CommandsApplied = applied
 	res.Status = StatusSucceeded
 	switch {
 	case r.Opts.OpMode:

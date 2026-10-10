@@ -11,10 +11,12 @@
 package task
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -68,74 +70,272 @@ const (
 	ansiBold   = "\x1b[1m"
 )
 
-// Render formats the summary as a table plus per-category breakdowns. With
-// color false the output is plain text (used for the log file).
-func (s Summary) Render(color, dryRun bool) string {
+// RenderOptions controls how Render formats the summary table.
+type RenderOptions struct {
+	Color  bool // colorize the STATUS column and the totals line
+	DryRun bool // note in the title that nothing was committed or saved
+
+	// Width is the terminal width to fit the table into. 0 (or negative)
+	// means "no limit": natural column widths, nothing dropped or
+	// shrunk. That's what the log file gets, since a file isn't
+	// constrained to a fixed-width screen the way a console is.
+	Width int
+}
+
+// displayOrder returns result indices with FAILED first, then SKIPPED, then
+// SUCCEEDED -- the order an operator actually needs after a run, since the
+// devices needing attention should be the first thing seen, not scattered
+// through a wall of successes. Each group keeps its original (inventory)
+// order.
+func displayOrder(results []Result) []int {
+	order := make([]int, len(results))
+	for i := range order {
+		order[i] = i
+	}
+	rank := func(s Status) int {
+		switch s {
+		case StatusFailed:
+			return 0
+		case StatusSkipped:
+			return 1
+		case StatusSucceeded:
+			return 2
+		default:
+			return 3
+		}
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		return rank(results[order[i]].Status) < rank(results[order[j]].Status)
+	})
+	return order
+}
+
+// appliedCell renders the APPLIED column: how many of a device's commands
+// were actually sent and accepted, out of how many it was given. "-" for a
+// device that was never run (skipped, or zero commands applied to it).
+func appliedCell(r Result) string {
+	if r.CommandsTotal == 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%d/%d", r.CommandsApplied, r.CommandsTotal)
+}
+
+// backupCell renders the BACKUP column: whether a pre-change snapshot was
+// taken, and if a rollback was attempted, its outcome.
+func backupCell(r Result) string {
+	if r.BackupPath == "" {
+		return "-"
+	}
+	if s := r.Rollback.String(); s != "" {
+		return s
+	}
+	return "SAVED"
+}
+
+// anyBackupActivity reports whether any result has a backup path, so the
+// BACKUP column can be omitted entirely on a run that didn't use -backup
+// instead of printing a column of dashes.
+func anyBackupActivity(results []Result) bool {
+	for _, r := range results {
+		if r.BackupPath != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// Render formats the summary as a table plus per-category breakdowns. Rows
+// are shown FAILED first, then SKIPPED, then SUCCEEDED (see displayOrder).
+//
+// When opts.Width is set and the table doesn't fit, less critical columns
+// -- VENDOR, TIME, ADDRESS, then BACKUP if present -- are dropped in that
+// order before the DETAIL column is truncated further to make up the rest.
+// With opts.Width <= 0 nothing is dropped or shrunk.
+func (s Summary) Render(opts RenderOptions) string {
 	var b strings.Builder
 
 	title := "netconfig run summary"
-	if dryRun {
+	if opts.DryRun {
 		title += " (DRY-RUN: nothing was committed or saved)"
 	}
-	if color {
+	if opts.Color {
 		title = ansiBold + title + ansiReset
 	}
 	b.WriteString(title + "\n")
 
-	headers := []string{"HOST", "ADDRESS", "VENDOR", "STATUS", "REASON", "TIME", "DETAIL"}
-	rows := make([][]string, 0, len(s.Results))
-	for _, r := range s.Results {
-		reason := "-"
-		if r.Category != "" {
-			reason = string(r.Category)
-		}
-		rows = append(rows, []string{
-			r.Device.Hostname,
-			r.Device.Endpoint(),
-			r.Device.Vendor,
-			r.Status.String(),
-			reason,
-			formatDuration(r.Duration),
-			truncate(r.Detail, 90),
-		})
+	order := displayOrder(s.Results)
+	showBackup := anyBackupActivity(s.Results)
+	n := len(order)
+
+	type column struct {
+		header string
+		cells  []string
 	}
 
-	widths := make([]int, len(headers))
-	for i, h := range headers {
-		widths[i] = utf8.RuneCountInString(h)
+	statusOf := make([]Status, n)
+	hostCol := make([]string, n)
+	addressCol := make([]string, n)
+	vendorCol := make([]string, n)
+	statusCol := make([]string, n)
+	appliedCol := make([]string, n)
+	backupCol := make([]string, n)
+	reasonCol := make([]string, n)
+	timeCol := make([]string, n)
+	detailCol := make([]string, n)
+
+	for i, ri := range order {
+		r := s.Results[ri]
+		statusOf[i] = r.Status
+		hostCol[i] = r.Device.Hostname
+		addressCol[i] = r.Device.Endpoint()
+		vendorCol[i] = r.Device.Vendor
+		statusCol[i] = r.Status.String()
+		appliedCol[i] = appliedCell(r)
+		backupCol[i] = backupCell(r)
+		if r.Category != "" {
+			reasonCol[i] = string(r.Category)
+		} else {
+			reasonCol[i] = "-"
+		}
+		timeCol[i] = formatDuration(r.Duration)
+		detailCol[i] = truncate(r.Detail, 90)
 	}
-	for _, row := range rows {
-		for i, cell := range row {
-			if n := utf8.RuneCountInString(cell); n > widths[i] {
-				widths[i] = n
+
+	cols := []column{
+		{"HOST", hostCol},
+		{"ADDRESS", addressCol},
+		{"VENDOR", vendorCol},
+		{"STATUS", statusCol},
+		{"APPLIED", appliedCol},
+	}
+	if showBackup {
+		cols = append(cols, column{"BACKUP", backupCol})
+	}
+	cols = append(cols,
+		column{"REASON", reasonCol},
+		column{"TIME", timeCol},
+		column{"DETAIL", detailCol},
+	)
+
+	widths := make([]int, len(cols))
+	for i, c := range cols {
+		widths[i] = utf8.RuneCountInString(c.header)
+		for _, cell := range c.cells {
+			if w := utf8.RuneCountInString(cell); w > widths[i] {
+				widths[i] = w
 			}
 		}
 	}
 
-	writeRow := func(cells []string, status *Status) {
-		last := len(cells) - 1
-		for i, cell := range cells {
-			if i == last {
+	visible := make([]bool, len(cols))
+	for i := range visible {
+		visible[i] = true
+	}
+
+	colIndex := func(header string) int {
+		for i, c := range cols {
+			if c.header == header {
+				return i
+			}
+		}
+		return -1
+	}
+	totalWidth := func() int {
+		t, count := 0, 0
+		for i, v := range visible {
+			if v {
+				t += widths[i]
+				count++
+			}
+		}
+		if count > 1 {
+			t += 2 * (count - 1) // two-space gutter between visible columns
+		}
+		return t
+	}
+
+	if opts.Width > 0 {
+		// Drop least-critical columns first, in this priority order, until
+		// the table fits or there's nothing left to drop.
+		for _, header := range []string{"VENDOR", "TIME", "ADDRESS", "BACKUP"} {
+			if totalWidth() <= opts.Width {
+				break
+			}
+			if idx := colIndex(header); idx >= 0 {
+				visible[idx] = false
+			}
+		}
+		// Still too wide: shrink DETAIL (the one flexible column) to
+		// whatever's left, rather than dropping a column an operator
+		// actually needs.
+		if totalWidth() > opts.Width {
+			if idx := colIndex("DETAIL"); idx >= 0 {
+				fixed := totalWidth() - widths[idx]
+				budget := opts.Width - fixed
+				const minDetail = 15
+				if budget < minDetail {
+					budget = minDetail
+				}
+				if budget < widths[idx] {
+					widths[idx] = budget
+					for i, cell := range cols[idx].cells {
+						cols[idx].cells[i] = truncate(cell, budget)
+					}
+				}
+			}
+		}
+	}
+
+	lastVisible := -1
+	for i := len(visible) - 1; i >= 0; i-- {
+		if visible[i] {
+			lastVisible = i
+			break
+		}
+	}
+
+	writeHeader := func() {
+		for i, c := range cols {
+			if !visible[i] {
+				continue
+			}
+			if i == lastVisible {
+				b.WriteString(c.header)
+				break
+			}
+			b.WriteString(c.header + strings.Repeat(" ", widths[i]-utf8.RuneCountInString(c.header)))
+			b.WriteString("  ")
+		}
+		b.WriteByte('\n')
+	}
+	writeData := func(rowIdx int) {
+		st := statusOf[rowIdx]
+		for i, c := range cols {
+			if !visible[i] {
+				continue
+			}
+			cell := c.cells[rowIdx]
+			if i == lastVisible {
 				b.WriteString(cell)
 				break
 			}
 			padded := cell + strings.Repeat(" ", widths[i]-utf8.RuneCountInString(cell))
-			if color && status != nil && i == 3 {
-				padded = statusColor(*status) + padded + ansiReset
+			if opts.Color && c.header == "STATUS" {
+				padded = statusColor(st) + padded + ansiReset
 			}
 			b.WriteString(padded)
 			b.WriteString("  ")
 		}
 		b.WriteByte('\n')
 	}
-	writeRow(headers, nil)
-	for i, row := range rows {
-		st := s.Results[i].Status
-		writeRow(row, &st)
+
+	writeHeader()
+	for i := 0; i < n; i++ {
+		writeData(i)
 	}
 
 	colorize := func(c, text string) string {
-		if !color {
+		if !opts.Color {
 			return text
 		}
 		return c + text + ansiReset
@@ -203,20 +403,41 @@ func truncate(s string, n int) string {
 	if len(r) <= n {
 		return s
 	}
+	if n <= 3 {
+		return string(r[:n])
+	}
 	return string(r[:n-3]) + "..."
+}
+
+// safeHostFilename sanitizes a hostname for use in a generated file name,
+// matching how the runner names -output-dir files (see unsafeFileChars in
+// runner.go) so report links line up with what's actually on disk.
+func safeHostFilename(host string) string {
+	var b strings.Builder
+	for _, r := range host {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 // JSONDeviceResult is the JSON representation of one device's run outcome.
 type JSONDeviceResult struct {
-	Hostname   string `json:"hostname"`
-	Address    string `json:"address"`
-	Vendor     string `json:"vendor"`
-	Status     string `json:"status"`
-	Category   string `json:"category,omitempty"`
-	Detail     string `json:"detail,omitempty"`
-	DurationMs int64  `json:"duration_ms"`
-	BackupPath string `json:"backup_path,omitempty"`
-	OutputFile string `json:"output_file,omitempty"`
+	Hostname        string `json:"hostname"`
+	Address         string `json:"address"`
+	Vendor          string `json:"vendor"`
+	Status          string `json:"status"`
+	Category        string `json:"category,omitempty"`
+	Detail          string `json:"detail,omitempty"`
+	DurationMs      int64  `json:"duration_ms"`
+	CommandsApplied int    `json:"commands_applied"`
+	CommandsTotal   int    `json:"commands_total"`
+	BackupPath      string `json:"backup_path,omitempty"`
+	Rollback        string `json:"rollback,omitempty"`
+	OutputFile      string `json:"output_file,omitempty"`
 }
 
 // JSONReport is the top-level structure written to the JSON report file.
@@ -233,31 +454,23 @@ type JSONReport struct {
 // outputDir is used to annotate each result with its output file path (if any).
 func WriteJSONReport(path string, results []Result, outputDir string) error {
 	sum := Summarize(results)
-	safeHost := func(host string) string {
-		var b strings.Builder
-		for _, r := range host {
-			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
-				b.WriteRune(r)
-			} else {
-				b.WriteByte('_')
-			}
-		}
-		return b.String()
-	}
 	devices := make([]JSONDeviceResult, 0, len(results))
 	for _, r := range results {
 		jr := JSONDeviceResult{
-			Hostname:   r.Device.Hostname,
-			Address:    r.Device.Endpoint(),
-			Vendor:     r.Device.Vendor,
-			Status:     r.Status.String(),
-			Category:   string(r.Category),
-			Detail:     r.Detail,
-			DurationMs: r.Duration.Milliseconds(),
-			BackupPath: r.BackupPath,
+			Hostname:        r.Device.Hostname,
+			Address:         r.Device.Endpoint(),
+			Vendor:          r.Device.Vendor,
+			Status:          r.Status.String(),
+			Category:        string(r.Category),
+			Detail:          r.Detail,
+			DurationMs:      r.Duration.Milliseconds(),
+			CommandsApplied: r.CommandsApplied,
+			CommandsTotal:   r.CommandsTotal,
+			BackupPath:      r.BackupPath,
+			Rollback:        r.Rollback.String(),
 		}
 		if outputDir != "" && r.Status == StatusSucceeded {
-			jr.OutputFile = outputDir + "/" + safeHost(r.Device.Hostname) + ".txt"
+			jr.OutputFile = outputDir + "/" + safeHostFilename(r.Device.Hostname) + ".txt"
 		}
 		devices = append(devices, jr)
 	}
@@ -275,6 +488,60 @@ func WriteJSONReport(path string, results []Result, outputDir string) error {
 	}
 	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
 		return fmt.Errorf("write JSON report %s: %w", path, err)
+	}
+	return nil
+}
+
+// csvHeader lists the CSV report's columns, in order. Kept in one place so
+// WriteCSVReport's header and row-building can't drift apart.
+var csvHeader = []string{
+	"hostname", "address", "vendor", "status", "category", "detail",
+	"duration_ms", "commands_applied", "commands_total", "backup_path",
+	"rollback", "output_file",
+}
+
+// WriteCSVReport writes the run results to a CSV file at path, with the
+// same fields as the JSON report (see JSONDeviceResult) so an operator can
+// pick whichever format their tooling (or spreadsheet) prefers. outputDir
+// is used the same way as in WriteJSONReport.
+func WriteCSVReport(path string, results []Result, outputDir string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create CSV report %s: %w", path, err)
+	}
+	defer f.Close()
+
+	w := csv.NewWriter(f)
+	if err := w.Write(csvHeader); err != nil {
+		return fmt.Errorf("write CSV header: %w", err)
+	}
+
+	for _, r := range results {
+		outputFile := ""
+		if outputDir != "" && r.Status == StatusSucceeded {
+			outputFile = outputDir + "/" + safeHostFilename(r.Device.Hostname) + ".txt"
+		}
+		row := []string{
+			r.Device.Hostname,
+			r.Device.Endpoint(),
+			r.Device.Vendor,
+			r.Status.String(),
+			string(r.Category),
+			r.Detail,
+			strconv.FormatInt(r.Duration.Milliseconds(), 10),
+			strconv.Itoa(r.CommandsApplied),
+			strconv.Itoa(r.CommandsTotal),
+			r.BackupPath,
+			r.Rollback.String(),
+			outputFile,
+		}
+		if err := w.Write(row); err != nil {
+			return fmt.Errorf("write CSV row for %s: %w", r.Device.Hostname, err)
+		}
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return fmt.Errorf("flush CSV report %s: %w", path, err)
 	}
 	return nil
 }
