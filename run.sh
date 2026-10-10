@@ -1,4 +1,15 @@
 #!/bin/sh
+# ==============================================================================
+# Script Name:   run.sh
+# Description:   Implementation and logic for run.
+# Author:        Mai Tan Duc <ducmai.network@gmail.com>
+# Created:       2026-10-10
+# Version:       1.0.0
+# License:       MIT
+# ==============================================================================
+# Usage:         ./run.sh [options] [arguments]
+# Notes:         Automated bash utility script
+# ==============================================================================
 # Universal launcher for netconfig: auto-detects OS & architecture and executes the appropriate binary.
 
 OS=""

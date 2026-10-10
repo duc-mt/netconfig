@@ -1,3 +1,13 @@
+// ==============================================================================
+// Package main implements Implementation and logic for job..
+// Author:        Mai Tan Duc <ducmai.network@gmail.com>
+// Created:       2026-10-10
+// Version:       1.0.0
+// License:       MIT
+// ==============================================================================
+// Usage:         go run job.go [options]
+// Notes:         Go package implementation
+// ==============================================================================
 // Package task runs a configuration change across many devices: it prepares
 // one job per device, executes them on a bounded worker pool with per-device
 // failure isolation, and summarises the outcome.

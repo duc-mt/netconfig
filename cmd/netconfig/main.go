@@ -1,3 +1,13 @@
+// ==============================================================================
+// Package main implements Implementation and logic for main..
+// Author:        Mai Tan Duc <ducmai.network@gmail.com>
+// Created:       2026-10-10
+// Version:       1.0.0
+// License:       MIT
+// ==============================================================================
+// Usage:         go run main.go [options]
+// Notes:         Go package implementation
+// ==============================================================================
 // Command netconfig applies configuration commands to many network devices
 // over SSH, concurrently, with a dry-run mode, an explicit confirmation step,
 // optional pre-change backups and a full audit log. It is a single static

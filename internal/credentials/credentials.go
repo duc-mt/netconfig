@@ -1,3 +1,13 @@
+// ==============================================================================
+// Package main implements Implementation and logic for credentials..
+// Author:        Mai Tan Duc <ducmai.network@gmail.com>
+// Created:       2026-10-10
+// Version:       1.0.0
+// License:       MIT
+// ==============================================================================
+// Usage:         go run credentials.go [options]
+// Notes:         Go package implementation
+// ==============================================================================
 // Package credentials resolves SSH credentials per credential group.
 //
 // Sources, in priority order:

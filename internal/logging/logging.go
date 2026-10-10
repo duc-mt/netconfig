@@ -1,3 +1,13 @@
+// ==============================================================================
+// Package main implements Implementation and logic for logging..
+// Author:        Mai Tan Duc <ducmai.network@gmail.com>
+// Created:       2026-10-10
+// Version:       1.0.0
+// License:       MIT
+// ==============================================================================
+// Usage:         go run logging.go [options]
+// Notes:         Go package implementation
+// ==============================================================================
 // Package logging provides the audit trail: a coloured console stream (stderr)
 // plus a timestamped log file with every command sent and every device
 // response, per device. Registered secrets (login passwords) are masked in

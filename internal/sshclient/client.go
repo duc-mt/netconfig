@@ -1,3 +1,13 @@
+// ==============================================================================
+// Package main implements Implementation and logic for client..
+// Author:        Mai Tan Duc <ducmai.network@gmail.com>
+// Created:       2026-10-10
+// Version:       1.0.0
+// License:       MIT
+// ==============================================================================
+// Usage:         go run client.go [options]
+// Notes:         Go package implementation
+// ==============================================================================
 // Package sshclient opens an interactive CLI session on a network device over
 // SSH: TCP + handshake with timeouts, host key verification, password and
 // keyboard-interactive authentication, a PTY shell, and an expect-style loop

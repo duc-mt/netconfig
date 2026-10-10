@@ -1,3 +1,13 @@
+// ==============================================================================
+// Package main implements Implementation and logic for inventory_test..
+// Author:        Mai Tan Duc <ducmai.network@gmail.com>
+// Created:       2026-10-10
+// Version:       1.0.0
+// License:       MIT
+// ==============================================================================
+// Usage:         go run inventory_test.go [options]
+// Notes:         Go package implementation
+// ==============================================================================
 package inventory
 
 import (

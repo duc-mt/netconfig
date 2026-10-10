@@ -1,3 +1,13 @@
+// ==============================================================================
+// Package main implements Implementation and logic for sshclient_test..
+// Author:        Mai Tan Duc <ducmai.network@gmail.com>
+// Created:       2026-10-10
+// Version:       1.0.0
+// License:       MIT
+// ==============================================================================
+// Usage:         go run sshclient_test.go [options]
+// Notes:         Go package implementation
+// ==============================================================================
 package sshclient
 
 import (
