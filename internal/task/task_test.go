@@ -721,6 +721,131 @@ func TestRollbackOutcomeRecorded(t *testing.T) {
 	})
 }
 
+// ---- show-diff ----------------------------------------------------------------
+
+// countingConfig returns a respond function that answers the backup
+// command with "before" on its first call and "after" on every call after
+// that -- simulating the pre-change backup, then the post-change re-read
+// that -show-diff performs once the change has succeeded.
+func countingConfig(t *testing.T, before, after string) func(host, line string) (string, error) {
+	t.Helper()
+	var mu sync.Mutex
+	calls := 0
+	return func(host, line string) (string, error) {
+		if line != "show running-config" {
+			return "", nil
+		}
+		mu.Lock()
+		calls++
+		n := calls
+		mu.Unlock()
+		if n == 1 {
+			return before, nil
+		}
+		return after, nil
+	}
+}
+
+func TestShowDiffRecordsAddedAndRemoved(t *testing.T) {
+	tr := newFakeTransport()
+	tr.respond = countingConfig(t,
+		"hostname old\ninterface eth0\n no shutdown\n",
+		"hostname new\ninterface eth0\n no shutdown\nntp server 1.1.1.1\n",
+	)
+	r := newRunner(t, tr, Options{Backup: true, BackupDir: t.TempDir(), ShowDiff: true})
+	res := r.Run(context.Background(), mkJobs(t, "cisco", []string{"hostname new", "ntp server 1.1.1.1"}, "sw1"))
+
+	if res[0].Status != StatusSucceeded {
+		t.Fatalf("result = %+v", res[0])
+	}
+	if res[0].DiffAdded != 2 || res[0].DiffRemoved != 1 {
+		t.Errorf("DiffAdded/DiffRemoved = %d/%d, want 2/1", res[0].DiffAdded, res[0].DiffRemoved)
+	}
+}
+
+func TestShowDiffWritesDiffFile(t *testing.T) {
+	tr := newFakeTransport()
+	tr.respond = countingConfig(t, "!\nhostname old\n", "!\nhostname new\n")
+	outDir := t.TempDir()
+	r := newRunner(t, tr, Options{Backup: true, BackupDir: t.TempDir(), ShowDiff: true, OutputDir: outDir})
+	res := r.Run(context.Background(), mkJobs(t, "cisco", []string{"hostname new"}, "sw1"))
+
+	if res[0].Status != StatusSucceeded {
+		t.Fatalf("result = %+v", res[0])
+	}
+	data, err := os.ReadFile(filepath.Join(outDir, "sw1.diff"))
+	if err != nil {
+		t.Fatalf("reading diff file: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "-hostname old") || !strings.Contains(text, "+hostname new") {
+		t.Errorf("diff file content = %q", text)
+	}
+}
+
+func TestShowDiffNoChangeWritesNothing(t *testing.T) {
+	tr := newFakeTransport()
+	tr.respond = countingConfig(t, "!\nhostname same\n", "!\nhostname same\n")
+	outDir := t.TempDir()
+	r := newRunner(t, tr, Options{Backup: true, BackupDir: t.TempDir(), ShowDiff: true, OutputDir: outDir})
+	res := r.Run(context.Background(), mkJobs(t, "cisco", []string{"ntp server 1.1.1.1"}, "sw1"))
+
+	if res[0].Status != StatusSucceeded {
+		t.Fatalf("result = %+v", res[0])
+	}
+	if res[0].DiffAdded != 0 || res[0].DiffRemoved != 0 {
+		t.Errorf("DiffAdded/DiffRemoved = %d/%d, want 0/0 for an unchanged configuration", res[0].DiffAdded, res[0].DiffRemoved)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "sw1.diff")); !os.IsNotExist(err) {
+		t.Errorf("no .diff file should be written when nothing changed (err=%v)", err)
+	}
+}
+
+func TestShowDiffFailureToReadAfterIsNonFatal(t *testing.T) {
+	tr := newFakeTransport()
+	calls := 0
+	var mu sync.Mutex
+	tr.respond = func(host, line string) (string, error) {
+		if line != "show running-config" {
+			return "", nil
+		}
+		mu.Lock()
+		calls++
+		n := calls
+		mu.Unlock()
+		if n == 1 {
+			return "!\nhostname old\n", nil // the pre-change backup
+		}
+		return "", errors.New("connection reset by peer") // the post-change re-read, for the diff
+	}
+	r := newRunner(t, tr, Options{Backup: true, BackupDir: t.TempDir(), ShowDiff: true})
+	res := r.Run(context.Background(), mkJobs(t, "cisco", []string{"hostname new"}, "sw1"))
+
+	if res[0].Status != StatusSucceeded {
+		t.Errorf("a diff read failure must not fail an otherwise-successful change: %+v", res[0])
+	}
+	if res[0].DiffAdded != 0 || res[0].DiffRemoved != 0 {
+		t.Errorf("DiffAdded/DiffRemoved should stay 0 when the post-change read fails, got %d/%d", res[0].DiffAdded, res[0].DiffRemoved)
+	}
+}
+
+func TestShowDiffSkippedWithoutBackup(t *testing.T) {
+	tr := newFakeTransport()
+	tr.respond = countingConfig(t, "!\nhostname old\n", "!\nhostname new\n")
+	// ShowDiff without Backup: main.go rejects this combination before a
+	// Runner is ever built, but the runner itself must also be safe against
+	// it (defence in depth) -- no BackupPath means nothing to diff against.
+	r := newRunner(t, tr, Options{ShowDiff: true})
+	res := r.Run(context.Background(), mkJobs(t, "cisco", []string{"hostname new"}, "sw1"))
+
+	if res[0].Status != StatusSucceeded {
+		t.Fatalf("result = %+v", res[0])
+	}
+	if res[0].DiffAdded != 0 || res[0].DiffRemoved != 0 {
+		t.Errorf("DiffAdded/DiffRemoved = %d/%d, want 0/0 without -backup", res[0].DiffAdded, res[0].DiffRemoved)
+	}
+}
+
 // ---- result table rendering --------------------------------------------------
 
 func TestRenderShowsFailedFirst(t *testing.T) {
@@ -777,6 +902,29 @@ func TestRenderHidesBackupColumnWhenUnused(t *testing.T) {
 	out := Summarize(results).Render(RenderOptions{})
 	if strings.Contains(out, "BACKUP") {
 		t.Errorf("BACKUP column should be hidden when no result used -backup:\n%s", out)
+	}
+}
+
+func TestRenderDiffColumn(t *testing.T) {
+	results := []Result{
+		{Device: inventory.Device{Hostname: "sw1", Vendor: "cisco"}, Status: StatusSucceeded, DiffAdded: 3, DiffRemoved: 1},
+		{Device: inventory.Device{Hostname: "sw2", Vendor: "cisco"}, Status: StatusSucceeded}, // no diff recorded for this one
+	}
+	out := Summarize(results).Render(RenderOptions{})
+	for _, want := range []string{"DIFF", "+3/-1"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderHidesDiffColumnWhenUnused(t *testing.T) {
+	results := []Result{
+		{Device: inventory.Device{Hostname: "sw1", Vendor: "cisco"}, Status: StatusSucceeded, CommandsApplied: 1, CommandsTotal: 1},
+	}
+	out := Summarize(results).Render(RenderOptions{})
+	if strings.Contains(out, "DIFF") {
+		t.Errorf("DIFF column should be hidden when no result used -show-diff:\n%s", out)
 	}
 }
 
@@ -842,9 +990,9 @@ func TestWriteCSVReport(t *testing.T) {
 	}
 	text := string(data)
 	for _, want := range []string{
-		"hostname,address,vendor,status,category,detail,duration_ms,commands_applied,commands_total,backup_path,rollback,output_file",
-		"sw1,10.0.0.1,cisco,SUCCEEDED,,,2000,3,3,,,",
-		"sw2,10.0.0.2,junos,FAILED,AUTH_FAILED,authentication failed,0,0,2,,,",
+		"hostname,address,vendor,status,category,detail,duration_ms,commands_applied,commands_total,backup_path,rollback,diff_added,diff_removed,output_file",
+		"sw1,10.0.0.1,cisco,SUCCEEDED,,,2000,3,3,,,0,0,",
+		"sw2,10.0.0.2,junos,FAILED,AUTH_FAILED,authentication failed,0,0,2,,,0,0,",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("CSV report missing %q in:\n%s", want, text)

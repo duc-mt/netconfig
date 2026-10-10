@@ -44,6 +44,8 @@ var levelColors = [...]string{"\x1b[0m", "\x1b[90m", "\x1b[32m", "\x1b[33m", "\x
 const (
 	colorReset   = "\x1b[0m"
 	colorHost    = "\x1b[36m"
+	colorAdd     = "\x1b[32m" // DiffBlock: a "+" (addition) line, coloured like `git diff`
+	colorDel     = "\x1b[31m" // DiffBlock: a "-" (removal) line
 	fileTimeFmt  = "2006-01-02T15:04:05.000Z07:00"
 	redactedMask = "********"
 	minSecretLen = 4 // shorter secrets would mangle ordinary text when masked
@@ -161,6 +163,39 @@ func (l *Logger) Block(level Level, host, prefix, text string) {
 	l.logLines(level, host, lines)
 }
 
+// DiffBlock is Block for unified-diff-style text (a vendor's own "show |
+// compare" / session-diff output, or netconfig's own before/after
+// configuration diff): each line is prefixed like Block, and on a colour
+// console a line starting with "+" is shown in green and one starting
+// with "-" in red -- an added or removed configuration line stands out
+// the way it would in `git diff`. The colour is decided from each line's
+// own leading character before prefix is added, so prefix itself (e.g.
+// "  ") never hides the marker from the detector. The log file always
+// gets plain, uncoloured text, same as every other log method.
+func (l *Logger) DiffBlock(level Level, host, prefix, text string) {
+	raw := splitLines(text)
+	lines := make([]string, len(raw))
+	colors := make([]string, len(raw))
+	for i, r := range raw {
+		lines[i] = prefix + r
+		colors[i] = diffLineColor(r)
+	}
+	l.writeLines(level, host, lines, colors)
+}
+
+// diffLineColor returns the ANSI colour for one raw (not yet prefixed)
+// diff line, or "" for a context/header line that shouldn't be coloured.
+func diffLineColor(line string) string {
+	switch {
+	case strings.HasPrefix(line, "+"):
+		return colorAdd
+	case strings.HasPrefix(line, "-"):
+		return colorDel
+	default:
+		return ""
+	}
+}
+
 // Raw writes preformatted text (the end-of-run summary) to the console and,
 // separately, to the file; the two may differ (colour codes).
 func (l *Logger) Raw(consoleText, fileText string) {
@@ -174,7 +209,19 @@ func (l *Logger) Raw(consoleText, fileText string) {
 	}
 }
 
+// logLines is writeLines with no per-line colour override: every log
+// method except DiffBlock goes through here, so their console rendering
+// is unchanged from before DiffBlock existed.
 func (l *Logger) logLines(level Level, host string, lines []string) {
+	l.writeLines(level, host, lines, nil)
+}
+
+// writeLines is the shared implementation behind logLines and DiffBlock.
+// colors, if non-nil, gives a per-line ANSI override for the console
+// (colors[i] for lines[i]; empty means "no override, colour by level as
+// usual"); colors may be shorter than lines or nil, since most callers
+// (logLines) have no per-line colour at all.
+func (l *Logger) writeLines(level Level, host string, lines []string, colors []string) {
 	if len(lines) == 0 {
 		lines = []string{""}
 	}
@@ -183,7 +230,7 @@ func (l *Logger) logLines(level Level, host string, lines []string) {
 
 	now := l.now()
 	showConsole := l.console != nil && (level >= LevelInfo || l.verbose)
-	for _, line := range lines {
+	for i, line := range lines {
 		line = l.maskLocked(line)
 		if l.file != nil {
 			tag := ""
@@ -193,12 +240,19 @@ func (l *Logger) logLines(level Level, host string, lines []string) {
 			fmt.Fprintf(l.file, "%s %-5s %s%s\n", now.Format(fileTimeFmt), level, tag, line)
 		}
 		if showConsole {
-			l.writeConsoleLocked(now, level, host, line)
+			lineColor := ""
+			if i < len(colors) {
+				lineColor = colors[i]
+			}
+			l.writeConsoleLocked(now, level, host, line, lineColor)
 		}
 	}
 }
 
-func (l *Logger) writeConsoleLocked(now time.Time, level Level, host, line string) {
+// writeConsoleLocked writes one console line. lineColor, when non-empty,
+// overrides the line's own text colour (used by DiffBlock for +/- lines);
+// the level tag itself is always coloured by level, as before.
+func (l *Logger) writeConsoleLocked(now time.Time, level Level, host, line, lineColor string) {
 	ts := now.Format("15:04:05")
 	if !l.color {
 		tag := ""
@@ -212,7 +266,11 @@ func (l *Logger) writeConsoleLocked(now time.Time, level Level, host, line strin
 	if host != "" {
 		tag = colorHost + "[" + host + "]" + colorReset + " "
 	}
-	fmt.Fprintf(l.console, "%s %s%-5s%s %s%s\n", ts, levelColors[level], level, colorReset, tag, line)
+	content := line
+	if lineColor != "" {
+		content = lineColor + line + colorReset
+	}
+	fmt.Fprintf(l.console, "%s %s%-5s%s %s%s\n", ts, levelColors[level], level, colorReset, tag, content)
 }
 
 func (l *Logger) maskLocked(s string) string {

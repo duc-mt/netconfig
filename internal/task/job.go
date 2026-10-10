@@ -112,6 +112,13 @@ type Result struct {
 	// Rollback reports the outcome of an automatic post-failure rollback
 	// (-rollback-on-fail). It is RollbackNone unless one was attempted.
 	Rollback RollbackOutcome
+
+	// DiffAdded and DiffRemoved count the configuration lines added and
+	// removed by the change (see Options.ShowDiff in runner.go), comparing
+	// the pre-change backup against the post-change configuration. Both
+	// are 0 unless ShowDiff was used on a successful, non-dry-run change.
+	DiffAdded   int
+	DiffRemoved int
 }
 
 // RollbackOutcome is the outcome of an automatic rollback attempted after a

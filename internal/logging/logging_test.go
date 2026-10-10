@@ -144,6 +144,53 @@ func TestBlockPrefixesEveryLine(t *testing.T) {
 	}
 }
 
+func TestDiffBlockColorsAddAndRemoveLines(t *testing.T) {
+	var console bytes.Buffer
+	l, err := New(Options{Console: &console, Color: true, Now: fixedNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.DiffBlock(LevelInfo, "sw1", "  ", "+set system host-name new\n-set system host-name old\n[edit system]")
+
+	con := console.String()
+	if !strings.Contains(con, "\x1b[32m  +set system host-name new\x1b[0m") {
+		t.Errorf("expected the + line in green:\n%s", con)
+	}
+	if !strings.Contains(con, "\x1b[31m  -set system host-name old\x1b[0m") {
+		t.Errorf("expected the - line in red:\n%s", con)
+	}
+	if strings.Contains(con, "\x1b[32m  [edit system]") || strings.Contains(con, "\x1b[31m  [edit system]") {
+		t.Errorf("context line should not be coloured as an addition/removal:\n%s", con)
+	}
+}
+
+func TestDiffBlockPlainWithoutColor(t *testing.T) {
+	var console bytes.Buffer
+	l, err := New(Options{Console: &console, Now: fixedNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.DiffBlock(LevelInfo, "sw1", "  ", "+added\n-removed")
+	if strings.Contains(console.String(), "\x1b[") {
+		t.Errorf("DiffBlock must not emit ANSI codes when Color is false: %q", console.String())
+	}
+}
+
+func TestDiffBlockFileHasNoColor(t *testing.T) {
+	l, err := New(Options{Dir: t.TempDir(), Color: true, Now: fixedNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.DiffBlock(LevelInfo, "sw1", "  ", "+added\n-removed")
+	file := readLog(t, l)
+	if strings.Contains(file, "\x1b[") {
+		t.Errorf("log file must never contain ANSI codes, even when Color is true: %q", file)
+	}
+	if !strings.Contains(file, "+added") || !strings.Contains(file, "-removed") {
+		t.Errorf("log file missing diff lines: %q", file)
+	}
+}
+
 func TestConcurrentUseKeepsLinesIntact(t *testing.T) {
 	l, err := New(Options{Dir: t.TempDir(), Now: fixedNow})
 	if err != nil {

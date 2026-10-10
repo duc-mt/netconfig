@@ -99,6 +99,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		backup         = fs.Bool("backup", false, "save each device's running configuration before changing it")
 		backupDir      = fs.String("backup-dir", "backups", "directory for -backup snapshots")
 		rollbackOnFail = fs.Bool("rollback-on-fail", false, "restore pre-change backup if a device fails (requires -backup)")
+		showDiff       = fs.Bool("show-diff", false, "after a successful change, diff the post-change configuration against the pre-change backup (requires -backup)")
 		outputDir      = fs.String("output-dir", "", "write per-device command output to <dir>/<hostname>.txt")
 		jsonReport     = fs.String("json-report", "", "write a JSON run report to this file path")
 		csvReport      = fs.String("csv-report", "", "write a CSV run report to this file path")
@@ -149,6 +150,9 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 	if *rollbackOnFail && !*backup {
 		return fatal("-rollback-on-fail requires -backup")
+	}
+	if *showDiff && !*backup {
+		return fatal("-show-diff requires -backup")
 	}
 	policy, err := sshclient.ParsePolicy(*hostKeyPolicy)
 	if err != nil {
@@ -265,6 +269,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 			BackupDir:      *backupDir,
 			RollbackOnFail: *rollbackOnFail,
 			OutputDir:      *outputDir,
+			ShowDiff:       *showDiff,
 		},
 	}
 

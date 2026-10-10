@@ -144,13 +144,34 @@ func anyBackupActivity(results []Result) bool {
 	return false
 }
 
+// diffCell renders the DIFF column: how many configuration lines were
+// added/removed by the change (see Options.ShowDiff), e.g. "+3/-1". "-"
+// for a device with nothing to show (not used, or no textual difference).
+func diffCell(r Result) string {
+	if r.DiffAdded == 0 && r.DiffRemoved == 0 {
+		return "-"
+	}
+	return fmt.Sprintf("+%d/-%d", r.DiffAdded, r.DiffRemoved)
+}
+
+// anyDiffActivity reports whether any result recorded a diff, so the DIFF
+// column can be omitted entirely on a run that didn't use -show-diff.
+func anyDiffActivity(results []Result) bool {
+	for _, r := range results {
+		if r.DiffAdded != 0 || r.DiffRemoved != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // Render formats the summary as a table plus per-category breakdowns. Rows
 // are shown FAILED first, then SKIPPED, then SUCCEEDED (see displayOrder).
 //
 // When opts.Width is set and the table doesn't fit, less critical columns
-// -- VENDOR, TIME, ADDRESS, then BACKUP if present -- are dropped in that
-// order before the DETAIL column is truncated further to make up the rest.
-// With opts.Width <= 0 nothing is dropped or shrunk.
+// -- VENDOR, TIME, ADDRESS, then BACKUP and DIFF if present -- are dropped
+// in that order before the DETAIL column is truncated further to make up
+// the rest. With opts.Width <= 0 nothing is dropped or shrunk.
 func (s Summary) Render(opts RenderOptions) string {
 	var b strings.Builder
 
@@ -165,6 +186,7 @@ func (s Summary) Render(opts RenderOptions) string {
 
 	order := displayOrder(s.Results)
 	showBackup := anyBackupActivity(s.Results)
+	showDiff := anyDiffActivity(s.Results)
 	n := len(order)
 
 	type column struct {
@@ -179,6 +201,7 @@ func (s Summary) Render(opts RenderOptions) string {
 	statusCol := make([]string, n)
 	appliedCol := make([]string, n)
 	backupCol := make([]string, n)
+	diffCol := make([]string, n)
 	reasonCol := make([]string, n)
 	timeCol := make([]string, n)
 	detailCol := make([]string, n)
@@ -192,6 +215,7 @@ func (s Summary) Render(opts RenderOptions) string {
 		statusCol[i] = r.Status.String()
 		appliedCol[i] = appliedCell(r)
 		backupCol[i] = backupCell(r)
+		diffCol[i] = diffCell(r)
 		if r.Category != "" {
 			reasonCol[i] = string(r.Category)
 		} else {
@@ -210,6 +234,9 @@ func (s Summary) Render(opts RenderOptions) string {
 	}
 	if showBackup {
 		cols = append(cols, column{"BACKUP", backupCol})
+	}
+	if showDiff {
+		cols = append(cols, column{"DIFF", diffCol})
 	}
 	cols = append(cols,
 		column{"REASON", reasonCol},
@@ -257,7 +284,7 @@ func (s Summary) Render(opts RenderOptions) string {
 	if opts.Width > 0 {
 		// Drop least-critical columns first, in this priority order, until
 		// the table fits or there's nothing left to drop.
-		for _, header := range []string{"VENDOR", "TIME", "ADDRESS", "BACKUP"} {
+		for _, header := range []string{"VENDOR", "TIME", "ADDRESS", "BACKUP", "DIFF"} {
 			if totalWidth() <= opts.Width {
 				break
 			}
@@ -437,6 +464,8 @@ type JSONDeviceResult struct {
 	CommandsTotal   int    `json:"commands_total"`
 	BackupPath      string `json:"backup_path,omitempty"`
 	Rollback        string `json:"rollback,omitempty"`
+	DiffAdded       int    `json:"diff_added,omitempty"`
+	DiffRemoved     int    `json:"diff_removed,omitempty"`
 	OutputFile      string `json:"output_file,omitempty"`
 }
 
@@ -468,6 +497,8 @@ func WriteJSONReport(path string, results []Result, outputDir string) error {
 			CommandsTotal:   r.CommandsTotal,
 			BackupPath:      r.BackupPath,
 			Rollback:        r.Rollback.String(),
+			DiffAdded:       r.DiffAdded,
+			DiffRemoved:     r.DiffRemoved,
 		}
 		if outputDir != "" && r.Status == StatusSucceeded {
 			jr.OutputFile = outputDir + "/" + safeHostFilename(r.Device.Hostname) + ".txt"
@@ -497,7 +528,7 @@ func WriteJSONReport(path string, results []Result, outputDir string) error {
 var csvHeader = []string{
 	"hostname", "address", "vendor", "status", "category", "detail",
 	"duration_ms", "commands_applied", "commands_total", "backup_path",
-	"rollback", "output_file",
+	"rollback", "diff_added", "diff_removed", "output_file",
 }
 
 // WriteCSVReport writes the run results to a CSV file at path, with the
@@ -533,6 +564,8 @@ func WriteCSVReport(path string, results []Result, outputDir string) error {
 			strconv.Itoa(r.CommandsTotal),
 			r.BackupPath,
 			r.Rollback.String(),
+			strconv.Itoa(r.DiffAdded),
+			strconv.Itoa(r.DiffRemoved),
 			outputFile,
 		}
 		if err := w.Write(row); err != nil {

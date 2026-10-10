@@ -67,6 +67,7 @@ type Options struct {
 	BackupDir      string
 	RollbackOnFail bool   // restore from pre-change backup if a device fails (requires -backup)
 	OutputDir      string // write per-device command output to <OutputDir>/<hostname>.txt
+	ShowDiff       bool   // after a successful change, diff post-change config against the pre-change backup (requires -backup)
 }
 
 // Runner executes jobs.
@@ -266,7 +267,11 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 			}
 		}
 		if step.Kind == vendor.StepInspect && strings.TrimSpace(out) != "" {
-			r.Log.Block(logging.LevelInfo, host, "  | ", redactText(out))
+			// The device's own compare/diff command (Junos "show | compare",
+			// Arista "show session-config diffs"): highlight it the same
+			// way as the before/after diff below, since it's the same kind
+			// of content.
+			r.Log.DiffBlock(logging.LevelInfo, host, "  | ", redactText(out))
 		}
 		if err != nil {
 			res.CommandsApplied = applied
@@ -307,6 +312,14 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 		for _, st := range plan.Simulated {
 			r.Log.Infof(host, "  would run: %s", logging.RedactCommand(st.Line))
 		}
+	}
+
+	// Diff the post-change configuration against the pre-change backup.
+	// Only meaningful for a real, non-dry-run change to a device that was
+	// actually backed up; best-effort, so it can never turn an otherwise-
+	// successful change into a failed result (see reportDiff).
+	if r.Opts.ShowDiff && !r.Opts.OpMode && !r.Opts.DryRun && res.BackupPath != "" {
+		r.reportDiff(ctx, sess, job, res)
 	}
 
 	res.CommandsApplied = applied
@@ -416,6 +429,70 @@ func (r *Runner) backup(ctx context.Context, sess Session, job Job) (string, err
 	}
 	r.Log.Infof(host, "backup saved: %s (%d bytes)", dst, len(out))
 	return dst, nil
+}
+
+// reportDiff re-reads the device's configuration after a successful change
+// and diffs it against the pre-change backup at res.BackupPath, logging
+// the result the way `git diff` would (see Logger.DiffBlock) and recording
+// res.DiffAdded/DiffRemoved for the result table and JSON/CSV reports.
+//
+// This is best-effort and never fails the result: the change already
+// happened, so a problem reading or diffing the "after" state (a timeout,
+// a device that rejects the read-only command for some reason) is logged
+// as a warning and otherwise ignored, the same way a failed rollback
+// attempt doesn't retroactively succeed the device it's attached to.
+func (r *Runner) reportDiff(ctx context.Context, sess Session, job Job, res *Result) {
+	host := job.Device.Hostname
+	prof := job.Profile
+
+	before, err := os.ReadFile(res.BackupPath)
+	if err != nil {
+		r.Log.Warnf(host, "diff: could not read pre-change backup %s: %v", res.BackupPath, err)
+		return
+	}
+
+	after, err := sess.Send(ctx, prof.BackupCommand, r.Opts.CommandTimeout*r.slow())
+	if err != nil {
+		r.Log.Warnf(host, "diff: could not read post-change configuration: %v", err)
+		return
+	}
+	if bad, ok := prof.FindError(after); ok {
+		r.Log.Warnf(host, "diff: device rejected %q while reading the post-change configuration: %s", prof.BackupCommand, bad)
+		return
+	}
+	if !hasConfigMarkers(after) {
+		r.Log.Warnf(host, "diff: %q output after the change does not look like a configuration; skipping diff", prof.BackupCommand)
+		return
+	}
+
+	lines, added, removed, ok := diffConfig(string(before), after)
+	if !ok {
+		r.Log.Warnf(host, "diff: configuration too large to diff safely (over %d lines); skipped", maxDiffLines)
+		return
+	}
+	res.DiffAdded, res.DiffRemoved = added, removed
+	if len(lines) == 0 {
+		return // no textual difference -- e.g. a no-op change, or a backup command whose output doesn't reflect it
+	}
+
+	r.Log.DiffBlock(logging.LevelInfo, host, "  ", redactText(strings.Join(lines, "\n")))
+	if r.Opts.OutputDir != "" {
+		if err := r.writeDiff(host, lines); err != nil {
+			r.Log.Warnf(host, "diff: could not write diff file: %v", err)
+		}
+	}
+}
+
+// writeDiff saves the +/- diff lines for one device to
+// <OutputDir>/<hostname>.diff, alongside its command output file.
+func (r *Runner) writeDiff(host string, lines []string) error {
+	dir := r.Opts.OutputDir
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	name := unsafeFileChars.ReplaceAllString(host, "_") + ".diff"
+	dst := filepath.Join(dir, name)
+	return writeFileAtomic(dst, []byte(strings.Join(lines, "\n")+"\n"), 0o600)
 }
 
 var unsafeFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
