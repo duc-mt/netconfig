@@ -1,5 +1,14 @@
 @echo off
-REM Universal launcher for Windows: launches the 64-bit Windows binary.
+rem ==============================================================================
+rem Script Name:   run.bat
+rem Description:   Universal launcher for NetConfig on Windows (amd64 binary).
+rem Author:        Mai Tan Duc <ducmai.network@gmail.com>
+rem Created:       2026-10-10
+rem Version:       1.0.0
+rem License:       MIT
+rem ==============================================================================
+rem Usage:         run.bat
+rem ==============================================================================
 
 set BINARY="%~dp0bin\netconfig-windows-amd64.exe"
 if exist %BINARY% goto :run
