@@ -16,11 +16,12 @@ Supported platforms: Cisco IOS/IOS-XE, Juniper Junos, Huawei VRP, Fortinet Forti
 No matter what device or OS you are using (Linux, macOS, Windows, x86_64, ARM64), you don't need to remember binary names or build steps.
 
 ### Option 1: Universal Auto-Detect Script (Linux / macOS / Windows)
-Simply execute `./run.sh` (or `run.bat` on Windows). It automatically detects your host OS and CPU architecture and launches the correct pre-built binary:
+Simply execute `./run.sh` (or `run.bat` on Windows). It automatically detects your host OS and CPU architecture and launches the correct pre-built binary. If no command arguments are passed, it automatically defaults to `-commands commands.txt`:
 
 ```bash
 make init          # 1. Initialize .env, inventory.csv, and commands.txt
-./run.sh commands.txt # 2. Automatically launches the matching pre-built binary
+./run.sh           # 2. Automatically launches with -commands commands.txt
+./run.sh -dry-run  # 3. Dry-run mode (safe, validates on device)
 ```
 
 ### Option 2: Docker / Docker Compose
@@ -281,8 +282,22 @@ Console (stderr, coloured on a terminal, `-no-color` / `NO_COLOR` to disable) an
 (`>>`) and device responses (`<<`) per device, tagged `[hostname]`; the console shows them with
 `-verbose`. Backup contents are written to the backup files, not to the log.
 
-End-of-run table: host, address, vendor, status (SUCCEEDED / FAILED / SKIPPED), reason, time, detail,
-followed by counts and the hosts per reason.
+End-of-run table features modern rounded borders (`╭ ╮ ╰ ╯`), colored status badges, and right-aligned metrics:
+
+```text
+netconfig run summary (DRY-RUN: nothing was committed or saved)
+╭────────────────────┬──────────────────┬────────┬─────────────┬─────────┬────────┬──────┬─────────────────────────────────────────────────────────╮
+│ HOST               │ ADDRESS          │ VENDOR │ STATUS      │ APPLIED │ REASON │ TIME │ DETAIL                                                  │
+├────────────────────┼──────────────────┼────────┼─────────────┼─────────┼────────┼──────┼─────────────────────────────────────────────────────────┤
+│ NHG-TRANSIT-GW-01  │ 10.255.255.4:22  │ vyos   │ ✔ SUCCEEDED │     1/1 │ -      │ 2.8s │ dry-run: 1 command(s) validated on device, nothing kept │
+│ NHG-HO-GW-01       │ 10.255.255.6:22  │ vyos   │ ✔ SUCCEEDED │     1/1 │ -      │ 2.9s │ dry-run: 1 command(s) validated on device, nothing kept │
+╰────────────────────┴──────────────────┴────────┴─────────────┴─────────┴────────┴──────┴─────────────────────────────────────────────────────────╯
+
+  ✔ Succeeded: 2  │  ✖ Failed: 0  │  ⊘ Skipped: 0  │  (total 2)
+```
+
+Columns: host, address, vendor, status, applied commands, reason, time, detail, followed by counts and the hosts per failure reason.
+
 
 | Reason | Meaning |
 |---|---|
