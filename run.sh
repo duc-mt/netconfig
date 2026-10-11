@@ -58,4 +58,19 @@ if [ ! -f "$BINARY" ]; then
     fi
 fi
 
+HAS_CMD=0
+for arg in "$@"; do
+    case "$arg" in
+        -commands|-commands=*|-template|-template=*|-h|--help|-version)
+            HAS_CMD=1
+            ;;
+    esac
+done
+
+if [ "$HAS_CMD" -eq 0 ]; then
+    set -- "$@" -commands commands.txt
+fi
+
 exec "$BINARY" "$@"
+
+

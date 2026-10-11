@@ -190,8 +190,9 @@ func (s Summary) Render(opts RenderOptions) string {
 	n := len(order)
 
 	type column struct {
-		header string
-		cells  []string
+		header     string
+		cells      []string
+		alignRight bool
 	}
 
 	statusOf := make([]Status, n)
@@ -212,7 +213,7 @@ func (s Summary) Render(opts RenderOptions) string {
 		hostCol[i] = r.Device.Hostname
 		addressCol[i] = r.Device.Endpoint()
 		vendorCol[i] = r.Device.Vendor
-		statusCol[i] = r.Status.String()
+		statusCol[i] = statusBadge(r.Status)
 		appliedCol[i] = appliedCell(r)
 		backupCol[i] = backupCell(r)
 		diffCol[i] = diffCell(r)
@@ -226,22 +227,22 @@ func (s Summary) Render(opts RenderOptions) string {
 	}
 
 	cols := []column{
-		{"HOST", hostCol},
-		{"ADDRESS", addressCol},
-		{"VENDOR", vendorCol},
-		{"STATUS", statusCol},
-		{"APPLIED", appliedCol},
+		{"HOST", hostCol, false},
+		{"ADDRESS", addressCol, false},
+		{"VENDOR", vendorCol, false},
+		{"STATUS", statusCol, false},
+		{"APPLIED", appliedCol, true},
 	}
 	if showBackup {
-		cols = append(cols, column{"BACKUP", backupCol})
+		cols = append(cols, column{"BACKUP", backupCol, false})
 	}
 	if showDiff {
-		cols = append(cols, column{"DIFF", diffCol})
+		cols = append(cols, column{"DIFF", diffCol, true})
 	}
 	cols = append(cols,
-		column{"REASON", reasonCol},
-		column{"TIME", timeCol},
-		column{"DETAIL", detailCol},
+		column{"REASON", reasonCol, false},
+		column{"TIME", timeCol, true},
+		column{"DETAIL", detailCol, false},
 	)
 
 	widths := make([]int, len(cols))
@@ -275,8 +276,8 @@ func (s Summary) Render(opts RenderOptions) string {
 				count++
 			}
 		}
-		if count > 1 {
-			t += 2 * (count - 1) // two-space gutter between visible columns
+		if count > 0 {
+			t += 3*count + 1
 		}
 		return t
 	}
@@ -284,7 +285,7 @@ func (s Summary) Render(opts RenderOptions) string {
 	if opts.Width > 0 {
 		// Drop least-critical columns first, in this priority order, until
 		// the table fits or there's nothing left to drop.
-		for _, header := range []string{"VENDOR", "TIME", "ADDRESS", "BACKUP", "DIFF"} {
+		for _, header := range []string{"APPLIED", "VENDOR", "TIME", "ADDRESS", "BACKUP", "DIFF"} {
 			if totalWidth() <= opts.Width {
 				break
 			}
@@ -313,45 +314,64 @@ func (s Summary) Render(opts RenderOptions) string {
 		}
 	}
 
-	lastVisible := -1
-	for i := len(visible) - 1; i >= 0; i-- {
-		if visible[i] {
-			lastVisible = i
-			break
+	writeBorder := func(left, mid, right string) {
+		b.WriteString(left)
+		first := true
+		for i, v := range visible {
+			if !v {
+				continue
+			}
+			if !first {
+				b.WriteString(mid)
+			}
+			first = false
+			b.WriteString(strings.Repeat("─", widths[i]+2))
 		}
+		b.WriteString(right + "\n")
 	}
 
 	writeHeader := func() {
+		writeBorder("╭", "┬", "╮")
+		b.WriteString("│")
 		for i, c := range cols {
 			if !visible[i] {
 				continue
 			}
-			if i == lastVisible {
-				b.WriteString(c.header)
-				break
+			b.WriteString(" ")
+			pad := strings.Repeat(" ", widths[i]-utf8.RuneCountInString(c.header))
+			if c.alignRight {
+				b.WriteString(pad + c.header)
+			} else {
+				b.WriteString(c.header + pad)
 			}
-			b.WriteString(c.header + strings.Repeat(" ", widths[i]-utf8.RuneCountInString(c.header)))
-			b.WriteString("  ")
+			b.WriteString(" │")
 		}
 		b.WriteByte('\n')
+		writeBorder("├", "┼", "┤")
 	}
+
 	writeData := func(rowIdx int) {
 		st := statusOf[rowIdx]
+		b.WriteString("│")
 		for i, c := range cols {
 			if !visible[i] {
 				continue
 			}
 			cell := c.cells[rowIdx]
-			if i == lastVisible {
-				b.WriteString(cell)
-				break
+			b.WriteString(" ")
+			pad := strings.Repeat(" ", widths[i]-utf8.RuneCountInString(cell))
+			var content string
+			if c.alignRight {
+				content = pad + cell
+			} else {
+				content = cell + pad
 			}
-			padded := cell + strings.Repeat(" ", widths[i]-utf8.RuneCountInString(cell))
 			if opts.Color && c.header == "STATUS" {
-				padded = statusColor(st) + padded + ansiReset
+				b.WriteString(statusColor(st) + content + ansiReset)
+			} else {
+				b.WriteString(content)
 			}
-			b.WriteString(padded)
-			b.WriteString("  ")
+			b.WriteString(" │")
 		}
 		b.WriteByte('\n')
 	}
@@ -360,6 +380,9 @@ func (s Summary) Render(opts RenderOptions) string {
 	for i := 0; i < n; i++ {
 		writeData(i)
 	}
+	if n > 0 {
+		writeBorder("╰", "┴", "╯")
+	}
 
 	colorize := func(c, text string) string {
 		if !opts.Color {
@@ -367,10 +390,10 @@ func (s Summary) Render(opts RenderOptions) string {
 		}
 		return c + text + ansiReset
 	}
-	fmt.Fprintf(&b, "\n%s   %s   %s   (total %d)\n",
-		colorize(ansiGreen, fmt.Sprintf("Succeeded: %d", s.Succeeded)),
-		colorize(ansiRed, fmt.Sprintf("Failed: %d", s.Failed)),
-		colorize(ansiYellow, fmt.Sprintf("Skipped: %d", s.Skipped)),
+	fmt.Fprintf(&b, "\n  %s  │  %s  │  %s  │  (total %d)\n",
+		colorize(ansiGreen, fmt.Sprintf("✔ Succeeded: %d", s.Succeeded)),
+		colorize(ansiRed, fmt.Sprintf("✖ Failed: %d", s.Failed)),
+		colorize(ansiYellow, fmt.Sprintf("⊘ Skipped: %d", s.Skipped)),
 		len(s.Results))
 
 	s.writeCategories(&b, "Failure reasons", StatusFailed)
@@ -406,6 +429,18 @@ func (s Summary) writeCategories(b *strings.Builder, title string, status Status
 		}
 		fmt.Fprintf(b, "  %-20s %3d  %s%s\n", c, len(hosts), strings.Join(shown, ", "), more)
 	}
+}
+
+func statusBadge(s Status) string {
+	switch s {
+	case StatusSucceeded:
+		return "✔ SUCCEEDED"
+	case StatusFailed:
+		return "✖ FAILED"
+	case StatusSkipped:
+		return "⊘ SKIPPED"
+	}
+	return s.String()
 }
 
 func statusColor(s Status) string {
