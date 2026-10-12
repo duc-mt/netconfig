@@ -89,25 +89,7 @@ func Connect(ctx context.Context, cfg Config) (*Shell, error) {
 		cfg.Logf = func(string, ...any) {}
 	}
 
-	password := cfg.Password
-	cc := &ssh.ClientConfig{
-		User: cfg.Username,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(password),
-			// Many network OSes only offer keyboard-interactive for passwords.
-			ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
-				answers := make([]string, len(questions))
-				for i := range answers {
-					answers[i] = password
-				}
-				return answers, nil
-			}),
-		},
-		HostKeyCallback: cfg.HostKey,
-	}
-	if cfg.LegacyAlgorithms {
-		applyLegacy(cc)
-	}
+	cc := buildClientConfig(cfg.Username, cfg.Password, cfg.HostKey, cfg.LegacyAlgorithms)
 
 	dialer := net.Dialer{Timeout: cfg.ConnectTimeout}
 	conn, err := dialer.DialContext(ctx, "tcp", cfg.Address)
@@ -147,6 +129,113 @@ func Connect(ctx context.Context, cfg Config) (*Shell, error) {
 		return nil, err
 	}
 	return sh, nil
+}
+
+// ConnectJumpHost connects to a bastion / jump host.
+func ConnectJumpHost(ctx context.Context, address, username, password string, connectTimeout time.Duration, hostKey HostKeyCallback, legacy bool) (*ssh.Client, error) {
+	if hostKey == nil {
+		return nil, &Error{Kind: KindHostKey, Op: "connect jump", Err: errors.New("no host key verification configured for jump host")}
+	}
+	if connectTimeout <= 0 {
+		connectTimeout = 10 * time.Second
+	}
+	cc := buildClientConfig(username, password, hostKey, legacy)
+
+	dialer := net.Dialer{Timeout: connectTimeout}
+	conn, err := dialer.DialContext(ctx, "tcp", address)
+	if err != nil {
+		return nil, wrapDial(err)
+	}
+	if err := conn.SetDeadline(time.Now().Add(connectTimeout)); err != nil {
+		_ = conn.Close()
+		return nil, &Error{Kind: KindConnect, Op: "connect jump", Err: fmt.Errorf("set deadline: %w", err)}
+	}
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	sshConn, chans, reqs, err := ssh.NewClientConn(conn, address, cc)
+	stop()
+	if err != nil {
+		_ = conn.Close()
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("jump handshake: %w", ctx.Err())
+		}
+		return nil, classifyHandshake(err, username)
+	}
+	_ = conn.SetDeadline(time.Time{})
+	return ssh.NewClient(sshConn, chans, reqs), nil
+}
+
+// ConnectViaJump opens a shell on the target device tunneled through an existing jump host connection.
+func ConnectViaJump(ctx context.Context, jumpClient *ssh.Client, cfg Config) (*Shell, error) {
+	if cfg.Profile == nil {
+		return nil, &Error{Kind: KindSession, Op: "connect", Err: errors.New("no vendor profile")}
+	}
+	if cfg.HostKey == nil {
+		return nil, &Error{Kind: KindHostKey, Op: "connect", Err: errors.New("no host key verification configured")}
+	}
+	if cfg.ConnectTimeout <= 0 {
+		cfg.ConnectTimeout = 10 * time.Second
+	}
+	if cfg.LoginTimeout <= 0 {
+		cfg.LoginTimeout = 30 * time.Second
+	}
+	if cfg.Logf == nil {
+		cfg.Logf = func(string, ...any) {}
+	}
+
+	cc := buildClientConfig(cfg.Username, cfg.Password, cfg.HostKey, cfg.LegacyAlgorithms)
+
+	// Open a direct-tcpip tunnel through the jump host
+	tunnelConn, err := jumpClient.DialContext(ctx, "tcp", cfg.Address)
+	if err != nil {
+		return nil, wrapDial(fmt.Errorf("jump tunnel to %s: %w", cfg.Address, err))
+	}
+
+	// tunnelConn is an ssh channel net.Conn which may not support SetDeadline.
+	_ = tunnelConn.SetDeadline(time.Now().Add(cfg.ConnectTimeout))
+	stop := context.AfterFunc(ctx, func() { _ = tunnelConn.Close() })
+	sshConn, chans, reqs, err := ssh.NewClientConn(tunnelConn, cfg.Address, cc)
+	stop()
+	if err != nil {
+		_ = tunnelConn.Close()
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("handshake via jump: %w", ctx.Err())
+		}
+		return nil, classifyHandshake(err, cfg.Username)
+	}
+	_ = tunnelConn.SetDeadline(time.Time{})
+	client := ssh.NewClient(sshConn, chans, reqs)
+
+	sh, err := newShell(client, cfg)
+	if err != nil {
+		_ = client.Close()
+		return nil, err
+	}
+	if err := sh.login(ctx, cfg); err != nil {
+		_ = sh.Close()
+		return nil, err
+	}
+	return sh, nil
+}
+
+func buildClientConfig(username, password string, hk HostKeyCallback, legacy bool) *ssh.ClientConfig {
+	cc := &ssh.ClientConfig{
+		User: username,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(password),
+			ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
+				answers := make([]string, len(questions))
+				for i := range answers {
+					answers[i] = password
+				}
+				return answers, nil
+			}),
+		},
+		HostKeyCallback: hk,
+	}
+	if legacy {
+		applyLegacy(cc)
+	}
+	return cc
 }
 
 func newShell(client *ssh.Client, cfg Config) (*Shell, error) {

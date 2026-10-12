@@ -40,6 +40,7 @@ type Device struct {
 	Port     int
 	Vendor   string // as written in the CSV (trimmed, lower-cased); resolved by package vendor
 	Group    string // credential group
+	JumpHost string // optional jump host / bastion name or host[:port]
 	Line     int    // 1-based source line, for diagnostics
 }
 
@@ -97,8 +98,8 @@ func Parse(r io.Reader) ([]Device, error) {
 				continue // header row
 			}
 		}
-		if len(rec) < 4 || len(rec) > 5 {
-			errs = append(errs, fmt.Errorf("line %d: expected 4 or 5 fields (hostname,address,port,vendor[,credential_group]), got %d", line, len(rec)))
+		if len(rec) < 4 || len(rec) > 6 {
+			errs = append(errs, fmt.Errorf("line %d: expected 4 to 6 fields (hostname,address,port,vendor[,credential_group[,jump_host]]), got %d", line, len(rec)))
 			continue
 		}
 		for i := range rec {
@@ -113,8 +114,11 @@ func Parse(r io.Reader) ([]Device, error) {
 			Group:    DefaultGroup,
 			Line:     line,
 		}
-		if len(rec) == 5 && rec[4] != "" {
+		if len(rec) >= 5 && rec[4] != "" {
 			d.Group = rec[4]
+		}
+		if len(rec) >= 6 && rec[5] != "" {
+			d.JumpHost = rec[5]
 		}
 
 		var problems []string

@@ -15,6 +15,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -425,5 +426,231 @@ func TestClassifyHandshake(t *testing.T) {
 	err = classifyHandshake(errors.New("no common algorithm"), "admin")
 	if !strings.Contains(err.Error(), "-legacy-algorithms") {
 		t.Errorf("algorithm mismatch should hint at -legacy-algorithms: %v", err)
+	}
+}
+
+func startMockSSHServer(t *testing.T) (int, func()) {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generating host key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatalf("creating signer: %v", err)
+	}
+
+	serverConfig := &ssh.ServerConfig{
+		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+			if c.User() == "testuser" && string(pass) == "testpass" {
+				return nil, nil
+			}
+			return nil, errors.New("password rejected")
+		},
+	}
+	serverConfig.AddHostKey(signer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listening: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	done := make(chan struct{})
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				select {
+				case <-done:
+				default:
+				}
+				return
+			}
+			go func(c net.Conn) {
+				sConn, chans, reqs, err := ssh.NewServerConn(c, serverConfig)
+				if err != nil {
+					_ = c.Close()
+					return
+				}
+				defer sConn.Close()
+				go ssh.DiscardRequests(reqs)
+				for newChan := range chans {
+					if newChan.ChannelType() != "session" {
+						newChan.Reject(ssh.UnknownChannelType, "unknown channel type")
+						continue
+					}
+					ch, requests, err := newChan.Accept()
+					if err != nil {
+						continue
+					}
+					go func(channel ssh.Channel, in <-chan *ssh.Request) {
+						defer channel.Close()
+						for req := range in {
+							switch req.Type {
+							case "pty-req":
+								req.Reply(true, nil)
+							case "shell":
+								req.Reply(true, nil)
+								// Write prompt and respond to commands
+								_, _ = channel.Write([]byte("Router#"))
+								buf := make([]byte, 1024)
+								for {
+									n, err := channel.Read(buf)
+									if err != nil || n == 0 {
+										return
+									}
+									_, _ = channel.Write([]byte("\r\noutput\r\nRouter#"))
+								}
+							default:
+								req.Reply(false, nil)
+							}
+						}
+					}(ch, requests)
+				}
+			}(conn)
+		}
+	}()
+
+	return port, func() {
+		close(done)
+		_ = listener.Close()
+	}
+}
+
+func startMockSSHForwarder(t *testing.T, targetAddr string) (int, func()) {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generating host key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatalf("creating signer: %v", err)
+	}
+
+	serverConfig := &ssh.ServerConfig{
+		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+			if c.User() == "jumpuser" && string(pass) == "jumppass" {
+				return nil, nil
+			}
+			return nil, errors.New("password rejected")
+		},
+	}
+	serverConfig.AddHostKey(signer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listening: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	done := make(chan struct{})
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				select {
+				case <-done:
+				default:
+				}
+				return
+			}
+			go func(c net.Conn) {
+				sConn, chans, reqs, err := ssh.NewServerConn(c, serverConfig)
+				if err != nil {
+					_ = c.Close()
+					return
+				}
+				defer sConn.Close()
+				go ssh.DiscardRequests(reqs)
+				for newChan := range chans {
+					if newChan.ChannelType() != "direct-tcpip" {
+						newChan.Reject(ssh.UnknownChannelType, "unsupported")
+						continue
+					}
+					ch, _, err := newChan.Accept()
+					if err != nil {
+						continue
+					}
+					go func() {
+						defer ch.Close()
+						target, err := net.Dial("tcp", targetAddr)
+						if err != nil {
+							return
+						}
+						defer target.Close()
+						doneCh := make(chan struct{}, 2)
+						copyPipe := func(dst, src interface {
+							Read([]byte) (int, error)
+							Write([]byte) (int, error)
+						}) {
+							b := make([]byte, 16*1024)
+							for {
+								n, rerr := src.Read(b)
+								if n > 0 {
+									if _, werr := dst.Write(b[:n]); werr != nil {
+										break
+									}
+								}
+								if rerr != nil {
+									break
+								}
+							}
+							doneCh <- struct{}{}
+						}
+						go copyPipe(target, ch)
+						go copyPipe(ch, target)
+						<-doneCh
+					}()
+				}
+			}(conn)
+		}
+	}()
+
+	return port, func() {
+		close(done)
+		_ = listener.Close()
+	}
+}
+
+func TestConnectViaJump(t *testing.T) {
+	targetPort, targetCleanup := startMockSSHServer(t)
+	defer targetCleanup()
+
+	targetAddr := net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", targetPort))
+
+	bastionPort, bastionCleanup := startMockSSHForwarder(t, targetAddr)
+	defer bastionCleanup()
+
+	bastionAddr := net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", bastionPort))
+
+	jumpClient, err := ConnectJumpHost(context.Background(), bastionAddr, "jumpuser", "jumppass", 2*time.Second, ssh.InsecureIgnoreHostKey(), false)
+	if err != nil {
+		t.Fatalf("ConnectJumpHost failed: %v", err)
+	}
+	defer jumpClient.Close()
+
+	prof, _ := vendor.Lookup("cisco")
+	sh, err := ConnectViaJump(context.Background(), jumpClient, Config{
+		Address:        targetAddr,
+		Username:       "testuser",
+		Password:       "testpass",
+		Profile:        prof,
+		ConnectTimeout: 2 * time.Second,
+		LoginTimeout:   2 * time.Second,
+		HostKey:        ssh.InsecureIgnoreHostKey(),
+	})
+	if err != nil {
+		t.Fatalf("ConnectViaJump failed: %v", err)
+	}
+	defer sh.Close()
+
+	out, err := sh.Send(context.Background(), "show clock", 2*time.Second)
+	if err != nil {
+		t.Fatalf("sh.Send failed: %v", err)
+	}
+	if !strings.Contains(out, "output") {
+		t.Errorf("unexpected output: %q", out)
 	}
 }

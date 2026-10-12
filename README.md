@@ -331,6 +331,20 @@ Key new flags:
 | `-output-dir DIR` | `""` | Write per-device output to `<dir>/<hostname>.txt` |
 | `-json-report FILE` | `""` | Write a JSON run report to the given file path |
 | `-rollback-on-fail` | `false` | Re-apply pre-change backup on failure (requires `-backup`) |
+| `-jump` | `true` | Master toggle for bastion / jump host routing (`-jump=false` to bypass) |
+| `-jump-host` | `""` | Global default bastion `host[:port]` |
+| `-jump-user` | `""` | SSH username for global bastion (overrides `NETCONFIG_JUMP_USERNAME`) |
+| `-jump-password` | `""` | SSH password for global bastion (overrides `NETCONFIG_JUMP_PASSWORD`) |
+
+### Jump Host / Bastion Proxy (`-jump`, `-jump-host`)
+
+Route SSH connections through an SSH jump host (bastion) using direct-tcpip tunneling (equivalent to OpenSSH `ProxyJump` / `-J`). Supports a hybrid configuration:
+
+- **Global Bastion:** Pass via `-jump-host mgmt-gw:22` or configure `NETCONFIG_JUMP_HOST`, `NETCONFIG_JUMP_USERNAME`, `NETCONFIG_JUMP_PASSWORD` in `.env`.
+- **Per-Device Bastion:** Add an optional 6th column `jump_host` in `inventory.csv` (`hostname,address,port,vendor,credential_group,jump_host`). Specific named bastions resolve credentials via `NETCONFIG_JUMP_<NAME>_HOST`, `_USERNAME`, `_PASSWORD`.
+- **Master Kill-Switch:** Disable all jump routing on demand with `-jump=false`.
+- **Zero Configuration Impact:** When no jump host is configured, all devices connect directly with zero overhead or prompt.
+
 
 ## Layout
 

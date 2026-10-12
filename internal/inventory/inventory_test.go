@@ -16,9 +16,9 @@ import (
 )
 
 const sample = `# fleet
-hostname,address,port,vendor,credential_group
-sw1, 10.0.0.1, 22, Cisco, dc1
-sw2,10.0.0.2,,junos,
+hostname,address,port,vendor,credential_group,jump_host
+sw1, 10.0.0.1, 22, Cisco, dc1, bastion-dc
+sw2,10.0.0.2,,junos,,
 rtr3,2001:db8::1,830,Huawei,dc2
 `
 
@@ -31,13 +31,13 @@ func TestParseValid(t *testing.T) {
 		t.Fatalf("got %d devices, want 3", len(devs))
 	}
 
-	if d := devs[0]; d.Hostname != "sw1" || d.Address != "10.0.0.1" || d.Port != 22 || d.Vendor != "cisco" || d.Group != "dc1" || d.Line != 3 {
+	if d := devs[0]; d.Hostname != "sw1" || d.Address != "10.0.0.1" || d.Port != 22 || d.Vendor != "cisco" || d.Group != "dc1" || d.JumpHost != "bastion-dc" || d.Line != 3 {
 		t.Errorf("sw1 parsed wrong: %+v", d)
 	}
-	if d := devs[1]; d.Port != DefaultPort || d.Group != DefaultGroup || d.Vendor != "junos" {
+	if d := devs[1]; d.Port != DefaultPort || d.Group != DefaultGroup || d.Vendor != "junos" || d.JumpHost != "" {
 		t.Errorf("sw2 defaults not applied: %+v", d)
 	}
-	if d := devs[2]; d.Port != 830 || d.Endpoint() != "[2001:db8::1]:830" {
+	if d := devs[2]; d.Port != 830 || d.Endpoint() != "[2001:db8::1]:830" || d.JumpHost != "" {
 		t.Errorf("rtr3 parsed wrong: %+v endpoint=%s", d, d.Endpoint())
 	}
 }
@@ -66,7 +66,7 @@ func TestParseReportsAllRowErrors(t *testing.T) {
 	}
 	for _, want := range []string{
 		"line 1: invalid port",
-		"line 2: expected 4 or 5 fields",
+		"line 2: expected 4 to 6 fields",
 		"line 3: hostname is empty",
 		"line 4: vendor is empty",
 		"line 6: duplicate hostname",

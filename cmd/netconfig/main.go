@@ -116,6 +116,12 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		verbose        = fs.Bool("verbose", false, "show command/response traces on the console (always in the log file)")
 		noColor        = fs.Bool("no-color", false, "disable coloured console output")
 		showVersion    = fs.Bool("version", false, "print the version and exit")
+
+		// Jump host / bastion
+		jumpEnabled  = fs.Bool("jump", true, "enable jump host / bastion routing (set false to connect all devices directly, overriding inventory and env config)")
+		jumpHost     = fs.String("jump-host", "", "global default bastion host[:port] for devices not reachable directly (e.g. mgmt-gw.example.com:22)")
+		jumpUser     = fs.String("jump-user", "", "SSH username for the global jump host (overrides NETCONFIG_JUMP_USERNAME)")
+		jumpPassword = fs.String("jump-password", "", "SSH password for the global jump host (overrides NETCONFIG_JUMP_PASSWORD)")
 	)
 
 	if err := fs.Parse(args); err != nil {
@@ -226,6 +232,16 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 
 	// ---- credentials -----------------------------------------------------
+	if *jumpUser != "" {
+		_ = os.Setenv("NETCONFIG_JUMP_USERNAME", *jumpUser)
+	}
+	if *jumpPassword != "" {
+		_ = os.Setenv("NETCONFIG_JUMP_PASSWORD", *jumpPassword)
+	}
+	if *jumpHost != "" {
+		_ = os.Setenv("NETCONFIG_JUMP_HOST", *jumpHost)
+	}
+
 	dot, err := credentials.LoadDotEnv(*envFile)
 	if err != nil {
 		return die("%v", err)
@@ -246,6 +262,40 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return c, err
 	})
 
+	// Resolve jump host credentials per job
+	globalJumpDef := resolver.JumpDefaults()
+	if *jumpEnabled {
+		if *jumpHost != "" {
+			log.Infof("", "global jump host configured: %s (per-device overrides via inventory jump_host column; disable with -jump=false)", *jumpHost)
+		} else if globalJumpDef.Host != "" {
+			log.Infof("", "global jump host configured via env: %s (per-device overrides via inventory jump_host column; disable with -jump=false)", globalJumpDef.Host)
+		}
+		for i := range jobs {
+			if jobs[i].Skip != "" {
+				continue
+			}
+			var jc credentials.JumpCredentials
+			if jobs[i].Device.JumpHost != "" {
+				jc = resolver.ForJumpHost(jobs[i].Device.JumpHost)
+				if jc.Host == "" {
+					// Treat inventory jump_host value directly as host[:port]
+					jc.Host = jobs[i].Device.JumpHost
+				}
+			} else if *jumpHost != "" {
+				jc = resolver.ForJumpHost("")
+				jc.Host = *jumpHost
+			} else if globalJumpDef.Host != "" {
+				jc = globalJumpDef
+			}
+			if jc.Password != "" {
+				log.AddSecret(jc.Password)
+			}
+			jobs[i].JumpCred = jc
+		}
+	} else {
+		log.Infof("", "jump host routing disabled via -jump=false -- all devices will be connected directly")
+	}
+
 	// ---- transport -------------------------------------------------------
 	hostKey, err := sshclient.NewHostKeyCallback(*knownHosts, policy)
 	if err != nil {
@@ -255,8 +305,14 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		log.Warnf("", "host key verification is DISABLED (-host-key-policy insecure)")
 	}
 
+	var pool *jumpPool
+	if *jumpEnabled {
+		pool = newJumpPool(hostKey, *legacy)
+		defer pool.closeAll()
+	}
+
 	runner := &task.Runner{
-		Transport: sshTransport{hostKey: hostKey, legacy: *legacy, autoConfirm: *autoConfirm},
+		Transport: sshTransport{hostKey: hostKey, legacy: *legacy, autoConfirm: *autoConfirm, pool: pool},
 		Log:       log,
 		Opts: task.Options{
 			Concurrency:    *concurrency,

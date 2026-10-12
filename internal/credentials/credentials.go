@@ -44,6 +44,18 @@ type Credential struct {
 	EnablePassword string // optional; falls back to Password where an enable secret is needed
 }
 
+// JumpCredentials holds connection details for a bastion / jump host.
+type JumpCredentials struct {
+	Host     string // host[:port]; empty disables jump
+	Username string
+	Password string
+}
+
+// String redacts the secrets so JumpCredentials can be logged safely.
+func (j JumpCredentials) String() string {
+	return fmt.Sprintf("JumpCredentials{host=%q, user=%q, password=<redacted>}", j.Host, j.Username)
+}
+
 // String redacts the secrets so a Credential can be logged by accident safely.
 func (c Credential) String() string {
 	return fmt.Sprintf("Credential{user=%q, password=<redacted>}", c.Username)
@@ -146,6 +158,77 @@ func (r *Resolver) resolveLocked(group string) (Credential, error) {
 			ErrNotFound, group, EnvKey(group, "USERNAME"), EnvKey(group, "PASSWORD"))
 	}
 	return c, nil
+}
+
+// JumpDefaults returns the global bastion / jump host connection details
+// loaded from NETCONFIG_JUMP_HOST / NETCONFIG_JUMP_USERNAME / NETCONFIG_JUMP_PASSWORD
+// (or their .env equivalents).
+func (r *Resolver) JumpDefaults() JumpCredentials {
+	host, _ := r.lookupJump("", "HOST")
+	u, _ := r.lookupJump("", "USERNAME")
+	p, _ := r.lookupJump("", "PASSWORD")
+	return JumpCredentials{Host: host, Username: u, Password: p}
+}
+
+// ForJumpHost resolves credentials for a named jump host.
+// It checks NETCONFIG_JUMP_<NAME>_HOST / USERNAME / PASSWORD first,
+// falling back to the global NETCONFIG_JUMP_* variables, and finally
+// to the global device username if jump username is unset.
+func (r *Resolver) ForJumpHost(name string) JumpCredentials {
+	cleanName := cleanGroupName(name)
+	host, _ := r.lookupJump(cleanName, "HOST")
+	u, _ := r.lookupJump(cleanName, "USERNAME")
+	p, _ := r.lookupJump(cleanName, "PASSWORD")
+
+	def := r.JumpDefaults()
+	if host == "" {
+		host = def.Host
+	}
+	if u == "" {
+		u = def.Username
+	}
+	if u == "" {
+		// Fallback to global device username
+		if devUser, ok := r.lookup("", "USERNAME"); ok {
+			u = devUser
+		}
+	}
+	if p == "" {
+		p = def.Password
+	}
+	return JumpCredentials{Host: host, Username: u, Password: p}
+}
+
+func (r *Resolver) lookupJump(cleanName, field string) (string, bool) {
+	var keys []string
+	if cleanName != "" {
+		keys = append(keys, "NETCONFIG_JUMP_"+cleanName+"_"+field)
+	}
+	keys = append(keys, "NETCONFIG_JUMP_"+field)
+
+	for _, key := range keys {
+		if v := r.DotEnv[key]; v != "" {
+			return v, true
+		}
+		if r.LookupEnv != nil {
+			if v, ok := r.LookupEnv(key); ok && v != "" {
+				return v, true
+			}
+		}
+	}
+	return "", false
+}
+
+func cleanGroupName(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(s) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 // DotEnv is a parsed .env file.

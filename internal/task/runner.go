@@ -35,8 +35,9 @@ type Target struct {
 	Device         inventory.Device
 	Profile        *vendor.Profile
 	Cred           credentials.Credential
-	ConnectTimeout time.Duration // TCP + SSH handshake
-	LoginTimeout   time.Duration // first prompt, enable, pager setup
+	JumpCred       credentials.JumpCredentials // optional jump host credentials
+	ConnectTimeout time.Duration               // TCP + SSH handshake
+	LoginTimeout   time.Duration               // first prompt, enable, pager setup
 	Logf           func(format string, args ...any)
 }
 
@@ -203,6 +204,7 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 		Device:         job.Device,
 		Profile:        prof,
 		Cred:           job.Cred,
+		JumpCred:       job.JumpCred,
 		ConnectTimeout: r.Opts.ConnectTimeout,
 		LoginTimeout:   r.Opts.CommandTimeout,
 		Logf:           func(format string, args ...any) { r.Log.Tracef(host, format, args...) },
@@ -521,6 +523,7 @@ func (r *Runner) rollback(ctx context.Context, _ Session, job Job, backupPath st
 		Device:         job.Device,
 		Profile:        prof,
 		Cred:           job.Cred,
+		JumpCred:       job.JumpCred,
 		ConnectTimeout: r.Opts.ConnectTimeout,
 		LoginTimeout:   r.Opts.CommandTimeout,
 		Logf:           func(format string, args ...any) { r.Log.Tracef(host, "(rollback) "+format, args...) },

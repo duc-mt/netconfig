@@ -302,3 +302,33 @@ func TestLoadDotEnv(t *testing.T) {
 		}
 	}
 }
+
+func TestJumpCredentialsResolution(t *testing.T) {
+	r := &Resolver{
+		DotEnv: map[string]string{
+			"NETCONFIG_USERNAME":                  "global-dev-user",
+			"NETCONFIG_JUMP_HOST":                 "global-bastion:22",
+			"NETCONFIG_JUMP_USERNAME":             "global-jump-user",
+			"NETCONFIG_JUMP_PASSWORD":             "global-jump-pass",
+			"NETCONFIG_JUMP_BASTION_DC_HOST":     "dc-bastion:2222",
+			"NETCONFIG_JUMP_BASTION_DC_USERNAME": "dc-jump-user",
+			"NETCONFIG_JUMP_BASTION_DC_PASSWORD": "dc-jump-pass",
+		},
+	}
+
+	def := r.JumpDefaults()
+	if def.Host != "global-bastion:22" || def.Username != "global-jump-user" || def.Password != "global-jump-pass" {
+		t.Errorf("JumpDefaults wrong: %+v", def)
+	}
+
+	dcJump := r.ForJumpHost("bastion-dc")
+	if dcJump.Host != "dc-bastion:2222" || dcJump.Username != "dc-jump-user" || dcJump.Password != "dc-jump-pass" {
+		t.Errorf("ForJumpHost(bastion-dc) wrong: %+v", dcJump)
+	}
+
+	// Unknown jump host name should fall back to global jump defaults
+	otherJump := r.ForJumpHost("other-bastion")
+	if otherJump.Host != "global-bastion:22" || otherJump.Username != "global-jump-user" || otherJump.Password != "global-jump-pass" {
+		t.Errorf("ForJumpHost(other-bastion) fallback wrong: %+v", otherJump)
+	}
+}

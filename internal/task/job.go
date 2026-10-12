@@ -86,6 +86,7 @@ type Job struct {
 	Profile  *vendor.Profile
 	Commands []string
 	Cred     credentials.Credential
+	JumpCred credentials.JumpCredentials // optional jump host credentials
 
 	// Skip, when set, means the device is not processed (and why).
 	Skip       Category
