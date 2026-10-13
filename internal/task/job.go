@@ -46,6 +46,8 @@ const (
 	CatSessionError  Category = "SESSION_ERROR"  // connection dropped or unexpected CLI behaviour
 	CatPanic         Category = "PANIC"          // internal error, isolated to this device
 	CatCancelled     Category = "CANCELLED"      // interrupted by the operator while running
+	CatConfirmFailed Category = "CONFIRM_FAILED" // commit-confirm safety net could not be armed or confirmed
+	CatVerifyFailed  Category = "VERIFY_FAILED"  // post-change health check failed (shown as VERIFY FAILED)
 )
 
 // Skip categories (Status == StatusSkipped): the device was never touched.
@@ -120,6 +122,16 @@ type Result struct {
 	// are 0 unless ShowDiff was used on a successful, non-dry-run change.
 	DiffAdded   int
 	DiffRemoved int
+
+	// SafetyRating is the platform's rollback safety class ("SAFE",
+	// "REBOOT REQUIRED", "UNSAFE / OOB REQUIRED"); empty for devices that
+	// were not rated (skipped, or operational-mode runs).
+	SafetyRating string
+
+	// VerifyPassed and VerifyTotal count post-change health checks (see
+	// Options.Verify). Both are 0 when no check applied to the device.
+	VerifyPassed int
+	VerifyTotal  int
 }
 
 // RollbackOutcome is the outcome of an automatic rollback attempted after a

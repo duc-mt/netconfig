@@ -95,10 +95,16 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		opMode         = fs.Bool("op", false, "operational mode: run commands in the operational shell without configure/commit/save")
 		dryRun         = fs.Bool("dry-run", false, "validate connectivity and simulate; never commits or saves anything")
 		yes            = fs.Bool("yes", false, "skip the [y/N] confirmation prompt")
-		force          = fs.Bool("force", false, "same as -yes")
+		force          = fs.Bool("force", false, "same as -yes; also accepts CRITICAL lockout risks that -strict-safety would block")
 		backup         = fs.Bool("backup", false, "save each device's running configuration before changing it")
 		backupDir      = fs.String("backup-dir", "backups", "directory for -backup snapshots")
 		rollbackOnFail = fs.Bool("rollback-on-fail", false, "restore pre-change backup if a device fails (requires -backup)")
+		strictSafety   = fs.Bool("strict-safety", true, "abort before connecting when the pre-flight lint finds a CRITICAL lockout risk (accept with -force) or a destructive command (accept with -allow-dangerous)")
+		allowDangerous = fs.Bool("allow-dangerous", false, "accept intentionally destructive commands (no router bgp, delete interfaces, default interface, clear ip bgp *, ...) that -strict-safety would block")
+		commitConfirm  = fs.Int("commit-confirm", 0, "arm an on-box deadman timer of `minutes`: the change reverts by itself unless confirmed after verification (0 = off)")
+		allowRebootRB  = fs.Bool("allow-reboot-rollback", false, "permit 'reload in <min>' as the deadman on platforms without hitless rollback (classic IOS)")
+		verifyFile     = fs.String("verify-file", "", "post-change health checks to run on each device (see README); '!@verify' blocks inside the commands file or template are honoured too")
+		planMode       = fs.Bool("plan", false, "preview risk, impact and rollback safety per device, then ask before proceeding (combine with -dry-run)")
 		showDiff       = fs.Bool("show-diff", false, "after a successful change, diff the post-change configuration against the pre-change backup (requires -backup)")
 		outputDir      = fs.String("output-dir", "", "write per-device command output to <dir>/<hostname>.txt")
 		jsonReport     = fs.String("json-report", "", "write a JSON run report to this file path")
@@ -160,6 +166,15 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	if *showDiff && !*backup {
 		return fatal("-show-diff requires -backup")
 	}
+	if *commitConfirm < 0 {
+		return fatal("-commit-confirm must not be negative")
+	}
+	if *commitConfirm > 0 && *opMode {
+		return fatal("-commit-confirm protects configuration changes and cannot be used with -op")
+	}
+	if *verifyFile != "" && *opMode {
+		return fatal("-verify-file checks the result of a change and cannot be used with -op")
+	}
 	policy, err := sshclient.ParsePolicy(*hostKeyPolicy)
 	if err != nil {
 		return fatal("%v", err)
@@ -207,8 +222,61 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return die("%v", err)
 	}
 
+	// Post-change health checks: inline "!@verify" blocks from the commands
+	// file / template, plus the -verify-file.
+	inlineFrom := *cmdsPath
+	if inlineFrom == "" {
+		inlineFrom = *tmplPath
+	}
+	verifyRules, err := task.ReadInlineVerify(inlineFrom)
+	if err != nil {
+		return die("%v", err)
+	}
+	if *verifyFile != "" {
+		fileRules, err := task.ReadVerifyFile(*verifyFile)
+		if err != nil {
+			return die("%v", err)
+		}
+		verifyRules = append(verifyRules, fileRules...)
+	}
+	if *opMode {
+		verifyRules = nil
+	}
+	if err := task.CheckConfirmWindow(verifyRules, *commitConfirm); err != nil {
+		return die("%v", err)
+	}
+	if *allowRebootRB && *commitConfirm == 0 {
+		log.Warnf("", "-allow-reboot-rollback has no effect without -commit-confirm")
+	}
+
 	log.Infof("", "%d device(s) selected; concurrency=%d connect-timeout=%s command-timeout=%s dry-run=%t op=%t backup=%t",
 		len(jobs), *concurrency, *connectTO, *commandTO, *dryRun, *opMode, *backup)
+
+	// ---- pre-flight safety lint ------------------------------------------
+	// Static analysis only: no session is opened. A failure on one device
+	// degrades to a warning for that device and never stops the others.
+	hints := usernameHints(*envFile, jobs)
+	safety := task.SafetyPolicy{Strict: *strictSafety, Force: *force, AllowDangerous: *allowDangerous}
+	reports := make([]task.LintReport, len(jobs))
+	var blocked []string
+	for i, j := range jobs {
+		if j.Skip != "" {
+			continue
+		}
+		reports[i] = task.LintJob(j, hints[j.Device.Group], *opMode)
+		reports[i].Log(log, j.Device.Hostname)
+		if n := len(reports[i].Blocking(safety)); n > 0 {
+			blocked = append(blocked, fmt.Sprintf("%s (%d)", j.Device.Hostname, n))
+		}
+	}
+	if len(blocked) > 0 {
+		if !*dryRun {
+			return die("pre-flight safety check blocked the run before any device was contacted: %s; "+
+				"review the LINT messages above. -force accepts CRITICAL lockout risks, -allow-dangerous accepts "+
+				"destructive commands, -strict-safety=false downgrades both to warnings", strings.Join(blocked, ", "))
+		}
+		log.Warnf("", "dry-run: these findings would block a real run: %s", strings.Join(blocked, ", "))
+	}
 
 	// ---- confirmation ----------------------------------------------------
 	runnable := 0
@@ -219,11 +287,28 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 	// Op-mode runs are read-only; skip the destructive-change prompt.
 	needConfirm := !*dryRun && !*opMode && !*yes && !*force && runnable > 0
-	if needConfirm {
+	if *planMode {
+		rows := task.BuildPlanRows(jobs, reports)
+		ropts := task.PlanRenderOptions{DryRun: *dryRun, CommitConfirm: *commitConfirm}
+		plain := task.RenderPlan(rows, ropts)
+		ropts.Color = color
+		log.Raw("\n"+task.RenderPlan(rows, ropts), "\n"+plain)
+		printPlan(stderr, jobs, *backup, *backupDir, *opMode, *dryRun)
+		if runnable > 0 && !*yes && !*force {
+			if !credentials.IsTerminal(stdin) {
+				return die("-plan needs a terminal to ask for confirmation; pass -yes (or -force) to proceed unattended")
+			}
+			if !confirm(stdin, stderr, fmt.Sprintf("Proceed with applying changes to %d device(s)? [y/N]: ", runnable)) {
+				log.Warnf("", "aborted at the plan prompt; no device was changed")
+				return task.ExitFatal
+			}
+			log.Infof("", "operator confirmed the plan for %d device(s)", runnable)
+		}
+	} else if needConfirm {
 		if !credentials.IsTerminal(stdin) {
 			return die("refusing to change devices: stdin is not a terminal, so there is nobody to confirm; pass -yes (or -force) to run unattended, or use -dry-run")
 		}
-		printPlan(stderr, jobs, *backup, *backupDir)
+		printPlan(stderr, jobs, *backup, *backupDir, false, false)
 		if !confirm(stdin, stderr, fmt.Sprintf("Apply these changes to %d device(s)? [y/N]: ", runnable)) {
 			log.Warnf("", "aborted at the confirmation prompt; no device was changed")
 			return task.ExitFatal
@@ -326,6 +411,10 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 			RollbackOnFail: *rollbackOnFail,
 			OutputDir:      *outputDir,
 			ShowDiff:       *showDiff,
+
+			CommitConfirm:       *commitConfirm,
+			AllowRebootRollback: *allowRebootRB,
+			Verify:              verifyRules,
 		},
 	}
 
@@ -447,8 +536,26 @@ func confirm(in io.Reader, out io.Writer, prompt string) bool {
 	return ans == "y" || ans == "yes"
 }
 
+// usernameHints returns, per credential group, the login name configured in
+// the .env file or environment, without prompting. The pre-flight lint uses it
+// to recognise commands that remove or alter the account the run logs in with.
+func usernameHints(envFile string, jobs []task.Job) map[string]string {
+	vals := map[string]string{}
+	if dot, err := credentials.LoadDotEnv(envFile); err == nil && dot != nil {
+		vals = dot.Values
+	}
+	r := &credentials.Resolver{DotEnv: vals, LookupEnv: os.LookupEnv}
+	out := map[string]string{}
+	for _, j := range jobs {
+		if _, seen := out[j.Device.Group]; !seen {
+			out[j.Device.Group] = r.Username(j.Device.Group)
+		}
+	}
+	return out
+}
+
 // printPlan shows what is about to happen so the confirmation is informed.
-func printPlan(w io.Writer, jobs []task.Job, backup bool, backupDir string) {
+func printPlan(w io.Writer, jobs []task.Job, backup bool, backupDir string, opMode, dryRun bool) {
 	var active, skipped []task.Job
 	for _, j := range jobs {
 		if j.Skip != "" {
@@ -458,7 +565,14 @@ func printPlan(w io.Writer, jobs []task.Job, backup bool, backupDir string) {
 		}
 	}
 
-	fmt.Fprintf(w, "\n%d device(s) will be modified and their configuration saved/committed:\n", len(active))
+	switch {
+	case opMode:
+		fmt.Fprintf(w, "\n%d device(s) will receive operational commands (no configuration changes):\n", len(active))
+	case dryRun:
+		fmt.Fprintf(w, "\n%d device(s) will be validated (dry-run: nothing is committed or saved):\n", len(active))
+	default:
+		fmt.Fprintf(w, "\n%d device(s) will be modified and their configuration saved/committed:\n", len(active))
+	}
 	for _, j := range active {
 		fmt.Fprintf(w, "  %-24s %-26s %s\n", j.Device.Hostname, j.Device.Endpoint(), j.Profile.Display)
 	}

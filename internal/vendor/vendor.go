@@ -8,6 +8,7 @@
 package vendor
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -42,6 +43,9 @@ const (
 	StepValidate // device-side validation without persisting (commit check)
 	StepExit     // leave configuration mode / discard candidate
 	StepPersist  // commit / write memory / save
+	StepArm      // arm an on-box rollback safety net (commit-confirm); must succeed before the change is applied
+	StepVerify   // placeholder: the runner runs post-change health checks here (Line is a command prefix such as "run ")
+	StepConfirm  // confirm a timed commit once verification passed (cancels the deadman timer)
 )
 
 func (k StepKind) String() string {
@@ -62,6 +66,12 @@ func (k StepKind) String() string {
 		return "exit config"
 	case StepPersist:
 		return "persist"
+	case StepArm:
+		return "arm rollback"
+	case StepVerify:
+		return "verify"
+	case StepConfirm:
+		return "confirm"
 	}
 	return "unknown"
 }
@@ -72,7 +82,76 @@ type Step struct {
 	Line        string
 	Slow        bool // commit/save: may take much longer than a normal command
 	IgnoreError bool // best-effort (cleanup) - a device error here is not a failure
+	Timed       bool // a successful step starts the on-box deadman timer (commit confirmed, reload in, ...)
 }
+
+// ConfirmMode says which on-box deadman mechanism a plan uses.
+type ConfirmMode int
+
+// Deadman mechanisms a plan can use.
+const (
+	ConfirmNone   ConfirmMode = iota // no on-box safety net (client-side rollback only)
+	ConfirmNative                    // hitless platform timer (commit confirmed, session timers, revert timer)
+	ConfirmReload                    // timed reload (disruptive)
+)
+
+// RollbackSafety classifies what a platform can do when a change cuts the
+// management session. The zero value is the most hazardous class, so a
+// profile that was never classified is never presented as safer than it is.
+type RollbackSafety int
+
+// Rollback safety classes.
+const (
+	// RollbackClientOnly: no independent on-box watchdog. If connectivity or
+	// SSH is lost the change cannot be rolled back without out-of-band or
+	// serial console access.
+	RollbackClientOnly RollbackSafety = iota
+	// RollbackSafe: native, hitless, non-reboot auto-rollback on lost
+	// connectivity (Junos commit confirmed, VyOS commit-confirm, EOS session
+	// timers, IOS-XE revert timer).
+	RollbackSafe
+	// RollbackRebootOnly: the platform can revert on its own, but only through
+	// a disruptive reload (classic IOS "reload in <min>" / "reload cancel").
+	RollbackRebootOnly
+)
+
+// String is the long rating used in warnings and the run summary.
+func (s RollbackSafety) String() string {
+	switch s {
+	case RollbackSafe:
+		return "SAFE"
+	case RollbackRebootOnly:
+		return "REBOOT REQUIRED"
+	}
+	return "UNSAFE / OOB REQUIRED"
+}
+
+// Label is the short rating used in the --plan matrix.
+func (s RollbackSafety) Label() string {
+	switch s {
+	case RollbackSafe:
+		return "SAFE"
+	case RollbackRebootOnly:
+		return "REBOOT ONLY"
+	}
+	return "UNSAFE"
+}
+
+// Hazard explains the rating in one sentence.
+func (s RollbackSafety) Hazard() string {
+	switch s {
+	case RollbackSafe:
+		return "native hitless auto-rollback is available"
+	case RollbackRebootOnly:
+		return "auto-rollback needs a disruptive reload (requires -allow-reboot-rollback)"
+	}
+	return "no on-box watchdog: if connectivity is lost, rollback is impossible without OOB/console access"
+}
+
+// HazardClientOnly is the warning logged for RollbackClientOnly platforms when
+// -commit-confirm was requested.
+const HazardClientOnly = "Safe commit-confirm cannot be achieved: platform lacks non-reboot auto-rollback. " +
+	"If network isolation occurs, automated rollback will FAIL and OOB/console access will be required."
 
 // Plan is the ordered command sequence for one device.
 type Plan struct {
@@ -81,12 +160,20 @@ type Plan struct {
 	Simulated []Step // dry-run on vendors without a candidate config: what would have run (not sent)
 	Validates bool   // dry-run: the device itself validated the change, then discarded it
 	DryRun    bool
+
+	Confirm ConfirmMode // on-box deadman mechanism the Steps arm (ConfirmNone: none)
+	Window  int         // deadman timer in minutes (Confirm != ConfirmNone)
+	Abort   []Step      // optional: revert an armed change immediately instead of waiting for the timer
 }
 
 // PlanOptions controls BuildPlan.
 type PlanOptions struct {
 	DryRun bool
 	Token  string // makes device-side session names unique (Arista config sessions)
+
+	CommitConfirm int  // minutes; > 0 requests an on-box deadman timer where the platform has one
+	AllowReboot   bool // permit a timed reload as the deadman (RollbackRebootOnly platforms)
+	Verify        bool // keep a StepVerify placeholder so the runner can run post-change checks
 }
 
 // Confirm describes an interactive confirmation dialog and its answer.
@@ -115,7 +202,18 @@ type Profile struct {
 	opApply       []Step // operational (read-only/show) command plan — no config mode
 	dryRun        []Step // nil: vendor has no way to validate without applying
 	dryRunCleanup []Step
+
+	safety         RollbackSafety
+	confirmApply   []Step // apply template with an on-box deadman ({mins}/{hms} are substituted); nil: none
+	confirmCleanup []Step
+	confirmAbort   []Step // optional immediate revert of an armed change
 }
+
+// Safety reports the platform's rollback safety class.
+func (p *Profile) Safety() RollbackSafety { return p.safety }
+
+// ProbeCommand is the cheap read-only command used to prove a session works.
+func (p *Profile) ProbeCommand() string { return p.probe }
 
 var (
 	reIOSPrompt        = regexp.MustCompile(`^[\w.\-/:~()]+[#>]\s*$`)
@@ -164,6 +262,11 @@ var genericConfirms = []Confirm{
 // BuildPlan expands the vendor template for the given configuration commands.
 func (p *Profile) BuildPlan(commands []string, opts PlanOptions) Plan {
 	token := sanitizeToken(opts.Token)
+	repl := strings.NewReplacer(
+		"{token}", token,
+		"{mins}", fmt.Sprint(opts.CommitConfirm),
+		"{hms}", fmt.Sprintf("%02d:%02d:00", opts.CommitConfirm/60, opts.CommitConfirm%60),
+	)
 	expand := func(tmpl []Step) []Step {
 		var out []Step
 		for _, s := range tmpl {
@@ -173,14 +276,14 @@ func (p *Profile) BuildPlan(commands []string, opts PlanOptions) Plan {
 				}
 				continue
 			}
-			s.Line = strings.ReplaceAll(s.Line, "{token}", token)
+			s.Line = repl.Replace(s.Line)
 			out = append(out, s)
 		}
 		return out
 	}
 
 	if !opts.DryRun {
-		return Plan{Steps: expand(p.apply), Cleanup: expand(p.applyCleanup)}
+		return p.buildApply(expand, opts)
 	}
 	if p.dryRun == nil {
 		// No candidate datastore: the only safe simulation is a read-only
@@ -198,6 +301,52 @@ func (p *Profile) BuildPlan(commands []string, opts PlanOptions) Plan {
 		Cleanup:   expand(p.dryRunCleanup),
 	}
 }
+
+// buildApply builds the real (non dry-run) plan. A requested commit-confirm is
+// honoured only when the platform can do it: natively, or via a timed reload
+// when the operator allowed one. Otherwise the plain plan is returned and the
+// caller falls back to client-side rollback (see Safety).
+func (p *Profile) buildApply(expand func([]Step) []Step, opts PlanOptions) Plan {
+	var plan Plan
+	if opts.CommitConfirm > 0 && len(p.confirmApply) > 0 {
+		switch {
+		case p.safety == RollbackSafe:
+			plan.Confirm = ConfirmNative
+		case p.safety == RollbackRebootOnly && opts.AllowReboot:
+			plan.Confirm = ConfirmReload
+		}
+	}
+	if plan.Confirm == ConfirmNone {
+		plan.Steps, plan.Cleanup = expand(p.apply), expand(p.applyCleanup)
+		if opts.Verify {
+			plan.Steps = append(plan.Steps, Step{Kind: StepVerify})
+		}
+		return plan
+	}
+	// The confirm templates always carry a StepVerify: even without
+	// user-defined checks the runner proves management reachability with a
+	// fresh session before it confirms.
+	plan.Window = opts.CommitConfirm
+	plan.Steps, plan.Cleanup = expand(p.confirmApply), expand(p.confirmCleanup)
+	plan.Abort = expand(p.confirmAbort)
+	return plan
+}
+
+// LooksLikeFailure reports whether command output reads like an error even
+// though no vendor error pattern matched. It is applied to steps that arm a
+// safety net, which must fail closed: a timer that silently did not start is
+// worse than no attempt at all.
+func LooksLikeFailure(output string) (string, bool) {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(strings.TrimRight(line, "\r"))
+		if reArmFailure.MatchString(line) {
+			return line, true
+		}
+	}
+	return "", false
+}
+
+var reArmFailure = regexp.MustCompile(`(?i)^(?:%|error\b|syntax error|invalid\b|unknown command|command not found|failed\b|\.\.\. failed|cannot\b|can't\b|unable to\b)|\bnot (?:supported|enabled|configured|available)\b`)
 
 // BuildOpPlan returns an operational-mode execution plan: commands run in the
 // device's operational shell without entering configuration mode, so no
@@ -288,8 +437,43 @@ func ciscoLike(name, display string, errRe *regexp.Regexp) *Profile {
 	}
 }
 
+// newCisco is classic IOS: the only on-box deadman is a timed reload.
 func newCisco() *Profile {
-	return ciscoLike(Cisco, "Cisco IOS/IOS-XE", reCiscoErr)
+	p := ciscoLike(Cisco, "Cisco IOS/IOS-XE", reCiscoErr)
+	p.safety = RollbackRebootOnly
+	// "reload in" first offers to save the running configuration (answered
+	// "yes" by the generic confirms), which stores the pre-change state that
+	// the reload returns to. The reload is cancelled only after verification.
+	p.confirmApply = []Step{
+		{Kind: StepArm, Line: "reload in {mins}", Timed: true},
+		{Kind: StepEnter, Line: "configure terminal"},
+		{Kind: StepBody},
+		{Kind: StepExit, Line: "end"},
+		{Kind: StepVerify},
+		{Kind: StepConfirm, Line: "reload cancel"},
+		{Kind: StepPersist, Line: "write memory", Slow: true},
+	}
+	p.confirmCleanup = p.applyCleanup
+	return p
+}
+
+// newCiscoXE is IOS-XE, selected by the "ios-xe" family of vendor names. It
+// has a hitless confirmed-change mechanism: a revert timer that restores the
+// pre-change configuration unless "configure confirm" is issued. The arm step
+// fails (before anything is changed) on releases without it.
+func newCiscoXE() *Profile {
+	p := ciscoLike(Cisco, "Cisco IOS/IOS-XE", reCiscoErr)
+	p.safety = RollbackSafe
+	p.confirmApply = []Step{
+		{Kind: StepArm, Line: "configure terminal revert timer {mins}", Timed: true},
+		{Kind: StepBody},
+		{Kind: StepExit, Line: "end"},
+		{Kind: StepVerify},
+		{Kind: StepConfirm, Line: "configure confirm"},
+		{Kind: StepPersist, Line: "write memory", Slow: true},
+	}
+	p.confirmCleanup = p.applyCleanup
+	return p
 }
 
 func newArista() *Profile {
@@ -303,6 +487,19 @@ func newArista() *Profile {
 		{Kind: StepExit, Line: "abort"},
 	}
 	p.dryRunCleanup = []Step{{Kind: StepExit, Line: "abort", IgnoreError: true}}
+	// Session timers: "commit timer" applies the session and reverts it on
+	// its own unless the session is re-entered and committed.
+	p.safety = RollbackSafe
+	p.confirmApply = []Step{
+		{Kind: StepEnter, Line: "configure session netconfig-{token}"},
+		{Kind: StepBody},
+		{Kind: StepPersist, Line: "commit timer {hms}", Slow: true, Timed: true},
+		{Kind: StepVerify},
+		{Kind: StepConfirm, Line: "configure session netconfig-{token}"},
+		{Kind: StepConfirm, Line: "commit", Slow: true},
+		{Kind: StepPersist, Line: "write memory", Slow: true},
+	}
+	p.confirmCleanup = p.dryRunCleanup
 	return p
 }
 
@@ -337,6 +534,23 @@ func newJunos() *Profile {
 			{Kind: StepExit, Line: "exit"},
 		},
 		dryRunCleanup: discard,
+
+		safety: RollbackSafe,
+		confirmApply: []Step{
+			{Kind: StepEnter, Line: "configure"},
+			{Kind: StepBody},
+			{Kind: StepPersist, Line: "commit confirmed {mins}", Slow: true, Timed: true},
+			{Kind: StepVerify, Line: "run "},
+			{Kind: StepConfirm, Line: "commit", Slow: true},
+			{Kind: StepExit, Line: "exit"},
+		},
+		confirmCleanup: discard,
+		// Revert immediately instead of waiting for the timer.
+		confirmAbort: []Step{
+			{Kind: StepExit, Line: "rollback 1"},
+			{Kind: StepPersist, Line: "commit", Slow: true},
+			{Kind: StepExit, Line: "exit"},
+		},
 	}
 }
 
@@ -407,6 +621,21 @@ func newVyOS() *Profile {
 			{Kind: StepExit, Line: "exit discard"},
 		},
 		dryRunCleanup: discard,
+
+		// Classified RollbackSafe per the project's policy. Some VyOS
+		// releases implement commit-confirm with a reboot; if yours does,
+		// change this to RollbackRebootOnly.
+		safety: RollbackSafe,
+		confirmApply: []Step{
+			{Kind: StepEnter, Line: "configure"},
+			{Kind: StepBody},
+			{Kind: StepPersist, Line: "commit-confirm {mins}", Slow: true, Timed: true},
+			{Kind: StepVerify, Line: "run "},
+			{Kind: StepConfirm, Line: "confirm", Slow: true},
+			{Kind: StepPersist, Line: "save", Slow: true},
+			{Kind: StepExit, Line: "exit"},
+		},
+		confirmCleanup: discard,
 	}
 }
 
@@ -492,6 +721,12 @@ func newSophos() *Profile {
 
 var registry = map[string]*Profile{}
 
+// ciscoXE is the IOS-XE variant of the cisco profile. It is reachable only
+// through the IOS-XE aliases below and is not a separate canonical vendor.
+var ciscoXE = newCiscoXE()
+
+var ciscoXEAliases = map[string]bool{"ios-xe": true, "iosxe": true, "cisco-ios-xe": true}
+
 var aliases = map[string]string{
 	"cisco": Cisco, "cisco-ios": Cisco, "cisco-ios-xe": Cisco, "ios": Cisco, "ios-xe": Cisco, "iosxe": Cisco,
 	"junos": Junos, "juniper": Junos, "juniper-junos": Junos,
@@ -524,6 +759,9 @@ func Lookup(name string) (*Profile, bool) {
 	canonical, ok := aliases[key]
 	if !ok {
 		return nil, false
+	}
+	if canonical == Cisco && ciscoXEAliases[key] {
+		return ciscoXE, true
 	}
 	p, ok := registry[canonical]
 	return p, ok

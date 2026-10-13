@@ -177,6 +177,106 @@ cause. Use `-verbose` to see full rollback traces.
 > be identical to a native rollback on every platform. Test in a lab before
 > relying on this in production.
 
+### Pre-Flight Safety Lint (`-strict-safety`, `-allow-dangerous`)
+
+Before any SSH session is opened, each device's commands are analysed statically against *that
+device's* connection parameters: its management address, SSH port and (when configured in `.env` or
+the environment) the login user. A finding has a level (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`) and a
+kind that decides which flag releases it:
+
+| Kind | Examples | Blocks the run when | Released by |
+|---|---|---|---|
+| lockout | removing/re-addressing the management IP, removing the default route (`0.0.0.0/0`), moving or disabling SSH, restricting SSH algorithms, AAA lists without a local fallback, removing the login user, vty ACL/`transport input` changes, shutting an interface, replacing a trunk VLAN list | level is `CRITICAL` | `-force` |
+| destructive | `no router bgp`, `delete interfaces`, `default interface`, `clear ip bgp *`, `write erase`, `reload` | level is `HIGH` or `CRITICAL` | `-allow-dangerous` |
+| impact | neighbour shutdown/removal, router-id change, VLAN removal, soft resets | never | - |
+
+`-strict-safety` is on by default. When it blocks, netconfig exits with status 1 **before any device is
+contacted** and prints every finding. `-strict-safety=false` turns blocks into warnings. `-dry-run` is
+never blocked (it prints what would block a real run). Read-only commands (`show`, `display`, `get`,
+`ping`, ...) are never flagged, and `-op` runs are checked for destructive commands only.
+
+Lockout detection matches literally: `no ip address 10.0.0.1 ...` is `CRITICAL` only when `10.0.0.1`
+is the address netconfig connects to; removing some other address is `HIGH`. A lint failure on one
+device (including an internal error) is logged as a warning for that device and never stops the others.
+
+> **Behaviour change:** scripts that already contained destructive commands now need
+> `-allow-dangerous` (or `-strict-safety=false`).
+
+### Commit-Confirm (`-commit-confirm`, `-allow-reboot-rollback`)
+
+`-commit-confirm MINUTES` applies the change with an **on-box deadman timer**: if netconfig cannot
+verify and confirm in time (lockout, crash, lost link), the device reverts by itself. Each platform
+is classified by what it can do:
+
+| Rating (summary table) | `-plan` label | Platforms | Mechanism |
+|---|---|---|---|
+| `SAFE` | `SAFE` | Junos, VyOS, Arista EOS, Cisco IOS-XE | `commit confirmed N`, `commit-confirm N`, session `commit timer`, `configure terminal revert timer N` |
+| `REBOOT REQUIRED` | `REBOOT ONLY` | classic Cisco IOS | `reload in N` ... `reload cancel`; needs `-allow-reboot-rollback` |
+| `UNSAFE / OOB REQUIRED` | `UNSAFE` | Huawei, FortiOS, Ruijie, Aruba, Check Point, PAN-OS, pfSense, Sophos | none |
+
+IOS-XE is selected by the vendor names `ios-xe`, `iosxe` or `cisco-ios-xe`; plain `cisco` / `ios` is
+treated as classic IOS.
+
+The flow on a `SAFE` device: arm the timed commit, open a **fresh SSH session** and run the platform
+probe (an established session survives many lockouts; a new one does not), run the `-verify-file`
+checks, and only then confirm. A failed probe or check means the change is **not** confirmed and the
+device rolls back on its own (`VERIFY FAILED`). With `-rollback-on-fail`, Junos also reverts at once
+(`rollback 1`, `commit`) instead of waiting for the timer. If the timer window runs out before
+confirmation, the device is reported `CONFIRM_FAILED` rather than "succeeded". If the arming command
+is rejected or looks like an error, the device is **not changed**.
+
+* **Without `-allow-reboot-rollback`** a classic IOS device falls back to client-side rollback
+  (`-rollback-on-fail`) and a warning says so. With it, `reload in N` is armed before the change and
+  cancelled after verification: if anything fails the device *reloads* to its saved configuration.
+* **On `UNSAFE` platforms** the run continues without a safety net and logs:
+  `Safe commit-confirm cannot be achieved: platform lacks non-reboot auto-rollback. If network isolation occurs, automated rollback will FAIL and OOB/console access will be required.`
+* While a timer is armed, backup-based rollback is skipped: the on-box timer owns the revert.
+* The window must outlast verification: netconfig refuses `-commit-confirm` values shorter than the
+  worst-case retry time of the checks, and always keeps a 15 s margin before confirming.
+* The commands are data in `internal/vendor/vendor.go` (`confirmApply`). IOS-XE and VyOS syntax and
+  behaviour vary by release (some VyOS releases implement `commit-confirm` with a reboot): if yours
+  differs, adjust the template or the `safety` class there.
+
+### Post-Change Verification (`-verify-file`)
+
+`-verify-file FILE` runs read-only health checks on every device right after its change is applied
+(see `examples/verify.example`):
+
+```
+verify show ip bgp summary
+  expect: Established          # also: contains / not-contains / regex
+  not-contains: Idle
+  retries: 6                   # optional: give the network time to converge
+  interval: 10s
+  vendors: cisco, arista       # optional filters
+  hosts: edge-*
+```
+
+The same blocks can be embedded in a commands file or template as `!@verify ...` / `!@  expect: ...`
+comment lines. A rule with no condition, an invalid regex, or a state-changing verb (`configure`,
+`reload`, `no`, `commit`, ...) is a startup error. Failed checks are logged as errors, the device
+is marked `VERIFY FAILED` (`VERIFY_FAILED` in the reports, which also carry `verify_passed` /
+`verify_total`), and with `-rollback-on-fail` the rollback engine runs immediately. One failing
+device never affects the others. Checks do not run in `-dry-run` or `-op`.
+
+### Impact Preview (`-plan`)
+
+`-plan` runs the static lint, renders an impact matrix and asks before proceeding (it replaces the
+classic prompt; `-yes`/`-force` skip the question, and `-plan -dry-run` previews a dry run):
+
+```
+╭──────┬────────┬──────┬──────────┬─────────────────────┬─────────────╮
+│ HOST │ VENDOR │ CMDS │ RISK     │ IMPACT              │ ROLLBACK    │
+├──────┼────────┼──────┼──────────┼─────────────────────┼─────────────┤
+│ sw1  │ ios    │    3 │ CRITICAL │ Routing / Interface │ REBOOT ONLY │
+│ r1   │ junos  │    1 │ LOW      │ System              │ SAFE        │
+╰──────┴────────┴──────┴──────────┴─────────────────────┴─────────────╯
+Proceed with applying changes to 2 device(s)? [y/N]:
+```
+
+The findings behind each risk level are listed under the table, and with `-commit-confirm` every
+device that is not `SAFE` gets a rollback hazard line.
+
 ## Inventory
 
 ```csv
@@ -230,7 +330,10 @@ masked in logs and in the confirmation preview; what is *sent* to the device is 
 
 * **Confirmation:** before changing live devices netconfig prints the targets and commands and
   asks `[y/N]`. `-yes` / `-force` skips it. Without a terminal and without `-yes` it refuses to
-  run. `-dry-run` needs no confirmation.
+  run. `-dry-run` needs no confirmation. `-plan` shows the impact matrix first (see below).
+* **Pre-flight lint, commit-confirm, verification:** see the three sections above. They are
+  independent: lint runs before any connection, the deadman timer and checks protect the change
+  itself, and `-backup` / `-rollback-on-fail` remain the fallback for platforms without a timer.
 * **Backup (`-backup`, `-backup-dir backups`):** each device's running configuration is saved
   (mode 0600, written atomically) *before* anything is changed. If the backup fails, that device is
   not touched (`BACKUP_FAILED`).
@@ -331,6 +434,12 @@ Key new flags:
 | `-output-dir DIR` | `""` | Write per-device output to `<dir>/<hostname>.txt` |
 | `-json-report FILE` | `""` | Write a JSON run report to the given file path |
 | `-rollback-on-fail` | `false` | Re-apply pre-change backup on failure (requires `-backup`) |
+| `-strict-safety` | `true` | Abort before connecting on a `CRITICAL` lockout risk (`-force` accepts) or a destructive command (`-allow-dangerous` accepts) |
+| `-allow-dangerous` | `false` | Accept intentionally destructive commands (`no router bgp`, `delete interfaces`, `clear ip bgp *`, ...) |
+| `-commit-confirm MIN` | `0` | Arm an on-box deadman timer of MIN minutes; confirm only after verification (0 = off) |
+| `-allow-reboot-rollback` | `false` | Permit `reload in MIN` as the deadman on classic IOS |
+| `-verify-file FILE` | `""` | Post-change health checks (`!@verify` blocks in the commands file/template also count) |
+| `-plan` | `false` | Show the risk / impact / rollback-safety matrix and ask `Proceed ...? [y/N]` (combine with `-dry-run`) |
 | `-jump` | `true` | Master toggle for bastion / jump host routing (`-jump=false` to bypass) |
 | `-jump-host` | `""` | Global default bastion `host[:port]` |
 | `-jump-user` | `""` | SSH username for global bastion (overrides `NETCONFIG_JUMP_USERNAME`) |

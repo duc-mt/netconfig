@@ -123,13 +123,41 @@ func appliedCell(r Result) string {
 // backupCell renders the BACKUP column: whether a pre-change snapshot was
 // taken, and if a rollback was attempted, its outcome.
 func backupCell(r Result) string {
-	if r.BackupPath == "" {
-		return "-"
-	}
 	if s := r.Rollback.String(); s != "" {
 		return s
 	}
+	if r.BackupPath == "" {
+		return "-"
+	}
 	return "SAVED"
+}
+
+// resultBadge is statusBadge, except that a failed post-change health check
+// reads VERIFY FAILED instead of a bare FAILED.
+func resultBadge(r Result) string {
+	if r.Status == StatusFailed && r.Category == CatVerifyFailed {
+		return "✖ VERIFY FAILED"
+	}
+	return statusBadge(r.Status)
+}
+
+// safetyCell renders the SAFETY column: the platform's rollback safety class.
+func safetyCell(r Result) string {
+	if r.SafetyRating == "" {
+		return "-"
+	}
+	return r.SafetyRating
+}
+
+// anySafetyRating reports whether any device was rated, so the SAFETY column
+// is omitted on runs with nothing to show (e.g. all operational mode).
+func anySafetyRating(results []Result) bool {
+	for _, r := range results {
+		if r.SafetyRating != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // anyBackupActivity reports whether any result has a backup path, so the
@@ -137,7 +165,7 @@ func backupCell(r Result) string {
 // instead of printing a column of dashes.
 func anyBackupActivity(results []Result) bool {
 	for _, r := range results {
-		if r.BackupPath != "" {
+		if r.BackupPath != "" || r.Rollback != RollbackNone {
 			return true
 		}
 	}
@@ -187,6 +215,7 @@ func (s Summary) Render(opts RenderOptions) string {
 	order := displayOrder(s.Results)
 	showBackup := anyBackupActivity(s.Results)
 	showDiff := anyDiffActivity(s.Results)
+	showSafety := anySafetyRating(s.Results)
 	n := len(order)
 
 	type column struct {
@@ -201,6 +230,7 @@ func (s Summary) Render(opts RenderOptions) string {
 	vendorCol := make([]string, n)
 	statusCol := make([]string, n)
 	appliedCol := make([]string, n)
+	safetyCol := make([]string, n)
 	backupCol := make([]string, n)
 	diffCol := make([]string, n)
 	reasonCol := make([]string, n)
@@ -213,8 +243,9 @@ func (s Summary) Render(opts RenderOptions) string {
 		hostCol[i] = r.Device.Hostname
 		addressCol[i] = r.Device.Endpoint()
 		vendorCol[i] = r.Device.Vendor
-		statusCol[i] = statusBadge(r.Status)
+		statusCol[i] = resultBadge(r)
 		appliedCol[i] = appliedCell(r)
+		safetyCol[i] = safetyCell(r)
 		backupCol[i] = backupCell(r)
 		diffCol[i] = diffCell(r)
 		if r.Category != "" {
@@ -232,6 +263,9 @@ func (s Summary) Render(opts RenderOptions) string {
 		{"VENDOR", vendorCol, false},
 		{"STATUS", statusCol, false},
 		{"APPLIED", appliedCol, true},
+	}
+	if showSafety {
+		cols = append(cols, column{"SAFETY", safetyCol, false})
 	}
 	if showBackup {
 		cols = append(cols, column{"BACKUP", backupCol, false})
@@ -285,7 +319,7 @@ func (s Summary) Render(opts RenderOptions) string {
 	if opts.Width > 0 {
 		// Drop least-critical columns first, in this priority order, until
 		// the table fits or there's nothing left to drop.
-		for _, header := range []string{"APPLIED", "VENDOR", "TIME", "ADDRESS", "BACKUP", "DIFF"} {
+		for _, header := range []string{"APPLIED", "VENDOR", "SAFETY", "TIME", "ADDRESS", "BACKUP", "DIFF"} {
 			if totalWidth() <= opts.Width {
 				break
 			}
@@ -502,6 +536,9 @@ type JSONDeviceResult struct {
 	DiffAdded       int    `json:"diff_added,omitempty"`
 	DiffRemoved     int    `json:"diff_removed,omitempty"`
 	OutputFile      string `json:"output_file,omitempty"`
+	RollbackSafety  string `json:"rollback_safety,omitempty"`
+	VerifyPassed    int    `json:"verify_passed,omitempty"`
+	VerifyTotal     int    `json:"verify_total,omitempty"`
 }
 
 // JSONReport is the top-level structure written to the JSON report file.
@@ -534,6 +571,9 @@ func WriteJSONReport(path string, results []Result, outputDir string) error {
 			Rollback:        r.Rollback.String(),
 			DiffAdded:       r.DiffAdded,
 			DiffRemoved:     r.DiffRemoved,
+			RollbackSafety:  r.SafetyRating,
+			VerifyPassed:    r.VerifyPassed,
+			VerifyTotal:     r.VerifyTotal,
 		}
 		if outputDir != "" && r.Status == StatusSucceeded {
 			jr.OutputFile = outputDir + "/" + safeHostFilename(r.Device.Hostname) + ".txt"
@@ -564,6 +604,7 @@ var csvHeader = []string{
 	"hostname", "address", "vendor", "status", "category", "detail",
 	"duration_ms", "commands_applied", "commands_total", "backup_path",
 	"rollback", "diff_added", "diff_removed", "output_file",
+	"rollback_safety", "verify_passed", "verify_total",
 }
 
 // WriteCSVReport writes the run results to a CSV file at path, with the
@@ -602,6 +643,9 @@ func WriteCSVReport(path string, results []Result, outputDir string) error {
 			strconv.Itoa(r.DiffAdded),
 			strconv.Itoa(r.DiffRemoved),
 			outputFile,
+			r.SafetyRating,
+			strconv.Itoa(r.VerifyPassed),
+			strconv.Itoa(r.VerifyTotal),
 		}
 		if err := w.Write(row); err != nil {
 			return fmt.Errorf("write CSV row for %s: %w", r.Device.Hostname, err)

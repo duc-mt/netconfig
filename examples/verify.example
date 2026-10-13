@@ -1,0 +1,29 @@
+# Post-change health checks for -verify-file (netconfig -verify-file verify.txt ...).
+# The same blocks may be embedded in a commands file or template as comments that
+# start with "!@" or "#@"; those lines are never sent to a device.
+#
+# A check is a read-only command ("verify <command>") followed by conditions:
+#   expect: / contains:   the output must contain the text (case-sensitive)
+#   not-contains:         the output must not contain the text
+#   regex:                the output must match the regular expression (use (?i) for case-insensitive)
+# and optional settings:
+#   retries: N            re-run up to N more times while the conditions do not hold yet (0-30)
+#   interval: 10s         wait between attempts (default 3s when retries is set)
+#   vendors: cisco, junos only on these platforms
+#   hosts: edge-*         only on hostnames matching these globs
+# Values may be quoted. Every check on a device runs even if an earlier one failed.
+
+verify show ip bgp summary
+  expect: Established
+  not-contains: Idle
+  retries: 6
+  interval: 10s
+  vendors: cisco, arista
+
+verify show bgp summary
+  regex: (?m)^10\.0\.0\.2\s+.*\s+Establ
+  vendors: junos
+
+verify ping 10.0.0.1 count 3
+  expect: "0% packet loss"
+  hosts: edge-*

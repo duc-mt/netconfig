@@ -69,6 +69,10 @@ type Options struct {
 	RollbackOnFail bool   // restore from pre-change backup if a device fails (requires -backup)
 	OutputDir      string // write per-device command output to <OutputDir>/<hostname>.txt
 	ShowDiff       bool   // after a successful change, diff post-change config against the pre-change backup (requires -backup)
+
+	CommitConfirm       int          // minutes; > 0 arms an on-box deadman timer where the platform has one
+	AllowRebootRollback bool         // permit a timed reload as the deadman on platforms without a hitless one
+	Verify              []VerifyRule // post-change health checks, filtered per device
 }
 
 // Runner executes jobs.
@@ -176,6 +180,8 @@ func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
 		res.BackupPath = ""
 		res.CommandsApplied = 0
 		res.Rollback = RollbackNone
+		res.SafetyRating = ""
+		res.VerifyPassed, res.VerifyTotal = 0, 0
 
 		select {
 		case <-time.After(delay):
@@ -189,14 +195,20 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 	prof := job.Profile
 	res.CommandsTotal = len(job.Commands)
 
+	rules := r.rulesFor(job)
 	var plan vendor.Plan
 	if r.Opts.OpMode {
 		plan = prof.BuildOpPlan(job.Commands)
 	} else {
 		plan = prof.BuildPlan(job.Commands, vendor.PlanOptions{
-			DryRun: r.Opts.DryRun,
-			Token:  strconv.FormatInt(r.now().Unix(), 36),
+			DryRun:        r.Opts.DryRun,
+			Token:         strconv.FormatInt(r.now().Unix(), 36),
+			CommitConfirm: r.Opts.CommitConfirm,
+			AllowReboot:   r.Opts.AllowRebootRollback,
+			Verify:        len(rules) > 0,
 		})
+		res.SafetyRating = prof.Safety().String()
+		r.announceSafety(host, prof, plan)
 	}
 
 	r.Log.Infof(host, "connecting to %s (%s)", job.Device.Endpoint(), prof.Display)
@@ -246,8 +258,33 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 	// and accepted, so a mid-plan failure still reports how far it got.
 	applied := 0
 
+	// armed is true while an on-box deadman timer may be running: the device
+	// reverts the change by itself unless it is confirmed in time.
+	armed := false
+	var armedAt time.Time
+	window := time.Duration(plan.Window) * time.Minute
+	confirmChecked := false
+
 	announced := false
 	for _, step := range plan.Steps {
+		if step.Kind == vendor.StepVerify {
+			if !r.verifyStep(ctx, sess, job, rules, step, armed, res, &outputLines) {
+				res.CommandsApplied = applied
+				r.afterFailure(ctx, sess, job, plan, res, armed)
+				return
+			}
+			continue
+		}
+		if step.Kind == vendor.StepConfirm && armed && !confirmChecked {
+			confirmChecked = true
+			if window-r.now().Sub(armedAt) < confirmMargin {
+				res.CommandsApplied = applied
+				r.fail(res, host, CatConfirmFailed, fmt.Errorf(
+					"commit-confirm window (%d min) ran out before the change could be confirmed; the device is reverting on its own", plan.Window))
+				r.afterFailure(ctx, sess, job, plan, res, armed)
+				return
+			}
+		}
 		if step.Kind == vendor.StepBody {
 			if !announced {
 				announced = true
@@ -281,24 +318,21 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 			if step.Kind == vendor.StepPersist && cat == CatTimeout {
 				r.Log.Warnf(host, "the outcome of %q is unknown; verify the device state before retrying", step.Line)
 			}
+			if step.Timed && (cat == CatTimeout || cat == CatSessionError) && !armed {
+				// The timed commit may have taken effect right before the
+				// session died (the classic lockout): assume the deadman runs.
+				armed, armedAt = true, r.now()
+			}
 			if !r.Opts.OpMode {
-				r.cleanup(sess, host, plan)
-				// Attempt rollback if we took a backup and the option is set.
-				if r.Opts.RollbackOnFail && res.BackupPath != "" {
-					r.Log.Warnf(host, "attempting rollback from backup: %s", res.BackupPath)
-					if rbErr := r.rollback(ctx, sess, job, res.BackupPath); rbErr != nil {
-						res.Rollback = RollbackFailed
-						r.Log.Errorf(host, "rollback failed: %v", rbErr)
-					} else {
-						res.Rollback = RollbackOK
-						r.Log.Infof(host, "rollback succeeded; device restored to pre-change state")
-					}
-				}
+				r.afterFailure(ctx, sess, job, plan, res, armed)
 			}
 			return
 		}
 		if step.Kind == vendor.StepBody {
 			applied++
+		}
+		if step.Timed {
+			armed, armedAt = true, r.now()
 		}
 	}
 
@@ -331,6 +365,12 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 		res.Detail = fmt.Sprintf("%d operational command(s) executed", len(job.Commands))
 	case !r.Opts.DryRun:
 		res.Detail = fmt.Sprintf("%d command(s) applied", len(job.Commands))
+		if plan.Confirm != vendor.ConfirmNone {
+			res.Detail += fmt.Sprintf(", commit-confirm (%d min) confirmed", plan.Window)
+		}
+		if res.VerifyTotal > 0 {
+			res.Detail += fmt.Sprintf(", %d/%d check(s) passed", res.VerifyPassed, res.VerifyTotal)
+		}
 	case plan.Validates:
 		res.Detail = fmt.Sprintf("dry-run: %d command(s) validated on device, nothing kept", len(job.Commands))
 	default:
@@ -367,8 +407,227 @@ func (r *Runner) runStep(ctx context.Context, sc stepContext) (string, Category,
 		if bad, ok := sc.prof.FindError(out); ok {
 			return out, categoryForStep(sc.step.Kind), fmt.Errorf("device rejected %q: %s", shown, bad)
 		}
+		if sc.step.Timed {
+			// A safety net that silently did not start is worse than none.
+			if bad, ok := vendor.LooksLikeFailure(out); ok {
+				return out, categoryForStep(sc.step.Kind), fmt.Errorf("could not arm %q: %s", shown, bad)
+			}
+		}
 	}
 	return out, "", nil
+}
+
+// confirmMargin is how close to the end of a commit-confirm window the runner
+// still dares to confirm: past that, the device may already be reverting.
+const confirmMargin = 15 * time.Second
+
+// rulesFor returns the verification rules that apply to one device. Nothing
+// is verified on a dry run (nothing was changed) or in operational mode.
+func (r *Runner) rulesFor(job Job) []VerifyRule {
+	if r.Opts.OpMode || r.Opts.DryRun {
+		return nil
+	}
+	var out []VerifyRule
+	for _, rule := range r.Opts.Verify {
+		if rule.AppliesTo(job.Device, job.Profile) {
+			out = append(out, rule)
+		}
+	}
+	return out
+}
+
+// announceSafety logs how this device's change is protected, including the
+// hazard warning when the platform has no on-box rollback.
+func (r *Runner) announceSafety(host string, prof *vendor.Profile, plan vendor.Plan) {
+	if r.Opts.DryRun {
+		if r.Opts.CommitConfirm > 0 || len(r.Opts.Verify) > 0 {
+			r.Log.Infof(host, "DRY-RUN: commit-confirm and post-change verification are not exercised (nothing is applied)")
+		}
+		return
+	}
+	if r.Opts.CommitConfirm <= 0 {
+		return
+	}
+	switch {
+	case plan.Confirm == vendor.ConfirmNative:
+		r.Log.Infof(host, "commit-confirm: the change is applied with a native %d-minute deadman timer and confirmed only after verification", plan.Window)
+	case plan.Confirm == vendor.ConfirmReload:
+		r.Log.Warnf(host, "commit-confirm: arming 'reload in %d'; unless the change is confirmed the device will RELOAD to revert it", plan.Window)
+	case prof.Safety() == vendor.RollbackRebootOnly:
+		r.Log.Warnf(host, "commit-confirm needs a timed reload on this platform and -allow-reboot-rollback is not set; "+
+			"falling back to client-side rollback only (-rollback-on-fail)")
+	default:
+		r.Log.Warnf(host, "%s", vendor.HazardClientOnly)
+	}
+}
+
+// afterFailure leaves the device in the safest state it can after a failed
+// change: native immediate revert when asked and available, else a clean exit
+// from configuration mode, then (without an on-box timer) the backup rollback.
+func (r *Runner) afterFailure(ctx context.Context, sess Session, job Job, plan vendor.Plan, res *Result, armed bool) {
+	host := job.Device.Hostname
+	if armed && r.Opts.RollbackOnFail && len(plan.Abort) > 0 {
+		err := r.abortConfirm(sess, job, plan)
+		if err == nil {
+			res.Rollback = RollbackOK
+			r.Log.Infof(host, "pending change reverted immediately through the platform's native rollback")
+			return
+		}
+		r.Log.Warnf(host, "native rollback failed (%v); leaving it to the deadman timer", err)
+	}
+	r.cleanup(sess, host, plan)
+	if armed {
+		if plan.Confirm == vendor.ConfirmReload {
+			r.Log.Warnf(host, "the change was NOT confirmed: the device will RELOAD in about %d min to revert it "+
+				"(run 'reload cancel' on the device to stop that)", plan.Window)
+		} else {
+			r.Log.Warnf(host, "the change was NOT confirmed: the device rolls back by itself within %d min", plan.Window)
+		}
+		if r.Opts.RollbackOnFail && res.BackupPath != "" {
+			r.Log.Warnf(host, "backup rollback skipped: the on-box deadman timer owns the revert")
+		}
+		return
+	}
+	// Attempt rollback if we took a backup and the option is set.
+	if r.Opts.RollbackOnFail && res.BackupPath != "" {
+		r.Log.Warnf(host, "attempting rollback from backup: %s", res.BackupPath)
+		if rbErr := r.rollback(ctx, sess, job, res.BackupPath); rbErr != nil {
+			res.Rollback = RollbackFailed
+			r.Log.Errorf(host, "rollback failed: %v", rbErr)
+		} else {
+			res.Rollback = RollbackOK
+			r.Log.Infof(host, "rollback succeeded; device restored to pre-change state")
+		}
+	}
+}
+
+// abortConfirm reverts an armed change right away (plan.Abort), on a fresh
+// context so it still happens after an interrupt.
+func (r *Runner) abortConfirm(sess Session, job Job, plan vendor.Plan) error {
+	host := job.Device.Hostname
+	ctx, cancel := context.WithTimeout(context.Background(), r.Opts.CommandTimeout*r.slow()*time.Duration(len(plan.Abort)+1))
+	defer cancel()
+	r.Log.Warnf(host, "reverting the pending change now")
+	for _, st := range plan.Abort {
+		if _, _, err := r.runStep(ctx, stepContext{sess: sess, prof: job.Profile, host: host, step: st}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// verifyStep runs the post-change checks. With a deadman timer armed it first
+// proves, with a brand-new session, that the device is still manageable.
+// It returns false (with res filled in) when the change must not be confirmed.
+func (r *Runner) verifyStep(ctx context.Context, sess Session, job Job, rules []VerifyRule, step vendor.Step,
+	armed bool, res *Result, out *strings.Builder) bool {
+	host := job.Device.Hostname
+	var failures []string
+	if armed {
+		r.Log.Infof(host, "checking management reachability with a fresh session before confirming")
+		if err := r.probeReachability(ctx, job); err != nil {
+			failures = append(failures, "management reachability lost: "+err.Error())
+		}
+	}
+	if len(rules) > 0 {
+		res.VerifyTotal = len(rules)
+		if len(failures) == 0 {
+			var passed int
+			passed, failures = r.runChecks(ctx, sess, job, rules, step.Line, out)
+			res.VerifyPassed = passed
+		}
+	}
+	if len(failures) == 0 {
+		if len(rules) > 0 {
+			r.Log.Infof(host, "verification passed: %d/%d check(s)", res.VerifyPassed, len(rules))
+		}
+		return true
+	}
+	cat := CatVerifyFailed
+	if ctx.Err() != nil {
+		cat = CatCancelled
+	}
+	r.fail(res, host, cat, fmt.Errorf("VERIFY FAILED: %s", strings.Join(failures, " | ")))
+	return false
+}
+
+// probeReachability opens a new session and runs the platform's probe command.
+// An established session survives many lockout causes (changed SSH port, new
+// ACL, removed route); a new one does not.
+func (r *Runner) probeReachability(ctx context.Context, job Job) error {
+	host := job.Device.Hostname
+	pctx, cancel := context.WithTimeout(ctx, r.Opts.ConnectTimeout+r.Opts.CommandTimeout*2)
+	defer cancel()
+	sess, err := r.Transport.Open(pctx, Target{
+		Device:         job.Device,
+		Profile:        job.Profile,
+		Cred:           job.Cred,
+		JumpCred:       job.JumpCred,
+		ConnectTimeout: r.Opts.ConnectTimeout,
+		LoginTimeout:   r.Opts.CommandTimeout,
+		Logf:           func(format string, args ...any) { r.Log.Tracef(host, "(reachability) "+format, args...) },
+	})
+	if err != nil {
+		return fmt.Errorf("new session failed: %w", err)
+	}
+	defer sess.Close()
+	if _, err := sess.Send(pctx, job.Profile.ProbeCommand(), r.Opts.CommandTimeout); err != nil {
+		return fmt.Errorf("probe on new session failed: %w", err)
+	}
+	return nil
+}
+
+// runChecks evaluates every rule and returns how many passed plus one message
+// per failure. One failing check never stops the others from running.
+func (r *Runner) runChecks(ctx context.Context, sess Session, job Job, rules []VerifyRule, prefix string, out *strings.Builder) (int, []string) {
+	host := job.Device.Hostname
+	passed := 0
+	var failures []string
+	for _, rule := range rules {
+		if msg := r.runCheck(ctx, sess, job, rule, prefix, out); msg == "" {
+			passed++
+			r.Log.Infof(host, "verify OK: %s", rule.Command)
+		} else {
+			failures = append(failures, msg)
+			r.Log.Errorf(host, "VERIFY FAILED: %s", msg)
+		}
+	}
+	return passed, failures
+}
+
+// runCheck runs one rule, retrying while its conditions do not hold yet. It
+// returns "" on success or a description of the last failure.
+func (r *Runner) runCheck(ctx context.Context, sess Session, job Job, rule VerifyRule, prefix string, out *strings.Builder) string {
+	host := job.Device.Hostname
+	cmd := prefix + rule.Command
+	for attempt := 0; ; attempt++ {
+		output, err := sess.Send(ctx, cmd, r.Opts.CommandTimeout)
+		fmt.Fprintf(out, "=== verify: %s ===\n%s\n", logging.RedactCommand(cmd), redactText(output))
+		var problems []string
+		switch {
+		case err != nil:
+			problems = []string{"command failed: " + err.Error()}
+		default:
+			if bad, ok := job.Profile.FindError(output); ok {
+				problems = []string{"device rejected the command: " + bad}
+			} else {
+				problems = rule.Evaluate(output)
+			}
+		}
+		if len(problems) == 0 {
+			return ""
+		}
+		msg := fmt.Sprintf("%q: %s", rule.Command, strings.Join(problems, "; "))
+		if err != nil || attempt >= rule.Retries || ctx.Err() != nil {
+			return msg
+		}
+		r.Log.Warnf(host, "verify %q not satisfied yet (%s); retry %d/%d in %v", rule.Command, strings.Join(problems, "; "), attempt+1, rule.Retries, rule.Interval)
+		select {
+		case <-time.After(rule.Interval):
+		case <-ctx.Done():
+			return msg
+		}
+	}
 }
 
 // cleanup leaves configuration mode (and discards candidate changes where the
@@ -655,6 +914,8 @@ func categoryForStep(k vendor.StepKind) Category {
 		return CatModeError
 	case vendor.StepValidate, vendor.StepPersist:
 		return CatCommitFailed
+	case vendor.StepArm, vendor.StepConfirm:
+		return CatConfirmFailed
 	}
 	return CatSessionError
 }

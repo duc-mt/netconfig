@@ -116,6 +116,14 @@ func (r *Resolver) lookup(group, field string) (string, bool) {
 	return "", false
 }
 
+// Username returns the login name configured for group in the file and
+// environment tiers without prompting or caching; "" when none is configured.
+// It lets pre-flight checks know which account a run will log in with.
+func (r *Resolver) Username(group string) string {
+	u, _ := r.lookup(group, "USERNAME")
+	return u
+}
+
 // Resolve returns the credential for group, prompting only for the fields that
 // the file and environment tiers did not provide.
 func (r *Resolver) Resolve(group string) (Credential, error) {
