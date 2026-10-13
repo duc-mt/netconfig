@@ -306,10 +306,10 @@ func TestLoadDotEnv(t *testing.T) {
 func TestJumpCredentialsResolution(t *testing.T) {
 	r := &Resolver{
 		DotEnv: map[string]string{
-			"NETCONFIG_USERNAME":                  "global-dev-user",
-			"NETCONFIG_JUMP_HOST":                 "global-bastion:22",
-			"NETCONFIG_JUMP_USERNAME":             "global-jump-user",
-			"NETCONFIG_JUMP_PASSWORD":             "global-jump-pass",
+			"NETCONFIG_USERNAME":                 "global-dev-user",
+			"NETCONFIG_JUMP_HOST":                "global-bastion:22",
+			"NETCONFIG_JUMP_USERNAME":            "global-jump-user",
+			"NETCONFIG_JUMP_PASSWORD":            "global-jump-pass",
 			"NETCONFIG_JUMP_BASTION_DC_HOST":     "dc-bastion:2222",
 			"NETCONFIG_JUMP_BASTION_DC_USERNAME": "dc-jump-user",
 			"NETCONFIG_JUMP_BASTION_DC_PASSWORD": "dc-jump-pass",
