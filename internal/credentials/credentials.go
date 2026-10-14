@@ -42,6 +42,7 @@ type Credential struct {
 	Username       string
 	Password       string
 	EnablePassword string // optional; falls back to Password where an enable secret is needed
+	KeyFile        string // optional; path to SSH private key file
 }
 
 // JumpCredentials holds connection details for a bastion / jump host.
@@ -49,16 +50,17 @@ type JumpCredentials struct {
 	Host     string // host[:port]; empty disables jump
 	Username string
 	Password string
+	KeyFile  string // optional; path to SSH private key file
 }
 
 // String redacts the secrets so JumpCredentials can be logged safely.
 func (j JumpCredentials) String() string {
-	return fmt.Sprintf("JumpCredentials{host=%q, user=%q, password=<redacted>}", j.Host, j.Username)
+	return fmt.Sprintf("JumpCredentials{host=%q, user=%q, keyFile=%q, password=<redacted>}", j.Host, j.Username, j.KeyFile)
 }
 
 // String redacts the secrets so a Credential can be logged by accident safely.
 func (c Credential) String() string {
-	return fmt.Sprintf("Credential{user=%q, password=<redacted>}", c.Username)
+	return fmt.Sprintf("Credential{user=%q, keyFile=%q, password=<redacted>}", c.Username, c.KeyFile)
 }
 
 // GoString covers %#v.
@@ -146,6 +148,7 @@ func (r *Resolver) resolveLocked(group string) (Credential, error) {
 	c.Username, _ = r.lookup(group, "USERNAME")
 	c.Password, _ = r.lookup(group, "PASSWORD")
 	c.EnablePassword, _ = r.lookup(group, "ENABLE_PASSWORD")
+	c.KeyFile, _ = r.lookup(group, "KEY_FILE")
 
 	if c.Username == "" && r.Prompter != nil {
 		u, err := r.Prompter.Username(group)
@@ -154,39 +157,41 @@ func (r *Resolver) resolveLocked(group string) (Credential, error) {
 		}
 		c.Username = strings.TrimSpace(u)
 	}
-	if c.Password == "" && c.Username != "" && r.Prompter != nil {
+	if c.Password == "" && c.KeyFile == "" && c.Username != "" && r.Prompter != nil {
 		p, err := r.Prompter.Password(group, c.Username)
 		if err != nil {
 			return Credential{}, fmt.Errorf("prompt for password (group %q): %w", group, err)
 		}
 		c.Password = p
 	}
-	if c.Username == "" || c.Password == "" {
-		return Credential{}, fmt.Errorf("%w for group %q (set %s and %s in .env or the environment, or run interactively)",
-			ErrNotFound, group, EnvKey(group, "USERNAME"), EnvKey(group, "PASSWORD"))
+	if c.Username == "" || (c.Password == "" && c.KeyFile == "") {
+		return Credential{}, fmt.Errorf("%w for group %q (set %s and %s/%s in .env or the environment, or run interactively)",
+			ErrNotFound, group, EnvKey(group, "USERNAME"), EnvKey(group, "PASSWORD"), EnvKey(group, "KEY_FILE"))
 	}
 	return c, nil
 }
 
 // JumpDefaults returns the global bastion / jump host connection details
-// loaded from NETCONFIG_JUMP_HOST / NETCONFIG_JUMP_USERNAME / NETCONFIG_JUMP_PASSWORD
+// loaded from NETCONFIG_JUMP_HOST / NETCONFIG_JUMP_USERNAME / NETCONFIG_JUMP_PASSWORD / NETCONFIG_JUMP_KEY_FILE
 // (or their .env equivalents).
 func (r *Resolver) JumpDefaults() JumpCredentials {
 	host, _ := r.lookupJump("", "HOST")
 	u, _ := r.lookupJump("", "USERNAME")
 	p, _ := r.lookupJump("", "PASSWORD")
-	return JumpCredentials{Host: host, Username: u, Password: p}
+	k, _ := r.lookupJump("", "KEY_FILE")
+	return JumpCredentials{Host: host, Username: u, Password: p, KeyFile: k}
 }
 
 // ForJumpHost resolves credentials for a named jump host.
-// It checks NETCONFIG_JUMP_<NAME>_HOST / USERNAME / PASSWORD first,
+// It checks NETCONFIG_JUMP_<NAME>_HOST / USERNAME / PASSWORD / KEY_FILE first,
 // falling back to the global NETCONFIG_JUMP_* variables, and finally
-// to the global device username if jump username is unset.
+// to the global device username/keyfile if jump credentials are unset.
 func (r *Resolver) ForJumpHost(name string) JumpCredentials {
 	cleanName := cleanGroupName(name)
 	host, _ := r.lookupJump(cleanName, "HOST")
 	u, _ := r.lookupJump(cleanName, "USERNAME")
 	p, _ := r.lookupJump(cleanName, "PASSWORD")
+	k, _ := r.lookupJump(cleanName, "KEY_FILE")
 
 	def := r.JumpDefaults()
 	if host == "" {
@@ -204,7 +209,15 @@ func (r *Resolver) ForJumpHost(name string) JumpCredentials {
 	if p == "" {
 		p = def.Password
 	}
-	return JumpCredentials{Host: host, Username: u, Password: p}
+	if k == "" {
+		k = def.KeyFile
+	}
+	if k == "" && p == "" {
+		if devKey, ok := r.lookup("", "KEY_FILE"); ok {
+			k = devKey
+		}
+	}
+	return JumpCredentials{Host: host, Username: u, Password: p, KeyFile: k}
 }
 
 func (r *Resolver) lookupJump(cleanName, field string) (string, bool) {

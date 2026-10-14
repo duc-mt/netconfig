@@ -332,3 +332,42 @@ func TestJumpCredentialsResolution(t *testing.T) {
 		t.Errorf("ForJumpHost(other-bastion) fallback wrong: %+v", otherJump)
 	}
 }
+
+func TestKeyFileCredentialsResolution(t *testing.T) {
+	r := &Resolver{
+		DotEnv: map[string]string{
+			"NETCONFIG_USERNAME":                 "global-user",
+			"NETCONFIG_KEY_FILE":                 "/path/to/global_id_ed25519",
+			"NETCONFIG_SITE_A_USERNAME":          "site-user",
+			"NETCONFIG_SITE_A_KEY_FILE":          "/path/to/site_a_key",
+			"NETCONFIG_JUMP_KEY_FILE":            "/path/to/jump_key",
+			"NETCONFIG_JUMP_BASTION_DC_KEY_FILE": "/path/to/dc_jump_key",
+		},
+	}
+
+	cDef, err := r.Resolve("default")
+	if err != nil {
+		t.Fatalf("Resolve(default) failed: %v", err)
+	}
+	if cDef.Username != "global-user" || cDef.KeyFile != "/path/to/global_id_ed25519" {
+		t.Errorf("unexpected default creds: %+v", cDef)
+	}
+
+	cSiteA, err := r.Resolve("site_a")
+	if err != nil {
+		t.Fatalf("Resolve(site_a) failed: %v", err)
+	}
+	if cSiteA.Username != "site-user" || cSiteA.KeyFile != "/path/to/site_a_key" {
+		t.Errorf("unexpected site_a creds: %+v", cSiteA)
+	}
+
+	jumpDef := r.JumpDefaults()
+	if jumpDef.KeyFile != "/path/to/jump_key" {
+		t.Errorf("unexpected jumpDef key: %+v", jumpDef)
+	}
+
+	jumpDC := r.ForJumpHost("bastion_dc")
+	if jumpDC.KeyFile != "/path/to/dc_jump_key" {
+		t.Errorf("unexpected jumpDC key: %+v", jumpDC)
+	}
+}

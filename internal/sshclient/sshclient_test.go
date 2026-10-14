@@ -625,7 +625,7 @@ func TestConnectViaJump(t *testing.T) {
 
 	bastionAddr := net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", bastionPort))
 
-	jumpClient, err := ConnectJumpHost(context.Background(), bastionAddr, "jumpuser", "jumppass", 2*time.Second, ssh.InsecureIgnoreHostKey(), false)
+	jumpClient, err := ConnectJumpHost(context.Background(), bastionAddr, "jumpuser", "jumppass", "", 2*time.Second, ssh.InsecureIgnoreHostKey(), false)
 	if err != nil {
 		t.Fatalf("ConnectJumpHost failed: %v", err)
 	}

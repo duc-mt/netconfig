@@ -440,10 +440,12 @@ Key new flags:
 | `-allow-reboot-rollback` | `false` | Permit `reload in MIN` as the deadman on classic IOS |
 | `-verify-file FILE` | `""` | Post-change health checks (`!@verify` blocks in the commands file/template also count) |
 | `-plan` | `false` | Show the risk / impact / rollback-safety matrix and ask `Proceed ...? [y/N]` (combine with `-dry-run`) |
+| `-key-file` | `""` | Path to SSH private key file for device authentication (overrides `NETCONFIG_KEY_FILE`) |
 | `-jump` | `true` | Master toggle for bastion / jump host routing (`-jump=false` to bypass) |
 | `-jump-host` | `""` | Global default bastion `host[:port]` |
 | `-jump-user` | `""` | SSH username for global bastion (overrides `NETCONFIG_JUMP_USERNAME`) |
 | `-jump-password` | `""` | SSH password for global bastion (overrides `NETCONFIG_JUMP_PASSWORD`) |
+| `-jump-key-file` | `""` | SSH private key file for global bastion (overrides `NETCONFIG_JUMP_KEY_FILE`) |
 
 ### Jump Host / Bastion Proxy (`-jump`, `-jump-host`)
 

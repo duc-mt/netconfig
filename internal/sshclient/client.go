@@ -58,6 +58,7 @@ type Config struct {
 	Address        string // host:port
 	Username       string
 	Password       string
+	KeyFile        string // optional; path to SSH private key file
 	EnablePassword string // optional; defaults to Password where an enable step exists
 	Profile        *vendor.Profile
 
@@ -89,7 +90,10 @@ func Connect(ctx context.Context, cfg Config) (*Shell, error) {
 		cfg.Logf = func(string, ...any) {}
 	}
 
-	cc := buildClientConfig(cfg.Username, cfg.Password, cfg.HostKey, cfg.LegacyAlgorithms)
+	cc, err := buildClientConfig(cfg.Username, cfg.Password, cfg.KeyFile, cfg.HostKey, cfg.LegacyAlgorithms)
+	if err != nil {
+		return nil, &Error{Kind: KindAuth, Op: "connect", Err: err}
+	}
 
 	dialer := net.Dialer{Timeout: cfg.ConnectTimeout}
 	conn, err := dialer.DialContext(ctx, "tcp", cfg.Address)
@@ -132,14 +136,17 @@ func Connect(ctx context.Context, cfg Config) (*Shell, error) {
 }
 
 // ConnectJumpHost connects to a bastion / jump host.
-func ConnectJumpHost(ctx context.Context, address, username, password string, connectTimeout time.Duration, hostKey HostKeyCallback, legacy bool) (*ssh.Client, error) {
+func ConnectJumpHost(ctx context.Context, address, username, password, keyFile string, connectTimeout time.Duration, hostKey HostKeyCallback, legacy bool) (*ssh.Client, error) {
 	if hostKey == nil {
 		return nil, &Error{Kind: KindHostKey, Op: "connect jump", Err: errors.New("no host key verification configured for jump host")}
 	}
 	if connectTimeout <= 0 {
 		connectTimeout = 10 * time.Second
 	}
-	cc := buildClientConfig(username, password, hostKey, legacy)
+	cc, err := buildClientConfig(username, password, keyFile, hostKey, legacy)
+	if err != nil {
+		return nil, &Error{Kind: KindAuth, Op: "connect jump", Err: err}
+	}
 
 	dialer := net.Dialer{Timeout: connectTimeout}
 	conn, err := dialer.DialContext(ctx, "tcp", address)
@@ -182,7 +189,10 @@ func ConnectViaJump(ctx context.Context, jumpClient *ssh.Client, cfg Config) (*S
 		cfg.Logf = func(string, ...any) {}
 	}
 
-	cc := buildClientConfig(cfg.Username, cfg.Password, cfg.HostKey, cfg.LegacyAlgorithms)
+	cc, err := buildClientConfig(cfg.Username, cfg.Password, cfg.KeyFile, cfg.HostKey, cfg.LegacyAlgorithms)
+	if err != nil {
+		return nil, &Error{Kind: KindAuth, Op: "connect via jump", Err: err}
+	}
 
 	// Open a direct-tcpip tunnel through the jump host
 	tunnelConn, err := jumpClient.DialContext(ctx, "tcp", cfg.Address)
@@ -217,10 +227,31 @@ func ConnectViaJump(ctx context.Context, jumpClient *ssh.Client, cfg Config) (*S
 	return sh, nil
 }
 
-func buildClientConfig(username, password string, hk HostKeyCallback, legacy bool) *ssh.ClientConfig {
-	cc := &ssh.ClientConfig{
-		User: username,
-		Auth: []ssh.AuthMethod{
+func buildClientConfig(username, password, keyFile string, hk HostKeyCallback, legacy bool) (*ssh.ClientConfig, error) {
+	var authMethods []ssh.AuthMethod
+
+	if keyFile != "" {
+		keyBytes, err := os.ReadFile(keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("reading SSH key %q: %w", keyFile, err)
+		}
+		var signer ssh.Signer
+		if password != "" {
+			signer, err = ssh.ParsePrivateKeyWithPassphrase(keyBytes, []byte(password))
+			if err != nil {
+				signer, err = ssh.ParsePrivateKey(keyBytes)
+			}
+		} else {
+			signer, err = ssh.ParsePrivateKey(keyBytes)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("parsing SSH key %q: %w", keyFile, err)
+		}
+		authMethods = append(authMethods, ssh.PublicKeys(signer))
+	}
+
+	if password != "" {
+		authMethods = append(authMethods,
 			ssh.Password(password),
 			ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
 				answers := make([]string, len(questions))
@@ -229,13 +260,22 @@ func buildClientConfig(username, password string, hk HostKeyCallback, legacy boo
 				}
 				return answers, nil
 			}),
-		},
+		)
+	}
+
+	if len(authMethods) == 0 {
+		return nil, errors.New("no SSH authentication methods provided (specify password or key file)")
+	}
+
+	cc := &ssh.ClientConfig{
+		User:            username,
+		Auth:            authMethods,
 		HostKeyCallback: hk,
 	}
 	if legacy {
 		applyLegacy(cc)
 	}
-	return cc
+	return cc, nil
 }
 
 func newShell(client *ssh.Client, cfg Config) (*Shell, error) {

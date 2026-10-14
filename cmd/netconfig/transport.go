@@ -39,7 +39,7 @@ func newJumpPool(hk sshclient.HostKeyCallback, legacy bool) *jumpPool {
 	}
 }
 
-func (p *jumpPool) get(ctx context.Context, addr, username, password string, timeout time.Duration) (*ssh.Client, error) {
+func (p *jumpPool) get(ctx context.Context, addr, username, password, keyFile string, timeout time.Duration) (*ssh.Client, error) {
 	p.mu.Lock()
 	if c, ok := p.clients[addr]; ok {
 		p.mu.Unlock()
@@ -55,7 +55,7 @@ func (p *jumpPool) get(ctx context.Context, addr, username, password string, tim
 	}
 	formattedAddr := net.JoinHostPort(host, portStr)
 
-	c, err := sshclient.ConnectJumpHost(ctx, formattedAddr, username, password, timeout, p.hostKey, p.legacy)
+	c, err := sshclient.ConnectJumpHost(ctx, formattedAddr, username, password, keyFile, timeout, p.hostKey, p.legacy)
 	if err != nil {
 		return nil, err
 	}
@@ -96,6 +96,7 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 		Address:          tgt.Device.Endpoint(),
 		Username:         tgt.Cred.Username,
 		Password:         tgt.Cred.Password,
+		KeyFile:          tgt.Cred.KeyFile,
 		EnablePassword:   tgt.Cred.EnablePassword,
 		Profile:          tgt.Profile,
 		ConnectTimeout:   tgt.ConnectTimeout,
@@ -115,8 +116,12 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 		if jumpPass == "" {
 			jumpPass = tgt.Cred.Password
 		}
+		jumpKey := tgt.JumpCred.KeyFile
+		if jumpKey == "" && jumpPass == "" {
+			jumpKey = tgt.Cred.KeyFile
+		}
 
-		jumpClient, err := t.pool.get(ctx, tgt.JumpCred.Host, jumpUser, jumpPass, tgt.ConnectTimeout)
+		jumpClient, err := t.pool.get(ctx, tgt.JumpCred.Host, jumpUser, jumpPass, jumpKey, tgt.ConnectTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("bastion %s: %w", tgt.JumpCred.Host, err)
 		}
