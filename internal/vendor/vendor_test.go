@@ -297,3 +297,55 @@ func TestConfirmReply(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateBackup(t *testing.T) {
+	cisco := mustLookup(t, "cisco")
+	huawei := mustLookup(t, "huawei")
+	pfsense := mustLookup(t, "pfsense")
+	vyos := mustLookup(t, "vyos")
+
+	// Empty output
+	if err := cisco.ValidateBackup("   \n"); err == nil {
+		t.Error("expected error for empty backup output")
+	}
+
+	// Missing config markers
+	if err := cisco.ValidateBackup("random text without any config marker\nend\n"); err == nil {
+		t.Error("expected error for missing config markers")
+	}
+
+	// Valid Cisco untruncated
+	if err := cisco.ValidateBackup("!\ninterface GigabitEthernet0/1\nend\n"); err != nil {
+		t.Errorf("expected valid cisco backup, got %v", err)
+	}
+
+	// Cisco truncated (no end marker)
+	if err := cisco.ValidateBackup("!\ninterface GigabitEthernet0/1\nshutdown\n"); err == nil {
+		t.Error("expected truncation error for missing cisco end marker")
+	}
+
+	// Valid Huawei untruncated
+	if err := huawei.ValidateBackup("#\ninterface GE0/0/1\nreturn\n"); err != nil {
+		t.Errorf("expected valid huawei backup, got %v", err)
+	}
+
+	// Huawei truncated
+	if err := huawei.ValidateBackup("#\ninterface GE0/0/1\nshutdown\n"); err == nil {
+		t.Error("expected truncation error for missing huawei return marker")
+	}
+
+	// Valid pfSense untruncated
+	if err := pfsense.ValidateBackup("<pfsense>\n<system>\nsystem hostname\n<version>1</version>\n</pfsense>"); err != nil {
+		t.Errorf("expected valid pfsense backup, got %v", err)
+	}
+
+	// pfSense truncated
+	if err := pfsense.ValidateBackup("<pfsense>\n<system>\nsystem hostname\n<version>1</version>"); err == nil {
+		t.Error("expected truncation error for missing pfsense </pfsense> marker")
+	}
+
+	// VyOS without EndMarkers defined (passes with config marker)
+	if err := vyos.ValidateBackup("set interfaces ethernet eth0\n"); err != nil {
+		t.Errorf("expected valid vyos backup, got %v", err)
+	}
+}

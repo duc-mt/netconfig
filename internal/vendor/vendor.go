@@ -195,6 +195,7 @@ type Profile struct {
 	Confirms      []Confirm
 	ErrorPatterns []*regexp.Regexp // matched per output line
 	BackupCommand string           // prints the full running configuration
+	EndMarkers    []string         // substrings expected at or near end of untruncated backup (e.g. "\nend", "\nreturn")
 
 	probe         string
 	apply         []Step // StepBody is a placeholder for the user's commands
@@ -207,6 +208,37 @@ type Profile struct {
 	confirmApply   []Step // apply template with an on-box deadman ({mins}/{hms} are substituted); nil: none
 	confirmCleanup []Step
 	confirmAbort   []Step // optional immediate revert of an armed change
+}
+
+// ValidateBackup checks that backup output contains valid configuration markers
+// and required platform-specific termination end-markers.
+func (p *Profile) ValidateBackup(output string) error {
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" {
+		return fmt.Errorf("%q returned no output", p.BackupCommand)
+	}
+	if !hasConfigMarkers(trimmed) {
+		return fmt.Errorf("%q output does not contain valid configuration markers", p.BackupCommand)
+	}
+	if len(p.EndMarkers) == 0 {
+		return nil
+	}
+	for _, marker := range p.EndMarkers {
+		if strings.Contains(output, marker) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%q output appears truncated: expected end marker %v not found", p.BackupCommand, p.EndMarkers)
+}
+
+func hasConfigMarkers(out string) bool {
+	markers := []string{"version ", "!", "#", "system", "interface", "config ", "set "}
+	for _, m := range markers {
+		if strings.Contains(out, "\n"+m) || strings.HasPrefix(out, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // Safety reports the platform's rollback safety class.
@@ -426,6 +458,7 @@ func ciscoLike(name, display string, errRe *regexp.Regexp) *Profile {
 		Confirms:      genericConfirms,
 		ErrorPatterns: []*regexp.Regexp{errRe},
 		BackupCommand: "show running-config",
+		EndMarkers:    []string{"\nend", "\r\nend"},
 		probe:         "show clock",
 		apply: []Step{
 			{Kind: StepEnter, Line: "configure terminal"},
@@ -564,6 +597,7 @@ func newHuawei() *Profile {
 		Confirms:      genericConfirms,
 		ErrorPatterns: []*regexp.Regexp{reHuaweiErr},
 		BackupCommand: "display current-configuration",
+		EndMarkers:    []string{"\nreturn", "\r\nreturn"},
 		probe:         "display clock",
 		apply: []Step{
 			{Kind: StepEnter, Line: "system-view"},
@@ -644,7 +678,9 @@ func newRuijie() *Profile {
 }
 
 func newAruba() *Profile {
-	return ciscoLike(Aruba, "Aruba AOS-CX/AOS-S", reCiscoErr)
+	p := ciscoLike(Aruba, "Aruba AOS-CX/AOS-S", reCiscoErr)
+	p.EndMarkers = nil
+	return p
 }
 
 func newCheckPoint() *Profile {
@@ -695,6 +731,7 @@ func newPfSense() *Profile {
 		Confirms:      genericConfirms,
 		ErrorPatterns: []*regexp.Regexp{rePfSenseErr},
 		BackupCommand: "cat /conf/config.xml",
+		EndMarkers:    []string{"</pfsense>"},
 		probe:         "uname -a",
 		apply: []Step{
 			{Kind: StepBody},

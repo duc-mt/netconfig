@@ -356,7 +356,7 @@ func TestCommitConfirmFailureWhileArmedSkipsBackupRollback(t *testing.T) {
 	tr.respond = rec.wrap(func(host, line string) (string, error) {
 		switch line {
 		case "show running-config":
-			return "hostname lab1\ninterface Gi0/1\n", nil
+			return "hostname lab1\ninterface Gi0/1\nend\n", nil
 		case "bad command":
 			return "% Invalid input detected at '^' marker.", nil
 		}
@@ -389,7 +389,7 @@ func TestCommitConfirmSessionLossOnTimedCommitAssumesDeadmanRuns(t *testing.T) {
 	tr.respond = rec.wrap(func(host, line string) (string, error) {
 		switch line {
 		case "show running-config":
-			return "hostname lab1\ninterface Ethernet1\n", nil
+			return "hostname lab1\ninterface Ethernet1\nend\n", nil
 		case "commit timer 00:05:00":
 			return "", &fakeErr{"timeout", "no prompt before the timeout"} // the commit cut our session
 		}
@@ -478,7 +478,7 @@ func TestVerifyFailureTriggersRollbackEngine(t *testing.T) {
 	tr.respond = rec.wrap(func(host, line string) (string, error) {
 		switch line {
 		case "show running-config":
-			return "hostname lab1\ninterface Gi0/1\n", nil
+			return "hostname lab1\ninterface Gi0/1\nend\n", nil
 		case "show bgp summary":
 			return "Peer 10.0.0.2 Idle", nil
 		}

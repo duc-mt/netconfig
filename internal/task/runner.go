@@ -674,11 +674,8 @@ func (r *Runner) backup(ctx context.Context, sess Session, job Job) (string, err
 	if bad, ok := prof.FindError(out); ok {
 		return "", fmt.Errorf("device rejected %q: %s", prof.BackupCommand, bad)
 	}
-	if strings.TrimSpace(out) == "" {
-		return "", fmt.Errorf("%q returned no output", prof.BackupCommand)
-	}
-	if !hasConfigMarkers(out) {
-		return "", fmt.Errorf("%q output does not contain valid configuration markers", prof.BackupCommand)
+	if err := prof.ValidateBackup(out); err != nil {
+		return "", err
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
@@ -721,8 +718,8 @@ func (r *Runner) reportDiff(ctx context.Context, sess Session, job Job, res *Res
 		r.Log.Warnf(host, "diff: device rejected %q while reading the post-change configuration: %s", prof.BackupCommand, bad)
 		return
 	}
-	if !hasConfigMarkers(after) {
-		r.Log.Warnf(host, "diff: %q output after the change does not look like a configuration; skipping diff", prof.BackupCommand)
+	if err := prof.ValidateBackup(after); err != nil {
+		r.Log.Warnf(host, "diff: %q output after the change does not look like a complete configuration (%v); skipping diff", prof.BackupCommand, err)
 		return
 	}
 
@@ -936,14 +933,4 @@ func oneLine(s string, max int) string {
 		return string(r[:max-3]) + "..."
 	}
 	return s
-}
-
-func hasConfigMarkers(out string) bool {
-	markers := []string{"version ", "!", "#", "system", "interface", "config ", "set "}
-	for _, m := range markers {
-		if strings.Contains(out, "\n"+m) || strings.HasPrefix(out, m) {
-			return true
-		}
-	}
-	return false
 }

@@ -428,6 +428,29 @@ func TestBackupFailureBlocksChanges(t *testing.T) {
 	}
 }
 
+func TestBackupTruncationBlocksChanges(t *testing.T) {
+	tr := newFakeTransport()
+	tr.respond = func(host, line string) (string, error) {
+		if line == "show running-config" {
+			// Contains valid config markers ("interface"), but is missing end marker
+			return "!\ninterface GigabitEthernet0/1\n shutdown\n", nil
+		}
+		return "", nil
+	}
+	r := newRunner(t, tr, Options{Backup: true, BackupDir: t.TempDir()})
+	res := r.Run(context.Background(), mkJobs(t, "cisco", []string{"hostname new"}, "sw1"))
+
+	if res[0].Status != StatusFailed || res[0].Category != CatBackupFailed {
+		t.Fatalf("result = %+v", res[0])
+	}
+	if !strings.Contains(res[0].Detail, "truncated") {
+		t.Errorf("expected truncated error detail, got: %s", res[0].Detail)
+	}
+	if got := tr.sent("sw1"); !slices.Equal(got, []string{"show running-config"}) {
+		t.Errorf("nothing may be changed after a truncated backup, sent %q", got)
+	}
+}
+
 // ---- preparation ------------------------------------------------------------
 
 func TestSkippedJobsNeverOpenSessions(t *testing.T) {
@@ -749,8 +772,8 @@ func countingConfig(t *testing.T, before, after string) func(host, line string) 
 func TestShowDiffRecordsAddedAndRemoved(t *testing.T) {
 	tr := newFakeTransport()
 	tr.respond = countingConfig(t,
-		"hostname old\ninterface eth0\n no shutdown\n",
-		"hostname new\ninterface eth0\n no shutdown\nntp server 1.1.1.1\n",
+		"hostname old\ninterface eth0\n no shutdown\nend\n",
+		"hostname new\ninterface eth0\n no shutdown\nntp server 1.1.1.1\nend\n",
 	)
 	r := newRunner(t, tr, Options{Backup: true, BackupDir: t.TempDir(), ShowDiff: true})
 	res := r.Run(context.Background(), mkJobs(t, "cisco", []string{"hostname new", "ntp server 1.1.1.1"}, "sw1"))
@@ -765,7 +788,7 @@ func TestShowDiffRecordsAddedAndRemoved(t *testing.T) {
 
 func TestShowDiffWritesDiffFile(t *testing.T) {
 	tr := newFakeTransport()
-	tr.respond = countingConfig(t, "!\nhostname old\n", "!\nhostname new\n")
+	tr.respond = countingConfig(t, "!\nhostname old\nend\n", "!\nhostname new\nend\n")
 	outDir := t.TempDir()
 	r := newRunner(t, tr, Options{Backup: true, BackupDir: t.TempDir(), ShowDiff: true, OutputDir: outDir})
 	res := r.Run(context.Background(), mkJobs(t, "cisco", []string{"hostname new"}, "sw1"))
@@ -785,7 +808,7 @@ func TestShowDiffWritesDiffFile(t *testing.T) {
 
 func TestShowDiffNoChangeWritesNothing(t *testing.T) {
 	tr := newFakeTransport()
-	tr.respond = countingConfig(t, "!\nhostname same\n", "!\nhostname same\n")
+	tr.respond = countingConfig(t, "!\nhostname same\nend\n", "!\nhostname same\nend\n")
 	outDir := t.TempDir()
 	r := newRunner(t, tr, Options{Backup: true, BackupDir: t.TempDir(), ShowDiff: true, OutputDir: outDir})
 	res := r.Run(context.Background(), mkJobs(t, "cisco", []string{"ntp server 1.1.1.1"}, "sw1"))
@@ -814,7 +837,7 @@ func TestShowDiffFailureToReadAfterIsNonFatal(t *testing.T) {
 		n := calls
 		mu.Unlock()
 		if n == 1 {
-			return "!\nhostname old\n", nil // the pre-change backup
+			return "!\nhostname old\nend\n", nil // the pre-change backup
 		}
 		return "", errors.New("connection reset by peer") // the post-change re-read, for the diff
 	}
@@ -831,7 +854,7 @@ func TestShowDiffFailureToReadAfterIsNonFatal(t *testing.T) {
 
 func TestShowDiffSkippedWithoutBackup(t *testing.T) {
 	tr := newFakeTransport()
-	tr.respond = countingConfig(t, "!\nhostname old\n", "!\nhostname new\n")
+	tr.respond = countingConfig(t, "!\nhostname old\nend\n", "!\nhostname new\nend\n")
 	// ShowDiff without Backup: main.go rejects this combination before a
 	// Runner is ever built, but the runner itself must also be safe against
 	// it (defence in depth) -- no BackupPath means nothing to diff against.
