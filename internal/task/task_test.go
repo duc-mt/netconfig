@@ -1022,3 +1022,30 @@ func TestWriteCSVReport(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderTotalRuntime(t *testing.T) {
+	results := []Result{
+		{
+			Device:   inventory.Device{Hostname: "sw1", Address: "10.0.0.1", Vendor: "cisco"},
+			Status:   StatusSucceeded,
+			Duration: 1500 * time.Millisecond,
+		},
+		{
+			Device:   inventory.Device{Hostname: "sw2", Address: "10.0.0.2", Vendor: "cisco"},
+			Status:   StatusSucceeded,
+			Duration: 1000 * time.Millisecond,
+		},
+	}
+
+	// Computed from sum of device durations
+	out1 := Summarize(results).Render(RenderOptions{})
+	if !strings.Contains(out1, "Total Runtime: 2.5s") {
+		t.Errorf("expected Total Runtime: 2.5s, got:\n%s", out1)
+	}
+
+	// Explicit total runtime passed
+	out2 := Summarize(results, 5*time.Second).Render(RenderOptions{})
+	if !strings.Contains(out2, "Total Runtime: 5s") {
+		t.Errorf("expected Total Runtime: 5s, got:\n%s", out2)
+	}
+}

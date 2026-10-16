@@ -438,14 +438,17 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		case <-finished:
 		}
 	}()
+	runStart := time.Now()
 	results := runner.Run(ctx, jobs)
+	totalDuration := time.Since(runStart)
 	close(finished)
 
 	// ---- summary ---------------------------------------------------------
-	sum := task.Summarize(results)
+	sum := task.Summarize(results, totalDuration)
 	consoleOpts := task.RenderOptions{Color: color, DryRun: *dryRun, Width: terminalWidth(stderr)}
 	fileOpts := task.RenderOptions{Color: false, DryRun: *dryRun} // Width 0: a log file isn't screen-width constrained
 	log.Raw("\n"+sum.Render(consoleOpts), "\n"+sum.Render(fileOpts))
+	log.Infof("", "total runtime: %s", totalDuration.Round(100*time.Millisecond))
 	if *backup {
 		log.Infof("", "pre-change backups: %s", *backupDir)
 	}

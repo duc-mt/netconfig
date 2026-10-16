@@ -30,11 +30,13 @@ type Summary struct {
 	Skipped   int
 	// ByCategory lists, per failure/skip category, the affected hosts.
 	ByCategory map[Category][]string
+	Duration   time.Duration
 }
 
 // Summarize counts outcomes and groups hosts by failure/skip category.
-func Summarize(results []Result) Summary {
+func Summarize(results []Result, totalRuntime ...time.Duration) Summary {
 	s := Summary{Results: results, ByCategory: make(map[Category][]string)}
+	var sumDur time.Duration
 	for _, r := range results {
 		switch r.Status {
 		case StatusSucceeded:
@@ -47,6 +49,14 @@ func Summarize(results []Result) Summary {
 		if r.Status != StatusSucceeded && r.Category != "" {
 			s.ByCategory[r.Category] = append(s.ByCategory[r.Category], r.Device.Hostname)
 		}
+		if r.Duration > 0 {
+			sumDur += r.Duration
+		}
+	}
+	if len(totalRuntime) > 0 && totalRuntime[0] > 0 {
+		s.Duration = totalRuntime[0]
+	} else {
+		s.Duration = sumDur
 	}
 	return s
 }
@@ -424,10 +434,15 @@ func (s Summary) Render(opts RenderOptions) string {
 		}
 		return c + text + ansiReset
 	}
-	fmt.Fprintf(&b, "\n  %s  │  %s  │  %s  │  (total %d)\n",
+	durStr := formatDuration(s.Duration)
+	if durStr == "-" {
+		durStr = "0s"
+	}
+	fmt.Fprintf(&b, "\n  %s  │  %s  │  %s  │  Total Runtime: %s  │  (total %d)\n",
 		colorize(ansiGreen, fmt.Sprintf("✔ Succeeded: %d", s.Succeeded)),
 		colorize(ansiRed, fmt.Sprintf("✖ Failed: %d", s.Failed)),
 		colorize(ansiYellow, fmt.Sprintf("⊘ Skipped: %d", s.Skipped)),
+		durStr,
 		len(s.Results))
 
 	s.writeCategories(&b, "Failure reasons", StatusFailed)

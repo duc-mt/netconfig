@@ -10,8 +10,14 @@ rem ============================================================================
 rem Usage:         run.bat
 rem ==============================================================================
 
-set BINARY="%~dp0bin\netconfig-windows-amd64.exe"
+set BINARY="%~dp0bin\netconfig.exe"
+set ARCH_BINARY="%~dp0bin\netconfig-windows-amd64.exe"
+
 if exist %BINARY% goto :run
+if exist %ARCH_BINARY% (
+    set BINARY=%ARCH_BINARY%
+    goto :run
+)
 
 echo Binary %BINARY% not found. Building...
 

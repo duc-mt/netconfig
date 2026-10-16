@@ -28,12 +28,17 @@ case "$(uname -m)" in
     *)             echo "Error: Unsupported Architecture $(uname -m)"; exit 1;;
 esac
 
-BINARY="bin/netconfig-${OS}-${ARCH}"
-if [ "$OS" = "windows" ]; then
-    BINARY="${BINARY}.exe"
-fi
+BINARY="bin/netconfig"
+[ "$OS" = "windows" ] && BINARY="bin/netconfig.exe"
 
-if [ ! -f "$BINARY" ]; then
+ARCH_BINARY="bin/netconfig-${OS}-${ARCH}"
+[ "$OS" = "windows" ] && ARCH_BINARY="${ARCH_BINARY}.exe"
+
+if [ -f "$BINARY" ]; then
+    :
+elif [ -f "$ARCH_BINARY" ]; then
+    BINARY="$ARCH_BINARY"
+else
     echo "Binary $BINARY not found. Building..."
     
     if ! command -v go >/dev/null 2>&1; then
