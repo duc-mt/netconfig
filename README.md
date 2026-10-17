@@ -54,11 +54,13 @@ once so it contains the `ssh/knownhosts` package, which this project imports.
 
 ### 1. Initialize configuration files
 
-Fastest way:
+Fastest way (with the single binary, zero dependencies):
 ```sh
-make init
+netconfig -init
 ```
-This automatically initializes `.env` (with `chmod 600`), `inventory.csv`, and `commands.txt` from `examples/` without overwriting existing files.
+*(Or if using the repository with Make: `make init`)*
+
+This automatically creates `.env` (with `chmod 600`), `inventory.csv`, and `commands.txt` without overwriting existing files.
 
 Or manually:
 ```sh
