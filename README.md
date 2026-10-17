@@ -16,12 +16,12 @@ Supported platforms: Cisco IOS/IOS-XE, Juniper Junos, Huawei VRP, Fortinet Forti
 No matter what device or OS you are using (Linux, macOS, Windows, x86_64, ARM64), you don't need to remember binary names or build steps.
 
 ### Option 1: Universal Auto-Detect Script (Linux / macOS / Windows)
-Simply execute `./run.sh` (or `run.bat` on Windows). It automatically detects your host OS and CPU architecture and launches the correct pre-built binary. If no command arguments are passed, it automatically defaults to `-commands commands.txt`:
+Simply execute `./run` (or `.\scripts\run.bat` on native Windows CMD). It automatically detects your host OS and CPU architecture and launches the correct pre-built binary. If no command arguments are passed, it automatically defaults to `-commands commands.txt`:
 
 ```bash
 make init          # 1. Initialize .env, inventory.csv, and commands.txt
-./run.sh           # 2. Automatically launches with -commands commands.txt
-./run.sh -dry-run  # 3. Dry-run mode (safe, validates on device)
+./run              # 2. Automatically launches with -commands commands.txt
+./run -dry-run     # 3. Dry-run mode (safe, validates on device)
 ```
 
 ### Option 2: Docker / Docker Compose
