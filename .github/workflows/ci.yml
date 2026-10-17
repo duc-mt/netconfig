@@ -130,7 +130,7 @@ jobs:
             echo "prerelease=false" >> $GITHUB_OUTPUT
           else
             echo "tag_name=latest" >> $GITHUB_OUTPUT
-            echo "release_name=Latest Automatic Build" >> $GITHUB_OUTPUT
+            echo "release_name=Latest Build" >> $GITHUB_OUTPUT
             echo "prerelease=false" >> $GITHUB_OUTPUT
           fi
 
