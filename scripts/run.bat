@@ -15,10 +15,20 @@ set "ROOT_DIR=%SCRIPT_DIR%..\"
 
 set BINARY="%ROOT_DIR%bin\netconfig.exe"
 set ARCH_BINARY="%ROOT_DIR%bin\netconfig-windows-amd64.exe"
+set ROOT_BINARY="%ROOT_DIR%netconfig.exe"
+set ROOT_ARCH_BINARY="%ROOT_DIR%netconfig-windows-amd64.exe"
 
 if exist %BINARY% goto :run
 if exist %ARCH_BINARY% (
     set BINARY=%ARCH_BINARY%
+    goto :run
+)
+if exist %ROOT_BINARY% (
+    set BINARY=%ROOT_BINARY%
+    goto :run
+)
+if exist %ROOT_ARCH_BINARY% (
+    set BINARY=%ROOT_ARCH_BINARY%
     goto :run
 )
 

@@ -17,6 +17,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -41,6 +42,15 @@ import (
 	"netconfig/internal/ui"
 	"netconfig/internal/vendor"
 )
+
+//go:embed samples/inventory.csv
+var sampleInventory []byte
+
+//go:embed samples/env.example
+var sampleEnv []byte
+
+//go:embed samples/commands.txt
+var sampleCommands []byte
 
 // version is overridden at build time: -ldflags "-X main.version=1.2.3".
 var version = "dev"
@@ -154,6 +164,9 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		// Output format & dashboard
 		format    = fs.String("format", "text", "output format: text | json (in -op mode, json parses operational show commands into structured data)")
 		dashboard = fs.Bool("dashboard", true, "show live terminal ANSI progress dashboard (active on interactive terminals without -verbose)")
+
+		// Init sample templates
+		initConfig = fs.Bool("init", false, "generate sample inventory.csv, commands.txt, and .env template in current directory and exit")
 	)
 
 	if err := fs.Parse(args); err != nil {
@@ -169,6 +182,43 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 	if *showVersion {
 		fmt.Fprintln(stdout, "netconfig", version)
+		return task.ExitOK
+	}
+	if *initConfig {
+		created := 0
+		if _, err := os.Stat("inventory.csv"); os.IsNotExist(err) {
+			if err := os.WriteFile("inventory.csv", sampleInventory, 0644); err != nil {
+				return fatal("creating inventory.csv: %v", err)
+			}
+			fmt.Fprintln(stdout, "[+] Created sample inventory.csv")
+			created++
+		} else {
+			fmt.Fprintln(stdout, "[.] inventory.csv already exists, skipping")
+		}
+
+		if _, err := os.Stat(".env"); os.IsNotExist(err) {
+			if err := os.WriteFile(".env", sampleEnv, 0600); err != nil {
+				return fatal("creating .env: %v", err)
+			}
+			fmt.Fprintln(stdout, "[+] Created sample .env template")
+			created++
+		} else {
+			fmt.Fprintln(stdout, "[.] .env already exists, skipping")
+		}
+
+		if _, err := os.Stat("commands.txt"); os.IsNotExist(err) {
+			if err := os.WriteFile("commands.txt", sampleCommands, 0644); err != nil {
+				return fatal("creating commands.txt: %v", err)
+			}
+			fmt.Fprintln(stdout, "[+] Created sample commands.txt")
+			created++
+		} else {
+			fmt.Fprintln(stdout, "[.] commands.txt already exists, skipping")
+		}
+
+		if created > 0 {
+			fmt.Fprintln(stdout, "\nSample configuration created! Edit inventory.csv, .env, and commands.txt to match your environment.")
+		}
 		return task.ExitOK
 	}
 	if *showMemory {
@@ -199,11 +249,24 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "Route memory cleared (%s).\n", *memoryFile)
 		return task.ExitOK
 	}
-	if fs.NArg() > 0 {
+	// Accept optional single positional argument as commands file (e.g. netconfig commands.txt)
+	if *cmdsPath == "" && *tmplPath == "" {
+		if fs.NArg() == 1 {
+			*cmdsPath = fs.Arg(0)
+		} else if fs.NArg() == 0 {
+			// Default to commands.txt if it exists in current directory
+			if _, err := os.Stat("commands.txt"); err == nil {
+				*cmdsPath = "commands.txt"
+			}
+		}
+	}
+	if fs.NArg() > 1 || (fs.NArg() == 1 && *cmdsPath != fs.Arg(0)) {
 		return fatal("unexpected arguments: %s", strings.Join(fs.Args(), " "))
 	}
 	if (*cmdsPath == "") == (*tmplPath == "") {
-		return fatal("exactly one of -commands or -template is required (see -h)")
+		hint := "Tip: Run 'netconfig -init' to create sample inventory.csv, commands.txt, and .env templates.\n"
+		fmt.Fprintln(stderr, hint)
+		return fatal("exactly one of -commands (or commands.txt) or -template is required (see -h)")
 	}
 	if *concurrency < 1 {
 		return fatal("-concurrency must be at least 1")
@@ -271,6 +334,9 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	// ---- inputs ----------------------------------------------------------
 	allDevs, err := inventory.Load(*invPath)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no such file") {
+			fmt.Fprintf(stderr, "\nTip: Run 'netconfig -init' to create sample inventory.csv, commands.txt, and .env templates.\n\n")
+		}
 		return die("%v", err)
 	}
 	devs, err := inventory.Filter(allDevs, strings.Split(*limit, ","))

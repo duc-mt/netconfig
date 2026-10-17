@@ -37,10 +37,20 @@ BINARY="$ROOT_DIR/bin/netconfig"
 ARCH_BINARY="$ROOT_DIR/bin/netconfig-${OS}-${ARCH}"
 [ "$OS" = "windows" ] && ARCH_BINARY="${ARCH_BINARY}.exe"
 
+ROOT_BIN="$ROOT_DIR/netconfig"
+[ "$OS" = "windows" ] && ROOT_BIN="$ROOT_DIR/netconfig.exe"
+
+ROOT_ARCH_BIN="$ROOT_DIR/netconfig-${OS}-${ARCH}"
+[ "$OS" = "windows" ] && ROOT_ARCH_BIN="${ROOT_ARCH_BIN}.exe"
+
 if [ -f "$BINARY" ]; then
     :
 elif [ -f "$ARCH_BINARY" ]; then
     BINARY="$ARCH_BINARY"
+elif [ -f "$ROOT_BIN" ]; then
+    BINARY="$ROOT_BIN"
+elif [ -f "$ROOT_ARCH_BIN" ]; then
+    BINARY="$ROOT_ARCH_BIN"
 else
     echo "Binary $BINARY not found. Building..."
     

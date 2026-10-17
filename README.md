@@ -24,17 +24,18 @@ make init          # 1. Initialize .env, inventory.csv, and commands.txt
 ./run -dry-run     # 3. Dry-run mode (safe, validates on device)
 ```
 
-### Option 2: Docker / Docker Compose
-If you prefer running in a container:
-
-```bash
-docker compose up  # Builds container (if needed) and executes netconfig
-```
+### Option 2: Download from GitHub Releases
+All builds are automatically compiled and published to GitHub on every commit:
+1. Go to the [Releases](https://github.com/duc-mt/netconfig/releases) page on GitHub.
+2. Under **Latest Automatic Build**, download the single binary for your target OS (`.exe` for Windows, `linux-amd64` for Linux).
+3. Bring only this binary to any machine (online or air-gapped).
+4. Run `netconfig.exe -init` (or `./netconfig-linux-amd64 -init`) to generate sample `inventory.csv`, `commands.txt`, and `.env` template files instantly!
+5. Run `netconfig.exe` (defaults to `commands.txt`, `inventory.csv`, and `.env` automatically).
 
 ### Option 3: Standard Make / Direct Binary
 - **Initialize config:** `make init`
-- **Build (offline):** `make build`
-- **Run direct binary:** `./bin/netconfig-linux-amd64 commands.txt` (or matching OS in `bin/`)
+- **Build (offline):** `make build` (or `make cross` for all platforms)
+- **Run direct binary:** `./bin/netconfig`
 
 ## Build
 
