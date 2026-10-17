@@ -1049,3 +1049,187 @@ func TestRenderTotalRuntime(t *testing.T) {
 		t.Errorf("expected Total Runtime: 5s, got:\n%s", out2)
 	}
 }
+
+func TestCanaryRolloutSuccess(t *testing.T) {
+	tr := newFakeTransport()
+	r := newRunner(t, tr, Options{Canary: 1, BatchSize: 2})
+	jobs := mkJobs(t, "cisco", []string{"hostname x"}, "sw1", "sw2", "sw3")
+
+	res := r.Run(context.Background(), jobs)
+	for i, r := range res {
+		if r.Status != StatusSucceeded {
+			t.Errorf("job %d failed: %+v", i, r)
+		}
+	}
+}
+
+func TestCanaryRolloutFailureAborts(t *testing.T) {
+	tr := newFakeTransport()
+	tr.openErr["sw1"] = errors.New("connection refused")
+	r := newRunner(t, tr, Options{Canary: 1, BatchSize: 2})
+	jobs := mkJobs(t, "cisco", []string{"hostname x"}, "sw1", "sw2", "sw3")
+
+	res := r.Run(context.Background(), jobs)
+	if res[0].Status != StatusFailed {
+		t.Errorf("sw1 status = %v, want StatusFailed", res[0].Status)
+	}
+	if res[1].Status != StatusSkipped || res[1].Category != CatCanaryFailed {
+		t.Errorf("sw2 status = %v, cat = %v, want SKIPPED / CANARY_FAILED", res[1].Status, res[1].Category)
+	}
+	if res[2].Status != StatusSkipped || res[2].Category != CatCanaryFailed {
+		t.Errorf("sw3 status = %v, cat = %v, want SKIPPED / CANARY_FAILED", res[2].Status, res[2].Category)
+	}
+}
+
+func TestBatchRolloutMaxFailThreshold(t *testing.T) {
+	tr := newFakeTransport()
+	// sw1 and sw2 in batch 1; sw1 fails (50% failure rate)
+	tr.openErr["sw1"] = errors.New("connection refused")
+	r := newRunner(t, tr, Options{
+		BatchSize:        2,
+		MaxFailPercent:   25,
+		FailThresholdSet: true,
+	})
+	jobs := mkJobs(t, "cisco", []string{"hostname x"}, "sw1", "sw2", "sw3", "sw4")
+
+	res := r.Run(context.Background(), jobs)
+	if res[0].Status != StatusFailed {
+		t.Errorf("sw1 status = %v, want StatusFailed", res[0].Status)
+	}
+	if res[1].Status != StatusSucceeded {
+		t.Errorf("sw2 status = %v, want StatusSucceeded", res[1].Status)
+	}
+	// sw3 and sw4 in batch 2 should be skipped due to failure threshold (50% > 25%)
+	if res[2].Status != StatusSkipped || res[2].Category != CatThresholdExceeded {
+		t.Errorf("sw3 status = %v, cat = %v, want SKIPPED / THRESHOLD_EXCEEDED", res[2].Status, res[2].Category)
+	}
+	if res[3].Status != StatusSkipped || res[3].Category != CatThresholdExceeded {
+		t.Errorf("sw4 status = %v, cat = %v, want SKIPPED / THRESHOLD_EXCEEDED", res[3].Status, res[3].Category)
+	}
+}
+
+func TestPreDiffInspectsDiff(t *testing.T) {
+	tr := newFakeTransport()
+	diffOutput := "[edit interfaces]\n+   ge-0/0/0 { unit 0 { family inet; } }\n"
+	tr.respond = func(host, line string) (string, error) {
+		if line == "show | compare" {
+			return diffOutput, nil
+		}
+		return "", nil
+	}
+	r := newRunner(t, tr, Options{PreDiff: true})
+	jobs := mkJobs(t, "junos", []string{"set interfaces ge-0/0/0 unit 0 family inet"}, "junos1")
+
+	res := r.Run(context.Background(), jobs)
+	if res[0].Status != StatusSucceeded {
+		t.Fatalf("run failed: %+v", res[0])
+	}
+	if res[0].CandidateDiff != diffOutput {
+		t.Errorf("CandidateDiff = %q, want %q", res[0].CandidateDiff, diffOutput)
+	}
+	sent := tr.sent("junos1")
+	if !slices.Contains(sent, "show | compare") {
+		t.Errorf("sent commands should contain 'show | compare': %v", sent)
+	}
+}
+
+func TestConfirmDiffAccepted(t *testing.T) {
+	tr := newFakeTransport()
+	tr.respond = func(host, line string) (string, error) {
+		if line == "show | compare" {
+			return "+ diff content\n", nil
+		}
+		return "", nil
+	}
+	confirmedHost := ""
+	r := newRunner(t, tr, Options{PreDiff: true, ConfirmDiff: true})
+	r.ConfirmFunc = func(host, diff string) bool {
+		confirmedHost = host
+		return true
+	}
+	jobs := mkJobs(t, "junos", []string{"set system host-name lab1"}, "junos1")
+
+	res := r.Run(context.Background(), jobs)
+	if res[0].Status != StatusSucceeded {
+		t.Fatalf("run failed: %+v", res[0])
+	}
+	if confirmedHost != "junos1" {
+		t.Errorf("confirmedHost = %q, want junos1", confirmedHost)
+	}
+	sent := tr.sent("junos1")
+	if !slices.Contains(sent, "commit") {
+		t.Errorf("commit should have been sent after confirmation: %v", sent)
+	}
+}
+
+func TestConfirmDiffRejected(t *testing.T) {
+	tr := newFakeTransport()
+	tr.respond = func(host, line string) (string, error) {
+		if line == "show | compare" {
+			return "+ bad diff\n", nil
+		}
+		return "", nil
+	}
+	r := newRunner(t, tr, Options{PreDiff: true, ConfirmDiff: true})
+	r.ConfirmFunc = func(host, diff string) bool {
+		return false // operator says NO
+	}
+	jobs := mkJobs(t, "junos", []string{"set system host-name lab1"}, "junos1")
+
+	res := r.Run(context.Background(), jobs)
+	if res[0].Status != StatusFailed || res[0].Category != CatCancelled {
+		t.Fatalf("expected FAILED / CANCELLED, got: %+v", res[0])
+	}
+	sent := tr.sent("junos1")
+	if slices.Contains(sent, "commit") {
+		t.Errorf("commit should NOT be sent after rejection: %v", sent)
+	}
+	if !slices.Contains(sent, "rollback 0") {
+		t.Errorf("cleanup rollback 0 should have been sent: %v", sent)
+	}
+}
+
+func TestOpModeStructuredJSON(t *testing.T) {
+	tr := newFakeTransport()
+	showIntOutput := `
+Interface              IP-Address      OK? Method Status                Protocol
+FastEthernet0/0        192.168.1.1     YES manual up                    up
+`
+	tr.respond = func(host, line string) (string, error) {
+		if line == "show ip interface brief" {
+			return showIntOutput, nil
+		}
+		return "", nil
+	}
+	outDir := t.TempDir()
+	r := newRunner(t, tr, Options{
+		OpMode:    true,
+		Format:    "json",
+		OutputDir: outDir,
+	})
+	jobs := mkJobs(t, "cisco", []string{"show ip interface brief"}, "sw1")
+
+	res := r.Run(context.Background(), jobs)
+	if res[0].Status != StatusSucceeded {
+		t.Fatalf("run failed: %+v", res[0])
+	}
+	if res[0].ParsedOutput == nil {
+		t.Fatal("ParsedOutput is nil")
+	}
+	val, ok := res[0].ParsedOutput["show ip interface brief"]
+	if !ok {
+		t.Fatalf("ParsedOutput missing command key: %+v", res[0].ParsedOutput)
+	}
+	t.Logf("ParsedOutput: %+v", val)
+
+	// Check that sw1.json was written to outDir
+	jsonFile := filepath.Join(outDir, "sw1.json")
+	data, err := os.ReadFile(jsonFile)
+	if err != nil {
+		t.Fatalf("could not read %s: %v", jsonFile, err)
+	}
+	if !strings.Contains(string(data), "FastEthernet0/0") {
+		t.Errorf("JSON output file missing interface name: %s", string(data))
+	}
+}
+

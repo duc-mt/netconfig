@@ -174,6 +174,7 @@ type PlanOptions struct {
 	CommitConfirm int  // minutes; > 0 requests an on-box deadman timer where the platform has one
 	AllowReboot   bool // permit a timed reload as the deadman (RollbackRebootOnly platforms)
 	Verify        bool // keep a StepVerify placeholder so the runner can run post-change checks
+	PreDiff       bool // inspect candidate configuration diff before committing on supported platforms
 }
 
 // Confirm describes an interactive confirmation dialog and its answer.
@@ -196,10 +197,12 @@ type Profile struct {
 	ErrorPatterns []*regexp.Regexp // matched per output line
 	BackupCommand string           // prints the full running configuration
 	EndMarkers    []string         // substrings expected at or near end of untruncated backup (e.g. "\nend", "\nreturn")
+	CandidateDiff string           // read-only command inside config mode to inspect candidate diff (e.g. "show | compare")
 
 	probe         string
 	apply         []Step // StepBody is a placeholder for the user's commands
 	applyCleanup  []Step
+	applySession  []Step // optional session-based apply plan with candidate diff (e.g. Arista EOS)
 	opApply       []Step // operational (read-only/show) command plan — no config mode
 	dryRun        []Step // nil: vendor has no way to validate without applying
 	dryRunCleanup []Step
@@ -334,6 +337,29 @@ func (p *Profile) BuildPlan(commands []string, opts PlanOptions) Plan {
 	}
 }
 
+// insertStepInspect inserts a StepInspect step right before the first StepPersist
+// or StepConfirm step in steps, unless a StepInspect is already present.
+func insertStepInspect(steps []Step, diffCmd string) []Step {
+	if diffCmd == "" {
+		return steps
+	}
+	for _, s := range steps {
+		if s.Kind == StepInspect {
+			return steps
+		}
+	}
+	for i, s := range steps {
+		if s.Kind == StepPersist || s.Kind == StepConfirm {
+			out := make([]Step, 0, len(steps)+1)
+			out = append(out, steps[:i]...)
+			out = append(out, Step{Kind: StepInspect, Line: diffCmd})
+			out = append(out, steps[i:]...)
+			return out
+		}
+	}
+	return append(steps, Step{Kind: StepInspect, Line: diffCmd})
+}
+
 // buildApply builds the real (non dry-run) plan. A requested commit-confirm is
 // honoured only when the platform can do it: natively, or via a timed reload
 // when the operator allowed one. Otherwise the plain plan is returned and the
@@ -349,9 +375,16 @@ func (p *Profile) buildApply(expand func([]Step) []Step, opts PlanOptions) Plan 
 		}
 	}
 	if plan.Confirm == ConfirmNone {
-		plan.Steps, plan.Cleanup = expand(p.apply), expand(p.applyCleanup)
+		if opts.PreDiff && len(p.applySession) > 0 {
+			plan.Steps, plan.Cleanup = expand(p.applySession), expand(p.dryRunCleanup)
+		} else {
+			plan.Steps, plan.Cleanup = expand(p.apply), expand(p.applyCleanup)
+		}
 		if opts.Verify {
 			plan.Steps = append(plan.Steps, Step{Kind: StepVerify})
+		}
+		if opts.PreDiff && p.CandidateDiff != "" {
+			plan.Steps = insertStepInspect(plan.Steps, p.CandidateDiff)
 		}
 		return plan
 	}
@@ -361,6 +394,9 @@ func (p *Profile) buildApply(expand func([]Step) []Step, opts PlanOptions) Plan 
 	plan.Window = opts.CommitConfirm
 	plan.Steps, plan.Cleanup = expand(p.confirmApply), expand(p.confirmCleanup)
 	plan.Abort = expand(p.confirmAbort)
+	if opts.PreDiff && p.CandidateDiff != "" {
+		plan.Steps = insertStepInspect(plan.Steps, p.CandidateDiff)
+	}
 	return plan
 }
 
@@ -511,6 +547,14 @@ func newCiscoXE() *Profile {
 
 func newArista() *Profile {
 	p := ciscoLike(Arista, "Arista EOS", reAristaErr)
+	p.CandidateDiff = "show session-config diffs"
+	p.applySession = []Step{
+		{Kind: StepEnter, Line: "configure session netconfig-{token}"},
+		{Kind: StepBody},
+		{Kind: StepInspect, Line: "show session-config diffs"},
+		{Kind: StepPersist, Line: "commit", Slow: true},
+		{Kind: StepPersist, Line: "write memory", Slow: true},
+	}
 	// EOS config sessions validate every command as it is entered and can be
 	// aborted, which makes a genuine dry run possible.
 	p.dryRun = []Step{
@@ -550,6 +594,7 @@ func newJunos() *Profile {
 		Confirms:      genericConfirms,
 		ErrorPatterns: []*regexp.Regexp{reJunosErr},
 		BackupCommand: "show configuration | no-more",
+		CandidateDiff: "show | compare",
 		probe:         "show system uptime",
 		apply: []Step{
 			{Kind: StepEnter, Line: "configure"},
@@ -639,6 +684,7 @@ func newVyOS() *Profile {
 		Confirms:      genericConfirms,
 		ErrorPatterns: []*regexp.Regexp{reVyOSErr},
 		BackupCommand: "show configuration commands",
+		CandidateDiff: "compare",
 		probe:         "show version",
 		apply: []Step{
 			{Kind: StepEnter, Line: "configure"},
@@ -708,6 +754,7 @@ func newPaloAlto() *Profile {
 		Confirms:      genericConfirms,
 		ErrorPatterns: []*regexp.Regexp{rePaloAltoErr},
 		BackupCommand: "show config running",
+		CandidateDiff: "show config diff",
 		probe:         "show system info",
 		apply: []Step{
 			{Kind: StepEnter, Line: "configure"},

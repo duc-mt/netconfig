@@ -55,6 +55,8 @@ const (
 	CatUnsupportedVendor Category = "UNSUPPORTED_VENDOR"
 	CatNoCredentials     Category = "NO_CREDENTIALS"
 	CatNoCommands        Category = "NO_COMMANDS"
+	CatCanaryFailed      Category = "CANARY_FAILED"
+	CatThresholdExceeded Category = "THRESHOLD_EXCEEDED"
 	// CatCancelled is also used for devices not started before an interrupt.
 )
 
@@ -132,6 +134,14 @@ type Result struct {
 	// Options.Verify). Both are 0 when no check applied to the device.
 	VerifyPassed int
 	VerifyTotal  int
+
+	// CandidateDiff contains the candidate configuration diff inspected
+	// before committing on supported platforms (-pre-diff).
+	CandidateDiff string
+
+	// ParsedOutput contains structured data extracted from operational
+	// command responses (e.g. -op -format json). Keyed by command string.
+	ParsedOutput map[string]any
 }
 
 // RollbackOutcome is the outcome of an automatic rollback attempted after a

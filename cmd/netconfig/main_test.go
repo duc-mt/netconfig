@@ -218,3 +218,38 @@ func TestPlanHeaderMatchesTheMode(t *testing.T) {
 		t.Fatalf("exit=%d\n%s", code, out)
 	}
 }
+
+func TestNewFlagsValidation(t *testing.T) {
+	base := fixture(t, "cisco", "hostname lab1\n")
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"negative canary", []string{"-canary", "-1"}, "-canary must not be negative"},
+		{"negative batch-size", []string{"-batch-size", "-1"}, "-batch-size must not be negative"},
+		{"invalid max-fail-percent", []string{"-max-fail-percent", "150"}, "-max-fail-percent must be between 0 and 100"},
+		{"invalid format", []string{"-format", "xml"}, "-format must be 'text' or 'json'"},
+		{"pre-diff with op", []string{"-op", "-pre-diff"}, "-pre-diff inspects configuration changes and cannot be used with -op"},
+	}
+
+	for _, tc := range cases {
+		code, out := runCLI(t, append(append([]string{}, base...), tc.args...)...)
+		if code != task.ExitFatal || !strings.Contains(out, tc.want) {
+			t.Errorf("%s: exit=%d, want fatal containing %q:\n%s", tc.name, code, tc.want, out)
+		}
+	}
+}
+
+func TestOpModeFormatJSON(t *testing.T) {
+	base := fixture(t, "cisco", "show ip interface brief\n")
+	code, out := runCLI(t, append(base, "-op", "-format", "json", "-yes")...)
+	// Device skipped due to missing credentials in test fixture, so code is ExitPartial
+	if code != task.ExitPartial {
+		t.Errorf("exit = %d, want ExitPartial\n%s", code, out)
+	}
+	if !strings.Contains(out, "sw1") {
+		t.Errorf("output should mention device sw1:\n%s", out)
+	}
+}
+

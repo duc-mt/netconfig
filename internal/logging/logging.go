@@ -138,6 +138,13 @@ func (l *Logger) AddSecret(s string) {
 	l.secrets = append(l.secrets, s)
 }
 
+// SetConsole redirects console output to a new writer (e.g. for a live dashboard).
+func (l *Logger) SetConsole(w io.Writer) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.console = w
+}
+
 // Tracef, Infof, Warnf and Errorf log one (possibly multi-line) message
 // tagged with host ("" for run-level messages).
 func (l *Logger) Tracef(host, format string, args ...any) { l.logf(LevelTrace, host, format, args) }

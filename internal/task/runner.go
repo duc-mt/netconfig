@@ -12,6 +12,7 @@ package task
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -27,6 +28,7 @@ import (
 	"netconfig/internal/credentials"
 	"netconfig/internal/inventory"
 	"netconfig/internal/logging"
+	"netconfig/internal/parser"
 	"netconfig/internal/vendor"
 )
 
@@ -55,6 +57,14 @@ type Transport interface {
 	Open(ctx context.Context, t Target) (Session, error)
 }
 
+// StatusObserver receives execution lifecycle events for live reporting.
+type StatusObserver interface {
+	OnBatchStart(batch int, totalBatches int, count int, isCanary bool)
+	OnDeviceStart(dev inventory.Device)
+	OnDeviceStep(dev inventory.Device, step vendor.StepKind, line string)
+	OnDeviceDone(res Result)
+}
+
 // Options tunes a run.
 type Options struct {
 	Concurrency    int
@@ -73,14 +83,29 @@ type Options struct {
 	CommitConfirm       int          // minutes; > 0 arms an on-box deadman timer where the platform has one
 	AllowRebootRollback bool         // permit a timed reload as the deadman on platforms without a hitless one
 	Verify              []VerifyRule // post-change health checks, filtered per device
+
+	// Canary & Phased Rollout
+	Canary           int  // run N devices first as canary; abort run if any canary fails
+	BatchSize        int  // execute remaining devices in sequential batches of N (0 = all at once)
+	MaxFailPercent   int  // abort subsequent batches if failure rate exceeds this % (0-100, default 100)
+	FailThresholdSet bool // true if MaxFailPercent was explicitly configured (allows 0% threshold)
+
+	// Pre-Commit Candidate Diff
+	PreDiff     bool // stage and inspect candidate diff before commit on supported platforms
+	ConfirmDiff bool // prompt operator confirmation before committing candidate diff
+
+	// Output format
+	Format string // "text" (default) or "json" for structured operational output
 }
 
 // Runner executes jobs.
 type Runner struct {
-	Transport Transport
-	Log       *logging.Logger
-	Opts      Options
-	Now       func() time.Time // for backup file names; defaults to time.Now
+	Transport   Transport
+	Log         *logging.Logger
+	Opts        Options
+	Observer    StatusObserver
+	ConfirmFunc func(host string, diff string) bool
+	Now         func() time.Time // for backup file names; defaults to time.Now
 }
 
 func (r *Runner) now() time.Time {
@@ -97,36 +122,162 @@ func (r *Runner) slow() time.Duration {
 	return 3
 }
 
-// Run processes all jobs with at most Opts.Concurrency devices in flight and
-// returns one Result per job, in job order. A failure (or panic) on one device
-// never affects the others.
+// Run processes all jobs according to canary, batch size, and concurrency options.
+// It returns one Result per job, in job order. A failure (or panic) on one device
+// never affects others within the same batch.
 func (r *Runner) Run(ctx context.Context, jobs []Job) []Result {
 	results := make([]Result, len(jobs))
-
-	workers := r.Opts.Concurrency
-	if workers < 1 {
-		workers = 1
-	}
-	if workers > len(jobs) {
-		workers = len(jobs)
+	if len(jobs) == 0 {
+		return results
 	}
 
-	idx := make(chan int)
-	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := range idx {
-				results[i] = r.runGuarded(ctx, jobs[i]) // each index is written by exactly one worker
+	maxFail := r.Opts.MaxFailPercent
+	if maxFail <= 0 && !r.Opts.FailThresholdSet {
+		maxFail = 100
+	}
+
+	// Partition job indices into batches.
+	type batch struct {
+		indices  []int
+		isCanary bool
+	}
+	var batches []batch
+
+	startIdx := 0
+	if r.Opts.Canary > 0 {
+		canarySize := r.Opts.Canary
+		if canarySize > len(jobs) {
+			canarySize = len(jobs)
+		}
+		var canaryIdx []int
+		for i := 0; i < canarySize; i++ {
+			canaryIdx = append(canaryIdx, i)
+		}
+		batches = append(batches, batch{indices: canaryIdx, isCanary: true})
+		startIdx = canarySize
+	}
+
+	if startIdx < len(jobs) {
+		if r.Opts.BatchSize > 0 {
+			for i := startIdx; i < len(jobs); i += r.Opts.BatchSize {
+				end := i + r.Opts.BatchSize
+				if end > len(jobs) {
+					end = len(jobs)
+				}
+				var bIdx []int
+				for j := i; j < end; j++ {
+					bIdx = append(bIdx, j)
+				}
+				batches = append(batches, batch{indices: bIdx, isCanary: false})
 			}
-		}()
+		} else {
+			var bIdx []int
+			for j := startIdx; j < len(jobs); j++ {
+				bIdx = append(bIdx, j)
+			}
+			batches = append(batches, batch{indices: bIdx, isCanary: false})
+		}
 	}
-	for i := range jobs {
-		idx <- i
+
+	skipRemaining := func(fromBatch int, cat Category, detail string) {
+		for b := fromBatch; b < len(batches); b++ {
+			for _, i := range batches[b].indices {
+				results[i] = Result{
+					Device:   jobs[i].Device,
+					Status:   StatusSkipped,
+					Category: cat,
+					Detail:   detail,
+				}
+				r.Log.Warnf(jobs[i].Device.Hostname, "SKIPPED [%s]: %s", cat, detail)
+				if r.Observer != nil {
+					r.Observer.OnDeviceDone(results[i])
+				}
+			}
+		}
 	}
-	close(idx)
-	wg.Wait()
+
+	cumulativeCompleted := 0
+	cumulativeFailed := 0
+
+	for bIdx, b := range batches {
+		if ctx.Err() != nil {
+			skipRemaining(bIdx, CatCancelled, "run was interrupted before this device started")
+			break
+		}
+
+		if r.Observer != nil {
+			r.Observer.OnBatchStart(bIdx+1, len(batches), len(b.indices), b.isCanary)
+		}
+		if b.isCanary {
+			r.Log.Infof("", "CANARY BATCH starting: %d device(s)", len(b.indices))
+		} else if len(batches) > 1 {
+			r.Log.Infof("", "BATCH %d/%d starting: %d device(s)", bIdx+1, len(batches), len(b.indices))
+		}
+
+		workers := r.Opts.Concurrency
+		if workers < 1 {
+			workers = 1
+		}
+		if workers > len(b.indices) {
+			workers = len(b.indices)
+		}
+
+		idxChan := make(chan int)
+		var wg sync.WaitGroup
+		for w := 0; w < workers; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := range idxChan {
+					results[i] = r.runGuarded(ctx, jobs[i])
+				}
+			}()
+		}
+		for _, i := range b.indices {
+			idxChan <- i
+		}
+		close(idxChan)
+		wg.Wait()
+
+		// Evaluate batch outcomes
+		batchFailed := 0
+		batchCompleted := 0
+		for _, i := range b.indices {
+			switch results[i].Status {
+			case StatusFailed:
+				batchFailed++
+				batchCompleted++
+			case StatusSucceeded:
+				batchCompleted++
+			}
+		}
+		cumulativeCompleted += batchCompleted
+		cumulativeFailed += batchFailed
+
+		if b.isCanary {
+			if batchFailed > 0 {
+				r.Log.Errorf("", "CANARY FAILED: %d of %d canary device(s) failed; aborting subsequent batches", batchFailed, len(b.indices))
+				skipRemaining(bIdx+1, CatCanaryFailed, "canary device failed; subsequent batches aborted")
+				break
+			}
+			r.Log.Infof("", "CANARY PASSED: all %d canary device(s) succeeded", len(b.indices))
+		} else {
+			if cumulativeCompleted > 0 {
+				failPercent := (cumulativeFailed * 100) / cumulativeCompleted
+				if failPercent > maxFail {
+					r.Log.Errorf("", "FAILURE THRESHOLD EXCEEDED: %d%% failed (%d/%d), threshold is %d%%; aborting subsequent batches",
+						failPercent, cumulativeFailed, cumulativeCompleted, maxFail)
+					skipRemaining(bIdx+1, CatThresholdExceeded,
+						fmt.Sprintf("failure rate (%d%%) exceeded threshold (%d%%); subsequent batches aborted", failPercent, maxFail))
+					break
+				}
+			}
+			if len(batches) > 1 && bIdx < len(batches)-1 {
+				r.Log.Infof("", "BATCH %d/%d completed (%d succeeded, %d failed)", bIdx+1, len(batches), batchCompleted-batchFailed, batchFailed)
+			}
+		}
+	}
+
 	return results
 }
 
@@ -134,6 +285,10 @@ func (r *Runner) runGuarded(ctx context.Context, job Job) (res Result) {
 	start := time.Now()
 	res = Result{Device: job.Device}
 	host := job.Device.Hostname
+
+	if r.Observer != nil {
+		r.Observer.OnDeviceStart(job.Device)
+	}
 
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -143,6 +298,9 @@ func (r *Runner) runGuarded(ctx context.Context, job Job) (res Result) {
 			r.Log.Errorf(host, "PANIC while processing device: %v\n%s", rec, debug.Stack())
 		}
 		res.Duration = time.Since(start)
+		if r.Observer != nil {
+			r.Observer.OnDeviceDone(res)
+		}
 	}()
 
 	switch {
@@ -206,6 +364,7 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 			CommitConfirm: r.Opts.CommitConfirm,
 			AllowReboot:   r.Opts.AllowRebootRollback,
 			Verify:        len(rules) > 0,
+			PreDiff:       r.Opts.PreDiff,
 		})
 		res.SafetyRating = prof.Safety().String()
 		r.announceSafety(host, prof, plan)
@@ -267,6 +426,9 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 
 	announced := false
 	for _, step := range plan.Steps {
+		if r.Observer != nil {
+			r.Observer.OnDeviceStep(job.Device, step.Kind, step.Line)
+		}
 		if step.Kind == vendor.StepVerify {
 			if !r.verifyStep(ctx, sess, job, rules, step, armed, res, &outputLines) {
 				res.CommandsApplied = applied
@@ -303,6 +465,12 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 			fmt.Fprintf(&outputLines, "=== %s ===\n%s\n", logging.RedactCommand(step.Line), redactText(out))
 			if r.Opts.OpMode {
 				r.Log.Block(logging.LevelInfo, host, "  | ", redactText(out))
+				if r.Opts.Format == "json" {
+					if res.ParsedOutput == nil {
+						res.ParsedOutput = make(map[string]any)
+					}
+					res.ParsedOutput[step.Line] = parser.ParseCommandOutput(step.Line, out)
+				}
 			}
 		}
 		if step.Kind == vendor.StepInspect && strings.TrimSpace(out) != "" {
@@ -310,7 +478,21 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 			// Arista "show session-config diffs"): highlight it the same
 			// way as the before/after diff below, since it's the same kind
 			// of content.
+			res.CandidateDiff = out
 			r.Log.DiffBlock(logging.LevelInfo, host, "  | ", redactText(out))
+			if r.Opts.ConfirmDiff {
+				confirmed := true
+				if r.ConfirmFunc != nil {
+					confirmed = r.ConfirmFunc(host, out)
+				}
+				if !confirmed {
+					res.CommandsApplied = applied
+					r.fail(res, host, CatCancelled, fmt.Errorf("candidate configuration diff was rejected by operator"))
+					r.afterFailure(ctx, sess, job, plan, res, armed)
+					return
+				}
+				r.Log.Infof(host, "candidate configuration diff confirmed by operator")
+			}
 		}
 		if err != nil {
 			res.CommandsApplied = applied
@@ -337,9 +519,16 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 	}
 
 	// Write per-device output file if requested.
-	if r.Opts.OutputDir != "" && outputLines.Len() > 0 {
-		if err := r.writeOutput(host, outputLines.String()); err != nil {
-			r.Log.Warnf(host, "could not write output file: %v", err)
+	if r.Opts.OutputDir != "" {
+		if outputLines.Len() > 0 {
+			if err := r.writeOutput(host, outputLines.String()); err != nil {
+				r.Log.Warnf(host, "could not write output file: %v", err)
+			}
+		}
+		if r.Opts.Format == "json" && len(res.ParsedOutput) > 0 {
+			if err := r.writeJSONOutput(host, res.ParsedOutput); err != nil {
+				r.Log.Warnf(host, "could not write JSON output file: %v", err)
+			}
 		}
 	}
 
@@ -826,6 +1015,22 @@ func (r *Runner) writeOutput(host, content string) error {
 	name := unsafeFileChars.ReplaceAllString(host, "_") + ".txt"
 	dst := filepath.Join(dir, name)
 	return writeFileAtomic(dst, []byte(content), 0o600)
+}
+
+// writeJSONOutput saves the structured parsed output for one device to
+// <OutputDir>/<hostname>.json, creating the directory if needed.
+func (r *Runner) writeJSONOutput(host string, data any) error {
+	dir := r.Opts.OutputDir
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	name := unsafeFileChars.ReplaceAllString(host, "_") + ".json"
+	dst := filepath.Join(dir, name)
+	bytes, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(dst, append(bytes, '\n'), 0o600)
 }
 
 // writeFileAtomic writes via a temporary file and rename so a crash never

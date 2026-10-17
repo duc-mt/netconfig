@@ -551,9 +551,11 @@ type JSONDeviceResult struct {
 	DiffAdded       int    `json:"diff_added,omitempty"`
 	DiffRemoved     int    `json:"diff_removed,omitempty"`
 	OutputFile      string `json:"output_file,omitempty"`
-	RollbackSafety  string `json:"rollback_safety,omitempty"`
-	VerifyPassed    int    `json:"verify_passed,omitempty"`
-	VerifyTotal     int    `json:"verify_total,omitempty"`
+	RollbackSafety  string         `json:"rollback_safety,omitempty"`
+	VerifyPassed    int            `json:"verify_passed,omitempty"`
+	VerifyTotal     int            `json:"verify_total,omitempty"`
+	CandidateDiff   string         `json:"candidate_diff,omitempty"`
+	ParsedOutput    map[string]any `json:"parsed_output,omitempty"`
 }
 
 // JSONReport is the top-level structure written to the JSON report file.
@@ -589,6 +591,8 @@ func WriteJSONReport(path string, results []Result, outputDir string) error {
 			RollbackSafety:  r.SafetyRating,
 			VerifyPassed:    r.VerifyPassed,
 			VerifyTotal:     r.VerifyTotal,
+			CandidateDiff:   r.CandidateDiff,
+			ParsedOutput:    r.ParsedOutput,
 		}
 		if outputDir != "" && r.Status == StatusSucceeded {
 			jr.OutputFile = outputDir + "/" + safeHostFilename(r.Device.Hostname) + ".txt"

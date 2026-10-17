@@ -277,6 +277,69 @@ Proceed with applying changes to 2 device(s)? [y/N]:
 The findings behind each risk level are listed under the table, and with `-commit-confirm` every
 device that is not `SAFE` gets a rollback hazard line.
 
+### Canary & Phased Batch Rollouts (`-canary`, `-batch-size`, `-max-fail-percent`)
+
+Safely roll out configuration updates in staged waves with failure thresholds:
+
+```sh
+# Run 1 canary device first; if successful, process remaining devices in batches of 5.
+# Abort immediately if cumulative failures exceed 10%.
+./bin/netconfig -commands commands.txt -canary 1 -batch-size 5 -max-fail-percent 10 -backup
+```
+
+- **`-canary N`**: executes `N` devices first as a canary wave. If any canary device fails, the entire run halts immediately; all unstarted devices are marked `SKIPPED (CANARY_FAILED)`.
+- **`-batch-size N`**: executes remaining devices in sequential batches of `N` devices (concurrency within each batch is governed by `-concurrency`).
+- **`-max-fail-percent P`**: specifies a cumulative failure rate threshold (0–100%). If the failure percentage exceeds `P%` after any batch, remaining batches are aborted and remaining devices are marked `SKIPPED (THRESHOLD_EXCEEDED)`.
+
+### Pre-Commit Candidate Diffing & Interactive Confirmation (`-pre-diff`, `-confirm-diff`)
+
+Inspect exact device-side candidate configuration diffs before committing changes:
+
+```sh
+# Inspect candidate diff (Junos "show | compare", VyOS "compare", Arista "show session-config diffs")
+./bin/netconfig -commands commands.txt -pre-diff
+
+# Require interactive confirmation before each device's commit
+./bin/netconfig -commands commands.txt -confirm-diff
+```
+
+- **`-pre-diff`**: stages configuration commands and issues the vendor's native candidate diff command before persisting. The diff is displayed with colored unified diff formatting (`+` additions in green, `-` deletions in red) and stored in `run.json` (`candidate_diff`).
+- **`-confirm-diff`**: displays the candidate diff and prompts the operator `[y/N]` to confirm committing each device. If rejected, the candidate changes are discarded cleanly without saving (`rollback 0` on Junos, `abort` on Arista, `exit discard` on VyOS), and the device is safely aborted (`CANCELLED`). Can be bypassed in CI/CD with `-yes` or `-force`.
+
+### Structured Output Parsing (`-op -format json`)
+
+Extract structured data from operational `show`, `display`, and `get` commands directly into JSON:
+
+```sh
+# Parse operational commands into structured JSON on stdout
+./bin/netconfig -op -commands <(echo "show ip interface brief") -format json -yes
+```
+
+The structured output parser automatically recognizes and converts command outputs into typed JSON models:
+- **Interface Brief:** `show ip interface brief` (Cisco, Arista), `display ip interface brief` (Huawei), `show interfaces terse` (Junos), `show interfaces` (VyOS).
+- **System Version:** `show version` (Cisco, Arista, Junos, VyOS), `display version` (Huawei), `get system status` (FortiOS) — extracts `version`, `model`, `uptime`, `serial_number`, `system_image`.
+- **Routing Tables:** `show ip route` (Cisco, Arista, VyOS), `display ip routing-table` (Huawei).
+- **Generic Tables & Key-Values:** Any ASCII table or `Key: Value` output is parsed into JSON arrays and maps.
+
+When used with `-output-dir DIR`, parsed results are written to `<DIR>/<hostname>.json`. When used with `-json-report FILE`, each device entry includes `parsed_output`.
+
+### Live Terminal Progress Dashboard (`-dashboard`)
+
+When running interactively on a terminal, `netconfig` renders a live, multi-line ANSI terminal progress dashboard with zero external dependencies:
+
+```
+netconfig [Batch 1/3] [Workers: 5] [Active: 3] [Elapsed: 00:12]
+[=========>-------------------] 12/30 (40%) | 11 OK, 1 FAIL, 0 SKIP
+  * core-rtr-01      (cisco)   [config]    interface GigabitEthernet0/1 (1.2s)
+  * dist-sw-02       (junos)   [persist]   commit (2.4s)
+  * border-gw-01     (vyos)    [inspect]   compare (0.8s)
+```
+
+- **`-dashboard`**: enabled by default on interactive terminals when not in `-verbose` mode.
+- Shows real-time progress bars, completed/failed/skipped device counters, elapsed time, current batch/canary status, and active worker operations.
+- Interleaves cleanly with log messages and clears itself upon completion, leaving only the clean final summary table.
+- Disable via `-dashboard=false` or set `NO_COLOR=1` / run non-interactively in CI pipelines.
+
 ## Inventory
 
 ```csv

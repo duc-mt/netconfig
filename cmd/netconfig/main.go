@@ -17,6 +17,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"os/signal"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -35,6 +37,7 @@ import (
 	"netconfig/internal/logging"
 	"netconfig/internal/sshclient"
 	"netconfig/internal/task"
+	"netconfig/internal/ui"
 	"netconfig/internal/vendor"
 )
 
@@ -130,6 +133,19 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		jumpUser     = fs.String("jump-user", "", "SSH username for the global jump host (overrides NETCONFIG_JUMP_USERNAME)")
 		jumpPassword = fs.String("jump-password", "", "SSH password for the global jump host (overrides NETCONFIG_JUMP_PASSWORD)")
 		jumpKeyFile  = fs.String("jump-key-file", "", "SSH private key file for the global jump host (overrides NETCONFIG_JUMP_KEY_FILE)")
+
+		// Canary & phased rollouts
+		canary         = fs.Int("canary", 0, "run N devices first as canary; abort run if any canary fails")
+		batchSize      = fs.Int("batch-size", 0, "execute remaining devices in sequential batches of N (0 = all at once)")
+		maxFailPercent = fs.Int("max-fail-percent", 100, "abort subsequent batches if cumulative failure rate exceeds this % (0-100)")
+
+		// Pre-commit diff inspection
+		preDiff     = fs.Bool("pre-diff", false, "inspect candidate configuration diff before committing on supported platforms (Junos, VyOS, Arista, etc.)")
+		confirmDiff = fs.Bool("confirm-diff", false, "prompt operator confirmation before committing candidate diff (implies -pre-diff; bypassed with -yes/-force)")
+
+		// Output format & dashboard
+		format    = fs.String("format", "text", "output format: text | json (in -op mode, json parses operational show commands into structured data)")
+		dashboard = fs.Bool("dashboard", true, "show live terminal ANSI progress dashboard (active on interactive terminals without -verbose)")
 	)
 
 	if err := fs.Parse(args); err != nil {
@@ -176,6 +192,24 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 	if *verifyFile != "" && *opMode {
 		return fatal("-verify-file checks the result of a change and cannot be used with -op")
+	}
+	if *confirmDiff {
+		*preDiff = true
+	}
+	if *canary < 0 {
+		return fatal("-canary must not be negative")
+	}
+	if *batchSize < 0 {
+		return fatal("-batch-size must not be negative")
+	}
+	if *maxFailPercent < 0 || *maxFailPercent > 100 {
+		return fatal("-max-fail-percent must be between 0 and 100")
+	}
+	if *format != "text" && *format != "json" {
+		return fatal("-format must be 'text' or 'json'")
+	}
+	if *preDiff && *opMode {
+		return fatal("-pre-diff inspects configuration changes and cannot be used with -op")
 	}
 	policy, err := sshclient.ParsePolicy(*hostKeyPolicy)
 	if err != nil {
@@ -404,9 +438,24 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		defer pool.closeAll()
 	}
 
+	var confirmMu sync.Mutex
+	confirmFunc := func(host string, diff string) bool {
+		if *yes || *force {
+			return true
+		}
+		confirmMu.Lock()
+		defer confirmMu.Unlock()
+		if !credentials.IsTerminal(stdin) {
+			log.Errorf(host, "cannot prompt for candidate diff confirmation: stdin is not a terminal (pass -yes or -force to proceed)")
+			return false
+		}
+		return confirm(stdin, stderr, fmt.Sprintf("[%s] Candidate configuration diff displayed above. Proceed with commit? [y/N]: ", host))
+	}
+
 	runner := &task.Runner{
-		Transport: sshTransport{hostKey: hostKey, legacy: *legacy, autoConfirm: *autoConfirm, pool: pool},
-		Log:       log,
+		Transport:   sshTransport{hostKey: hostKey, legacy: *legacy, autoConfirm: *autoConfirm, pool: pool},
+		Log:         log,
+		ConfirmFunc: confirmFunc,
 		Opts: task.Options{
 			Concurrency:    *concurrency,
 			MaxRetries:     *maxRetries,
@@ -423,7 +472,29 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 			CommitConfirm:       *commitConfirm,
 			AllowRebootRollback: *allowRebootRB,
 			Verify:              verifyRules,
+
+			Canary:           *canary,
+			BatchSize:        *batchSize,
+			MaxFailPercent:   *maxFailPercent,
+			FailThresholdSet: isFlagSet(fs, "max-fail-percent"),
+
+			PreDiff:     *preDiff,
+			ConfirmDiff: *confirmDiff,
+			Format:      *format,
 		},
+	}
+
+	dashEnabled := *dashboard && isTerminalWriter(stderr) && !*verbose && os.Getenv("TERM") != "dumb"
+	var dash *ui.Dashboard
+	if dashEnabled {
+		dash = ui.New(ui.Config{
+			Writer:       stderr,
+			TotalDevices: len(jobs),
+			Width:        terminalWidth(stderr),
+			Enabled:      true,
+		})
+		runner.Observer = dash
+		log.SetConsole(&dashWriter{dash: dash})
 	}
 
 	// ---- run -------------------------------------------------------------
@@ -442,6 +513,32 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	results := runner.Run(ctx, jobs)
 	totalDuration := time.Since(runStart)
 	close(finished)
+
+	if dash != nil {
+		dash.Stop()
+		log.SetConsole(stderr)
+	}
+
+	if *opMode && *format == "json" {
+		type opDeviceJSON struct {
+			Hostname string         `json:"hostname"`
+			Vendor   string         `json:"vendor"`
+			Status   string         `json:"status"`
+			Commands map[string]any `json:"commands,omitempty"`
+		}
+		var outList []opDeviceJSON
+		for _, r := range results {
+			outList = append(outList, opDeviceJSON{
+				Hostname: r.Device.Hostname,
+				Vendor:   r.Device.Vendor,
+				Status:   r.Status.String(),
+				Commands: r.ParsedOutput,
+			})
+		}
+		if data, err := json.MarshalIndent(outList, "", "  "); err == nil {
+			fmt.Fprintln(stdout, string(data))
+		}
+	}
 
 	// ---- summary ---------------------------------------------------------
 	sum := task.Summarize(results, totalDuration)
@@ -625,3 +722,23 @@ func printPlan(w io.Writer, jobs []task.Job, backup bool, backupDir string, opMo
 	}
 	fmt.Fprintln(w)
 }
+
+type dashWriter struct {
+	dash *ui.Dashboard
+}
+
+func (dw *dashWriter) Write(p []byte) (n int, err error) {
+	dw.dash.Log(strings.TrimRight(string(p), "\r\n"))
+	return len(p), nil
+}
+
+func isFlagSet(fs *flag.FlagSet, name string) bool {
+	found := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
+}
+

@@ -349,3 +349,39 @@ func TestValidateBackup(t *testing.T) {
 		t.Errorf("expected valid vyos backup, got %v", err)
 	}
 }
+
+func TestPreDiffPlans(t *testing.T) {
+	cmds := []string{"set system host-name lab1"}
+	opts := PlanOptions{PreDiff: true, Token: "test"}
+
+	junos := mustLookup(t, "junos").BuildPlan(cmds, opts)
+	wantJunos := []string{"configure", "set system host-name lab1", "show | compare", "commit", "exit"}
+	if got := lines(junos.Steps); !slices.Equal(got, wantJunos) {
+		t.Errorf("Junos PreDiff steps = %v, want %v", got, wantJunos)
+	}
+
+	vyos := mustLookup(t, "vyos").BuildPlan(cmds, opts)
+	wantVyOS := []string{"configure", "set system host-name lab1", "compare", "commit", "save", "exit"}
+	if got := lines(vyos.Steps); !slices.Equal(got, wantVyOS) {
+		t.Errorf("VyOS PreDiff steps = %v, want %v", got, wantVyOS)
+	}
+
+	arista := mustLookup(t, "arista").BuildPlan([]string{"hostname lab1"}, opts)
+	wantArista := []string{
+		"configure session netconfig-test",
+		"hostname lab1",
+		"show session-config diffs",
+		"commit",
+		"write memory",
+	}
+	if got := lines(arista.Steps); !slices.Equal(got, wantArista) {
+		t.Errorf("Arista PreDiff steps = %v, want %v", got, wantArista)
+	}
+
+	cisco := mustLookup(t, "cisco").BuildPlan([]string{"hostname lab1"}, opts)
+	wantCisco := []string{"configure terminal", "hostname lab1", "end", "write memory"}
+	if got := lines(cisco.Steps); !slices.Equal(got, wantCisco) {
+		t.Errorf("Cisco PreDiff steps = %v, want %v", got, wantCisco)
+	}
+}
+
