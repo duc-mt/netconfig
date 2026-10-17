@@ -28,10 +28,13 @@ case "$(uname -m)" in
     *)             echo "Error: Unsupported Architecture $(uname -m)"; exit 1;;
 esac
 
-BINARY="bin/netconfig"
-[ "$OS" = "windows" ] && BINARY="bin/netconfig.exe"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-ARCH_BINARY="bin/netconfig-${OS}-${ARCH}"
+BINARY="$ROOT_DIR/bin/netconfig"
+[ "$OS" = "windows" ] && BINARY="$ROOT_DIR/bin/netconfig.exe"
+
+ARCH_BINARY="$ROOT_DIR/bin/netconfig-${OS}-${ARCH}"
 [ "$OS" = "windows" ] && ARCH_BINARY="${ARCH_BINARY}.exe"
 
 if [ -f "$BINARY" ]; then
@@ -48,18 +51,17 @@ else
     fi
     
     echo "Checking and installing required dependencies..."
-    go mod tidy
-    go mod vendor
+    (cd "$ROOT_DIR" && go mod tidy && go mod vendor)
 
     if command -v make >/dev/null 2>&1; then
-        make build
-        BINARY="bin/netconfig"
+        (cd "$ROOT_DIR" && make build)
+        BINARY="$ROOT_DIR/bin/netconfig"
     else
         echo "make is unavailable, building directly with go..."
         VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
         LDFLAGS="-s -w -X main.version=$VERSION"
-        CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags "$LDFLAGS" -o bin/netconfig ./cmd/netconfig
-        BINARY="bin/netconfig"
+        (cd "$ROOT_DIR" && CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags "$LDFLAGS" -o bin/netconfig ./cmd/netconfig)
+        BINARY="$ROOT_DIR/bin/netconfig"
     fi
 fi
 
