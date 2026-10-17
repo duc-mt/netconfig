@@ -384,4 +384,3 @@ func TestPreDiffPlans(t *testing.T) {
 		t.Errorf("Cisco PreDiff steps = %v, want %v", got, wantCisco)
 	}
 }
-

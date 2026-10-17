@@ -14,3 +14,6 @@ Thumbs.db
 coverage.out
 *.out
 
+# Persistent route memory
+.netconfig_memory*
+

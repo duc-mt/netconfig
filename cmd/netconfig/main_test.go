@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"netconfig/internal/memory"
 	"netconfig/internal/task"
 )
 
@@ -253,3 +254,48 @@ func TestOpModeFormatJSON(t *testing.T) {
 	}
 }
 
+func TestRouteMemoryCLI(t *testing.T) {
+	memFile := filepath.Join(t.TempDir(), "test_memory.json")
+
+	// 1. Show memory when empty
+	code, out := runCLI(t, "-show-memory", "-memory-file", memFile)
+	if code != task.ExitOK {
+		t.Fatalf("exit = %d, want ExitOK (%s)", code, out)
+	}
+	if !strings.Contains(out, "No learned routes") {
+		t.Fatalf("expected empty memory message, got:\n%s", out)
+	}
+
+	// 2. Populate memory directly
+	mem, err := memory.Load(memFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.Record("NHG-VYOS", "10.255.255.1", "NHG-TRANSIT-GW-01", "10.255.255.4:22", "auto-fallback"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Show memory when populated
+	code, out = runCLI(t, "-show-memory", "-memory-file", memFile)
+	if code != task.ExitOK {
+		t.Fatalf("exit = %d, want ExitOK (%s)", code, out)
+	}
+	if !strings.Contains(out, "NHG-VYOS") || !strings.Contains(out, "10.255.255.4:22") {
+		t.Fatalf("expected populated table with NHG-VYOS, got:\n%s", out)
+	}
+
+	// 4. Clear memory
+	code, out = runCLI(t, "-clear-memory", "-memory-file", memFile)
+	if code != task.ExitOK {
+		t.Fatalf("exit = %d, want ExitOK (%s)", code, out)
+	}
+	if !strings.Contains(out, "Route memory cleared") {
+		t.Fatalf("expected cleared message, got:\n%s", out)
+	}
+
+	// 5. Verify empty again
+	code, out = runCLI(t, "-show-memory", "-memory-file", memFile)
+	if code != task.ExitOK || !strings.Contains(out, "No learned routes") {
+		t.Fatalf("expected empty after clear, got:\n%s", out)
+	}
+}

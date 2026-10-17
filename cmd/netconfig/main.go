@@ -35,6 +35,7 @@ import (
 	"netconfig/internal/credentials"
 	"netconfig/internal/inventory"
 	"netconfig/internal/logging"
+	"netconfig/internal/memory"
 	"netconfig/internal/sshclient"
 	"netconfig/internal/task"
 	"netconfig/internal/ui"
@@ -133,6 +134,13 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		jumpUser     = fs.String("jump-user", "", "SSH username for the global jump host (overrides NETCONFIG_JUMP_USERNAME)")
 		jumpPassword = fs.String("jump-password", "", "SSH password for the global jump host (overrides NETCONFIG_JUMP_PASSWORD)")
 		jumpKeyFile  = fs.String("jump-key-file", "", "SSH private key file for the global jump host (overrides NETCONFIG_JUMP_KEY_FILE)")
+		tcpMSS       = fs.Int("tcp-mss", 1360, "TCP Maximum Segment Size for outgoing SSH sockets (0=OS default, >0=clamp MSS to avoid PMTU issues)")
+
+		// Route memory & auto-discovery
+		memoryEnabled = fs.Bool("memory", true, "enable automatic memory of learned routing and fallback paths across runs")
+		memoryFile    = fs.String("memory-file", memory.DefaultFile, "persistent memory file for learned device routes")
+		clearMemory   = fs.Bool("clear-memory", false, "clear learned route memory and exit")
+		showMemory    = fs.Bool("show-memory", false, "display learned route memory and exit")
 
 		// Canary & phased rollouts
 		canary         = fs.Int("canary", 0, "run N devices first as canary; abort run if any canary fails")
@@ -161,6 +169,34 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 	if *showVersion {
 		fmt.Fprintln(stdout, "netconfig", version)
+		return task.ExitOK
+	}
+	if *showMemory {
+		mem, err := memory.Load(*memoryFile)
+		if err != nil {
+			return fatal("load memory: %v", err)
+		}
+		routes := mem.List()
+		if len(routes) == 0 {
+			fmt.Fprintln(stdout, "No learned routes in memory.")
+			return task.ExitOK
+		}
+		fmt.Fprintf(stdout, "%-20s %-18s %-20s %-20s %-8s %s\n", "TARGET HOST", "TARGET IP", "JUMP HOST", "JUMP ENDPOINT", "SUCCESS", "LAST USED")
+		for _, r := range routes {
+			fmt.Fprintf(stdout, "%-20s %-18s %-20s %-20s %-8d %s\n",
+				r.TargetHost, r.TargetIP, r.JumpHost, r.JumpEndpoint, r.SuccessCount, r.LastUsedAt.Format("2006-01-02 15:04:05"))
+		}
+		return task.ExitOK
+	}
+	if *clearMemory {
+		mem, err := memory.Load(*memoryFile)
+		if err != nil {
+			return fatal("load memory: %v", err)
+		}
+		if err := mem.Clear(); err != nil {
+			return fatal("clear memory: %v", err)
+		}
+		fmt.Fprintf(stdout, "Route memory cleared (%s).\n", *memoryFile)
 		return task.ExitOK
 	}
 	if fs.NArg() > 0 {
@@ -233,11 +269,12 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	log.Infof("", "netconfig %s starting; audit log: %s", version, log.Path())
 
 	// ---- inputs ----------------------------------------------------------
-	devs, err := inventory.Load(*invPath)
+	allDevs, err := inventory.Load(*invPath)
 	if err != nil {
 		return die("%v", err)
 	}
-	if devs, err = inventory.Filter(devs, strings.Split(*limit, ",")); err != nil {
+	devs, err := inventory.Filter(allDevs, strings.Split(*limit, ","))
+	if err != nil {
 		return die("%v", err)
 	}
 
@@ -432,9 +469,20 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		log.Warnf("", "host key verification is DISABLED (-host-key-policy insecure)")
 	}
 
+	var memStore *memory.Store
+	if *memoryEnabled {
+		var err error
+		memStore, err = memory.Load(*memoryFile)
+		if err != nil {
+			log.Warnf("", "failed to load route memory %s: %v", *memoryFile, err)
+		} else if len(memStore.List()) > 0 {
+			log.Infof("", "loaded %d learned route(s) from persistent memory (%s)", len(memStore.List()), *memoryFile)
+		}
+	}
+
 	var pool *jumpPool
 	if *jumpEnabled {
-		pool = newJumpPool(hostKey, *legacy)
+		pool = newJumpPool(hostKey, *legacy, memStore)
 		defer pool.closeAll()
 	}
 
@@ -452,8 +500,30 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return confirm(stdin, stderr, fmt.Sprintf("[%s] Candidate configuration diff displayed above. Proceed with commit? [y/N]: ", host))
 	}
 
+	var autoFallbackTargets []task.Target
+	if *jumpEnabled {
+		for _, d := range allDevs {
+			if d.Endpoint() == "" {
+				continue
+			}
+			cred, err := resolver.Resolve(d.Group)
+			if err != nil {
+				continue
+			}
+			prof, _ := vendor.Lookup(d.Vendor)
+			autoFallbackTargets = append(autoFallbackTargets, task.Target{
+				Device:         d,
+				Profile:        prof,
+				Cred:           cred,
+				ConnectTimeout: *connectTO,
+				LoginTimeout:   *commandTO,
+				TCPMSS:         *tcpMSS,
+			})
+		}
+	}
+
 	runner := &task.Runner{
-		Transport:   sshTransport{hostKey: hostKey, legacy: *legacy, autoConfirm: *autoConfirm, pool: pool},
+		Transport:   sshTransport{hostKey: hostKey, legacy: *legacy, autoConfirm: *autoConfirm, pool: pool, autoFallback: autoFallbackTargets, tcpMSS: *tcpMSS},
 		Log:         log,
 		ConfirmFunc: confirmFunc,
 		Opts: task.Options{
@@ -741,4 +811,3 @@ func isFlagSet(fs *flag.FlagSet, name string) bool {
 	})
 	return found
 }
-

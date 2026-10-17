@@ -537,20 +537,20 @@ func safeHostFilename(host string) string {
 
 // JSONDeviceResult is the JSON representation of one device's run outcome.
 type JSONDeviceResult struct {
-	Hostname        string `json:"hostname"`
-	Address         string `json:"address"`
-	Vendor          string `json:"vendor"`
-	Status          string `json:"status"`
-	Category        string `json:"category,omitempty"`
-	Detail          string `json:"detail,omitempty"`
-	DurationMs      int64  `json:"duration_ms"`
-	CommandsApplied int    `json:"commands_applied"`
-	CommandsTotal   int    `json:"commands_total"`
-	BackupPath      string `json:"backup_path,omitempty"`
-	Rollback        string `json:"rollback,omitempty"`
-	DiffAdded       int    `json:"diff_added,omitempty"`
-	DiffRemoved     int    `json:"diff_removed,omitempty"`
-	OutputFile      string `json:"output_file,omitempty"`
+	Hostname        string         `json:"hostname"`
+	Address         string         `json:"address"`
+	Vendor          string         `json:"vendor"`
+	Status          string         `json:"status"`
+	Category        string         `json:"category,omitempty"`
+	Detail          string         `json:"detail,omitempty"`
+	DurationMs      int64          `json:"duration_ms"`
+	CommandsApplied int            `json:"commands_applied"`
+	CommandsTotal   int            `json:"commands_total"`
+	BackupPath      string         `json:"backup_path,omitempty"`
+	Rollback        string         `json:"rollback,omitempty"`
+	DiffAdded       int            `json:"diff_added,omitempty"`
+	DiffRemoved     int            `json:"diff_removed,omitempty"`
+	OutputFile      string         `json:"output_file,omitempty"`
 	RollbackSafety  string         `json:"rollback_safety,omitempty"`
 	VerifyPassed    int            `json:"verify_passed,omitempty"`
 	VerifyTotal     int            `json:"verify_total,omitempty"`

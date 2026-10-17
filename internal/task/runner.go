@@ -41,6 +41,7 @@ type Target struct {
 	ConnectTimeout time.Duration               // TCP + SSH handshake
 	LoginTimeout   time.Duration               // first prompt, enable, pager setup
 	Logf           func(format string, args ...any)
+	TCPMSS         int // optional TCP MSS clamping
 }
 
 // Session is an open, ready-to-use CLI session.

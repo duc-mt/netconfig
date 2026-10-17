@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -19,24 +20,47 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"netconfig/internal/memory"
 	"netconfig/internal/sshclient"
 	"netconfig/internal/task"
 )
 
-// jumpPool maintains lazily-initialised, shared *ssh.Client bastions.
+// jumpPool maintains lazily-initialised, shared *ssh.Client bastions and route memory.
 type jumpPool struct {
-	mu      sync.Mutex
-	clients map[string]*ssh.Client
-	hostKey sshclient.HostKeyCallback
-	legacy  bool
+	mu          sync.Mutex
+	clients     map[string]*ssh.Client
+	badBastions map[string]bool // hosts that failed direct connection (cannot serve as bastions)
+	memStore    *memory.Store
+	hostKey     sshclient.HostKeyCallback
+	legacy      bool
 }
 
-func newJumpPool(hk sshclient.HostKeyCallback, legacy bool) *jumpPool {
+func newJumpPool(hk sshclient.HostKeyCallback, legacy bool, memStore *memory.Store) *jumpPool {
 	return &jumpPool{
-		clients: make(map[string]*ssh.Client),
-		hostKey: hk,
-		legacy:  legacy,
+		clients:     make(map[string]*ssh.Client),
+		badBastions: make(map[string]bool),
+		memStore:    memStore,
+		hostKey:     hk,
+		legacy:      legacy,
 	}
+}
+
+func (p *jumpPool) markBadBastion(addr string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.badBastions[addr] = true
+}
+
+func (p *jumpPool) isBadBastion(addr string) bool {
+	if p == nil {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.badBastions[addr]
 }
 
 func (p *jumpPool) get(ctx context.Context, addr, username, password, keyFile string, timeout time.Duration) (*ssh.Client, error) {
@@ -82,16 +106,21 @@ func (p *jumpPool) closeAll() {
 	}
 }
 
-// sshTransport adapts sshclient to task.Transport. It lives here so that
-// package task never imports the SSH library and stays testable with fakes.
+// sshTransport adapts sshclient to task.Transport.
 type sshTransport struct {
-	hostKey     sshclient.HostKeyCallback
-	legacy      bool
-	autoConfirm bool
-	pool        *jumpPool
+	hostKey      sshclient.HostKeyCallback
+	legacy       bool
+	autoConfirm  bool
+	pool         *jumpPool
+	autoFallback []task.Target
+	tcpMSS       int
 }
 
 func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, error) {
+	mss := t.tcpMSS
+	if tgt.TCPMSS != 0 {
+		mss = tgt.TCPMSS
+	}
 	cfg := sshclient.Config{
 		Address:          tgt.Device.Endpoint(),
 		Username:         tgt.Cred.Username,
@@ -105,8 +134,10 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 		LegacyAlgorithms: t.legacy,
 		AutoConfirm:      t.autoConfirm,
 		Logf:             tgt.Logf,
+		TCPMSS:           mss,
 	}
 
+	// 1. Explicit jump host from inventory or CLI flags
 	if tgt.JumpCred.Host != "" && t.pool != nil {
 		jumpUser := tgt.JumpCred.Username
 		if jumpUser == "" {
@@ -132,9 +163,102 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 		return sh, nil
 	}
 
-	sh, err := sshclient.Connect(ctx, cfg)
-	if err != nil {
-		return nil, err // explicit nil: never wrap a nil *Shell in the interface
+	// 2. Learned route memory (persisted from earlier runs)
+	if t.pool != nil && t.pool.memStore != nil {
+		if rec, ok := t.pool.memStore.Get(tgt.Device.Address); ok {
+			for _, cand := range t.autoFallback {
+				if cand.Device.Endpoint() == rec.JumpEndpoint || cand.Device.Address == rec.JumpEndpoint || cand.Device.Hostname == rec.JumpHost {
+					if tgt.Logf != nil {
+						tgt.Logf("learned route memory active: routing via jump host %s (%s) [learned: %s]", cand.Device.Hostname, cand.Device.Endpoint(), rec.LearnedAt.Format("2006-01-02 15:04"))
+					}
+					jumpClient, err := t.pool.get(ctx, cand.Device.Endpoint(), cand.Cred.Username, cand.Cred.Password, cand.Cred.KeyFile, tgt.ConnectTimeout)
+					if err == nil {
+						sh, err := sshclient.ConnectViaJump(ctx, jumpClient, cfg)
+						if err == nil {
+							_ = t.pool.memStore.Record(tgt.Device.Hostname, tgt.Device.Address, cand.Device.Hostname, cand.Device.Endpoint(), "memory-active")
+							return sh, nil
+						}
+					}
+					if tgt.Logf != nil {
+						tgt.Logf("learned jump host %s failed (%v); falling back to direct probe...", cand.Device.Hostname, err)
+					}
+					break
+				}
+			}
+		}
 	}
-	return sh, nil
+
+	// 3. Direct connection
+	// If auto-fallback is available, use a 3.5s direct budget so an unresponsive direct connection
+	// doesn't stall for 10s before falling back to jump.
+	directCfg := cfg
+	if t.pool != nil && len(t.autoFallback) > 0 && directCfg.ConnectTimeout > 3500*time.Millisecond {
+		directCfg.ConnectTimeout = 3500 * time.Millisecond
+	}
+
+	sh, directErr := sshclient.Connect(ctx, directCfg)
+	if directErr == nil {
+		return sh, nil
+	}
+
+	// Direct connection failed; mark this host so other devices don't try to use it as a jump host
+	if t.pool != nil {
+		t.pool.markBadBastion(tgt.Device.Address)
+	}
+
+	// 4. Auto-fallback (Option B optimized):
+	if t.pool != nil && len(t.autoFallback) > 0 && ctx.Err() == nil {
+		var sshErr *sshclient.Error
+		isTimeoutOrConn := false
+		if errors.As(directErr, &sshErr) {
+			isTimeoutOrConn = sshErr.Kind == sshclient.KindTimeout || sshErr.Kind == sshclient.KindConnect
+		}
+		if isTimeoutOrConn {
+			targetIP := net.ParseIP(tgt.Device.Address)
+			for _, cand := range t.autoFallback {
+				// Don't jump through ourselves or any host that failed direct connection
+				if cand.Device.Address == tgt.Device.Address || cand.Device.Hostname == tgt.Device.Hostname || t.pool.isBadBastion(cand.Device.Address) {
+					continue
+				}
+				candIP := net.ParseIP(cand.Device.Address)
+				// Prefer candidates in the same /24 subnet or internal mgmt scope
+				sameSubnet := targetIP != nil && candIP != nil && targetIP.To4() != nil && candIP.To4() != nil &&
+					targetIP.To4()[0] == candIP.To4()[0] && targetIP.To4()[1] == candIP.To4()[1] && targetIP.To4()[2] == candIP.To4()[2]
+
+				if !sameSubnet && len(t.autoFallback) > 5 {
+					continue
+				}
+
+				if tgt.Logf != nil {
+					tgt.Logf("direct connection failed (%v); auto-falling back via neighbor %s (%s)...", directErr, cand.Device.Hostname, cand.Device.Endpoint())
+				}
+
+				candUser := cand.Cred.Username
+				candPass := cand.Cred.Password
+				candKey := cand.Cred.KeyFile
+
+				// Fast jump dial timeout: 2.5s instead of stalling 10s per unresponsive neighbor
+				jumpDialTO := 2500 * time.Millisecond
+				if tgt.ConnectTimeout < jumpDialTO {
+					jumpDialTO = tgt.ConnectTimeout
+				}
+				jumpClient, err := t.pool.get(ctx, cand.Device.Endpoint(), candUser, candPass, candKey, jumpDialTO)
+				if err != nil {
+					continue
+				}
+				sh, err := sshclient.ConnectViaJump(ctx, jumpClient, cfg)
+				if err == nil {
+					if t.pool.memStore != nil {
+						_ = t.pool.memStore.Record(tgt.Device.Hostname, tgt.Device.Address, cand.Device.Hostname, cand.Device.Endpoint(), "auto-fallback")
+					}
+					if tgt.Logf != nil {
+						tgt.Logf("auto-fallback connection to %s succeeded via neighbor %s (learned and saved to memory)", tgt.Device.Hostname, cand.Device.Hostname)
+					}
+					return sh, nil
+				}
+			}
+		}
+	}
+
+	return nil, directErr
 }

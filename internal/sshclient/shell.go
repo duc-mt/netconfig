@@ -243,9 +243,9 @@ func (s *Shell) cleanConsumed(raw []byte) string {
 // and turns the pager off.
 func (s *Shell) login(ctx context.Context, cfg Config) error {
 	total := cfg.LoginTimeout
-	first := total / 3
-	if first > 5*time.Second {
-		first = 5 * time.Second
+	first := 1 * time.Second
+	if total < 3*time.Second {
+		first = total / 3
 	}
 	_, _, err := s.expect(ctx, first, nil)
 	if errors.Is(err, errExpectTimeout) {

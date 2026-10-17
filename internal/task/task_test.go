@@ -1232,4 +1232,3 @@ FastEthernet0/0        192.168.1.1     YES manual up                    up
 		t.Errorf("JSON output file missing interface name: %s", string(data))
 	}
 }
-

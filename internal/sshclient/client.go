@@ -69,6 +69,7 @@ type Config struct {
 	LegacyAlgorithms bool            // also offer SHA-1 key exchange and CBC ciphers (old IOS, VRP, ...)
 	AutoConfirm      bool            // answer "[y/n]"-style dialogs
 	Logf             func(format string, args ...any)
+	TCPMSS           int // TCP MSS clamping (0 = default 1360, <0 = disable)
 }
 
 // Connect dials the device, authenticates, opens a PTY shell and prepares it
@@ -95,7 +96,7 @@ func Connect(ctx context.Context, cfg Config) (*Shell, error) {
 		return nil, &Error{Kind: KindAuth, Op: "connect", Err: err}
 	}
 
-	dialer := net.Dialer{Timeout: cfg.ConnectTimeout}
+	dialer := newDialer(cfg.ConnectTimeout, cfg.TCPMSS)
 	conn, err := dialer.DialContext(ctx, "tcp", cfg.Address)
 	if err != nil {
 		return nil, wrapDial(err)
@@ -148,7 +149,7 @@ func ConnectJumpHost(ctx context.Context, address, username, password, keyFile s
 		return nil, &Error{Kind: KindAuth, Op: "connect jump", Err: err}
 	}
 
-	dialer := net.Dialer{Timeout: connectTimeout}
+	dialer := newDialer(connectTimeout, 0)
 	conn, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, wrapDial(err)
