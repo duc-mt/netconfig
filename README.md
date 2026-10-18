@@ -438,11 +438,15 @@ Commit/save/backup steps get 3x `-command-timeout`.
 
 ## Host keys
 
-Default `-host-key-policy strict`: only hosts already in `-known-hosts` (default `./known_hosts`,
-OpenSSH format) are accepted; unknown hosts fail with `HOSTKEY_FAILED` and a hint. Use
-`accept-new` once to enroll devices on first contact (trust-on-first-use; a *changed* key is still
-rejected), then go back to `strict`. `insecure` disables verification and logs a warning.
-Old devices that only offer SHA-1 key exchange or CBC ciphers need `-legacy-algorithms`.
+Default `-host-key-policy strict`: hosts are verified against standard OpenSSH `known_hosts` files without generating a redundant local `./known_hosts`.
+- **Automatic 3-OS Discovery**:
+  - **Linux / macOS**: Reads `~/.ssh/known_hosts` (and `/etc/ssh/ssh_known_hosts` / `/etc/ssh/ssh_known_hosts2` if present).
+  - **Windows**: Reads `%USERPROFILE%\.ssh\known_hosts` (and `%ProgramData%\ssh\ssh_known_hosts` if present).
+  - Supports tilde (`~`) expansion in `-known-hosts` if custom paths are provided.
+- Unknown hosts fail under `strict` with `HOSTKEY_FAILED` and a hint.
+- Run with `-host-key-policy accept-new` once to enroll devices on first contact (trust-on-first-use; securely appends only to the user's `~/.ssh/known_hosts` / `%USERPROFILE%\.ssh\known_hosts`, preventing duplicates; a *changed* key is still rejected).
+- `insecure` disables verification and logs a warning.
+- Old devices that only offer SHA-1 key exchange or CBC ciphers need `-legacy-algorithms`.
 
 ## Logging and results
 
@@ -490,7 +494,7 @@ declined at the prompt, refused to run unattended), **2** at least one device fa
 
 `netconfig -h` prints all of them. Defaults: `-inventory inventory.csv`, `-concurrency 5`,
 `-connect-timeout 10s`, `-command-timeout 30s`, `-log-dir logs`, `-backup-dir backups`,
-`-env-file .env`, `-known-hosts known_hosts`, `-host-key-policy strict`.
+`-env-file .env`, `-known-hosts ""` (defaults to `~/.ssh/known_hosts` or `%USERPROFILE%\.ssh\known_hosts`), `-host-key-policy strict`.
 
 Key new flags:
 

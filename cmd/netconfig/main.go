@@ -130,7 +130,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		keyFile        = fs.String("key-file", "", "path to an SSH private key file for device authentication (overrides NETCONFIG_KEY_FILE)")
 		logDir         = fs.String("log-dir", "logs", "directory for the timestamped audit log file")
 		envFile        = fs.String("env-file", ".env", "credentials file (KEY=VALUE lines); missing is fine")
-		knownHosts     = fs.String("known-hosts", "known_hosts", "OpenSSH-format known_hosts file for host key checks")
+		knownHosts     = fs.String("known-hosts", "", "OpenSSH-format known_hosts file for host key checks (defaults to ~/.ssh/known_hosts or %USERPROFILE%\\.ssh\\known_hosts)")
 		hostKeyPolicy  = fs.String("host-key-policy", "strict", "strict | accept-new (trust on first use) | insecure (no verification)")
 		legacy         = fs.Bool("legacy-algorithms", false, "also offer SHA-1 key exchange and CBC ciphers for old devices")
 		autoConfirm    = fs.Bool("auto-confirm", true, "answer [y/n] / [confirm] dialogs raised by devices")
@@ -529,7 +529,11 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 
 	// ---- transport -------------------------------------------------------
-	hostKey, err := sshclient.NewHostKeyCallback(*knownHosts, policy)
+	targetKnownHosts := *knownHosts
+	if targetKnownHosts == "" {
+		targetKnownHosts = sshclient.DefaultKnownHostsFile()
+	}
+	hostKey, err := sshclient.NewHostKeyCallback(targetKnownHosts, policy)
 	if err != nil {
 		return die("%v", err)
 	}

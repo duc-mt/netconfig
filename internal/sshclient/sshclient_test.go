@@ -404,6 +404,65 @@ func TestHostKeyPolicies(t *testing.T) {
 	}
 }
 
+func TestExpandHome(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("user home dir not available")
+	}
+
+	if got := ExpandHome("~"); got != home {
+		t.Errorf("ExpandHome(~) = %q, want %q", got, home)
+	}
+	wantPath := filepath.Join(home, ".ssh", "known_hosts")
+	if got := ExpandHome("~/.ssh/known_hosts"); got != wantPath {
+		t.Errorf("ExpandHome(~/.ssh/known_hosts) = %q, want %q", got, wantPath)
+	}
+	if got := ExpandHome(`~\.ssh\known_hosts`); got != wantPath {
+		t.Errorf(`ExpandHome(~\\.ssh\\known_hosts) = %q, want %q`, got, wantPath)
+	}
+	if got := ExpandHome("/tmp/known_hosts"); got != "/tmp/known_hosts" {
+		t.Errorf("ExpandHome(/tmp/known_hosts) = %q, want %q", got, "/tmp/known_hosts")
+	}
+}
+
+func TestDefaultKnownHostsFile(t *testing.T) {
+	path := DefaultKnownHostsFile()
+	if path == "" {
+		t.Fatal("DefaultKnownHostsFile returned empty string")
+	}
+	if !strings.HasSuffix(filepath.ToSlash(path), ".ssh/known_hosts") && path != "known_hosts" {
+		t.Errorf("unexpected default path %q", path)
+	}
+}
+
+func TestNewHostKeyCallbackWithSystemKnownHosts(t *testing.T) {
+	dir := t.TempDir()
+	fakeHome := filepath.Join(dir, "userhome")
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	userKhPath := filepath.Join(fakeHome, ".ssh", "known_hosts")
+	remote := &net.TCPAddr{IP: net.ParseIP("192.0.2.20"), Port: 22}
+	key := newKey(t)
+
+	// In accept-new mode with default user known_hosts, ensure file and parent dirs get created
+	cb, err := NewHostKeyCallback(userKhPath, PolicyAcceptNew)
+	if err != nil {
+		t.Fatalf("NewHostKeyCallback accept-new failed: %v", err)
+	}
+	if err := cb("192.0.2.20:22", remote, key); err != nil {
+		t.Fatalf("cb enrollment failed: %v", err)
+	}
+
+	data, err := os.ReadFile(userKhPath)
+	if err != nil {
+		t.Fatalf("reading user known_hosts: %v", err)
+	}
+	if !strings.Contains(string(data), "192.0.2.20") {
+		t.Fatalf("host key not enrolled into %s: %s", userKhPath, string(data))
+	}
+}
+
 func TestConnectRequiresHostKeyVerification(t *testing.T) {
 	prof, _ := vendor.Lookup("cisco")
 	_, err := Connect(context.Background(), Config{Address: "192.0.2.1:22", Profile: prof})
