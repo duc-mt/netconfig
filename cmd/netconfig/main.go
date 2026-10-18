@@ -131,7 +131,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		logDir           = fs.String("log-dir", "logs", "directory for the timestamped audit log file")
 		envFile          = fs.String("env-file", ".env", "credentials file (KEY=VALUE lines); missing is fine")
 		knownHosts       = fs.String("known-hosts", "", "OpenSSH-format known_hosts file for host key checks (defaults to ~/.ssh/known_hosts or %USERPROFILE%\\.ssh\\known_hosts)")
-		hostKeyPolicy    = fs.String("host-key-policy", "strict", "policy for host keys: 'strict' (reject unknown/changed), 'accept-new' (learn new), or 'update' (learn new and replace changed keys)")
+		hostKeyPolicy    = fs.String("host-key-policy", "update", "policy for host keys: 'strict' (reject unknown/changed), 'accept-new' (learn new), or 'update' (learn new and replace changed keys)")
 		updateKnownHosts = fs.Bool("update-known-hosts", false, "automatically remove mismatched existing keys and learn new keys in known_hosts (alias for -host-key-policy update)")
 		replaceHostKeys  = fs.Bool("replace-host-keys", false, "alias for -update-known-hosts")
 		legacy           = fs.Bool("legacy-algorithms", true, "allow negotiation of legacy SSH algorithms (3des-cbc, diffie-hellman-group1-sha1, ssh-dss) as fallback for older network gear")

@@ -438,15 +438,15 @@ Commit/save/backup steps get 3x `-command-timeout`.
 
 ## Host keys and connection resilience
 
-Default `-host-key-policy strict`: hosts are verified against standard OpenSSH `known_hosts` files without generating a redundant local `./known_hosts`.
+Default `-host-key-policy update`: hosts are verified against standard OpenSSH `known_hosts` files without generating a redundant local `./known_hosts`. Unknown hosts and replaced/rotated host keys are automatically updated and learned in `known_hosts`.
 - **Automatic 3-OS Discovery**:
   - **Linux / macOS**: Reads `~/.ssh/known_hosts` (and `/etc/ssh/ssh_known_hosts` / `/etc/ssh/ssh_known_hosts2` if present).
   - **Windows**: Reads `%USERPROFILE%\.ssh\known_hosts` (and `%ProgramData%\ssh\ssh_known_hosts` if present).
   - Supports tilde (`~`) expansion in `-known-hosts` if custom paths are provided.
-- Unknown hosts fail under `strict` with `HOSTKEY_FAILED` and a hint.
-- Run with `-host-key-policy accept-new` once to enroll devices on first contact (trust-on-first-use; securely appends only to the user's `~/.ssh/known_hosts` / `%USERPROFILE%\.ssh\known_hosts`, preventing duplicates; a *changed* key is still rejected).
-- **Auto-Replace Changed Host Keys (`-update-known-hosts` / `-replace-host-keys` / `-host-key-policy update`)**:
-  Automatically removes mismatched/stale existing keys and learns the new device key in `known_hosts` atomically, eliminating the need to manually run `ssh-keygen -R <host>`.
+- **Auto-Replace Changed Host Keys (`-host-key-policy update` / `-update-known-hosts` / `-replace-host-keys`)**:
+  Default behavior. Automatically removes mismatched/stale existing keys and learns the new device key in `known_hosts` atomically, eliminating the need to manually run `ssh-keygen -R <host>`.
+- **First contact enrollment**: Run with `-host-key-policy accept-new` to enroll devices on first contact only (trust-on-first-use; securely appends only to the user's `~/.ssh/known_hosts` / `%USERPROFILE%\.ssh\known_hosts`, preventing duplicates; a *changed* key is rejected).
+- **Strict enforcement**: Run with `-host-key-policy strict` to reject unknown hosts and changed host keys with `HOSTKEY_FAILED`.
 - `insecure` disables verification and logs a warning.
 - **Algorithm Negotiation & Legacy Fallback**: Modern algorithms (including `diffie-hellman-group16-sha512` and `diffie-hellman-group-exchange-sha256`) are preferred. `-legacy-algorithms` is enabled by default (`true`), offering seamless negotiation for older devices requiring `3des-cbc`, `diffie-hellman-group1-sha1`, `diffie-hellman-group-exchange-sha1`, `arcfour`, or `ssh-dss`. Automatic detection retries with legacy algorithms if a cipher/kex mismatch occurs.
 - **Per-IP Concurrency Serialization**: Workers serialize connections targeting the same device IP address, preventing concurrent tasks from saturating switch limits (such as JunOS `connection-limit 10`).
@@ -498,7 +498,7 @@ declined at the prompt, refused to run unattended), **2** at least one device fa
 
 `netconfig -h` prints all of them. Defaults: `-inventory inventory.csv`, `-concurrency 5`,
 `-connect-timeout 10s`, `-command-timeout 30s`, `-log-dir logs`, `-backup-dir backups`,
-`-env-file .env`, `-known-hosts ""` (defaults to `~/.ssh/known_hosts` or `%USERPROFILE%\.ssh\known_hosts`), `-host-key-policy strict`.
+`-env-file .env`, `-known-hosts ""` (defaults to `~/.ssh/known_hosts` or `%USERPROFILE%\.ssh\known_hosts`), `-host-key-policy update`.
 
 Key new flags:
 
