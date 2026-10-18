@@ -270,4 +270,3 @@ func appendKnownHost(path, hostname string, key ssh.PublicKey) error {
 	}
 	return f.Close()
 }
-
