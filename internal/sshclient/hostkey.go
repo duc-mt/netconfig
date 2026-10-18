@@ -11,6 +11,8 @@
 package sshclient
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -19,6 +21,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -36,6 +39,10 @@ const (
 	// PolicyAcceptNew enrolls hosts seen for the first time (trust on first
 	// use) but still rejects a key that differs from the recorded one.
 	PolicyAcceptNew HostKeyPolicy = "accept-new"
+	// PolicyUpdate enrolls new hosts and replaces changed keys for existing hosts.
+	PolicyUpdate HostKeyPolicy = "update"
+	// PolicyReplace is an alias for PolicyUpdate.
+	PolicyReplace HostKeyPolicy = "replace"
 	// PolicyInsecure performs no verification at all.
 	PolicyInsecure HostKeyPolicy = "insecure"
 )
@@ -43,10 +50,10 @@ const (
 // ParsePolicy validates a -host-key-policy value.
 func ParsePolicy(s string) (HostKeyPolicy, error) {
 	switch p := HostKeyPolicy(strings.ToLower(strings.TrimSpace(s))); p {
-	case PolicyStrict, PolicyAcceptNew, PolicyInsecure:
+	case PolicyStrict, PolicyAcceptNew, PolicyUpdate, PolicyReplace, PolicyInsecure:
 		return p, nil
 	}
-	return "", fmt.Errorf("invalid host key policy %q (use strict, accept-new or insecure)", s)
+	return "", fmt.Errorf("invalid host key policy %q (use strict, accept-new, update, or insecure)", s)
 }
 
 // HostKeyError reports a failed host key verification.
@@ -122,7 +129,7 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 
 	path = ExpandHome(path)
 
-	if policy == PolicyAcceptNew {
+	if policy == PolicyAcceptNew || policy == PolicyUpdate || policy == PolicyReplace {
 		if err := ensureFile(path); err != nil {
 			return nil, err
 		}
@@ -162,6 +169,20 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 		}
 	}
 
+	reloadChecker := func() {
+		updatedFiles := []string{path}
+		if filepath.Clean(path) == filepath.Clean(defUser) {
+			for _, sysFile := range SystemKnownHostsFiles() {
+				if filepath.Clean(sysFile) != filepath.Clean(path) {
+					updatedFiles = append(updatedFiles, sysFile)
+				}
+			}
+		}
+		if c, err := knownhosts.New(updatedFiles...); err == nil {
+			check = c
+		}
+	}
+
 	var mu sync.Mutex // serialises appends to the file and protects accepted map
 	accepted := make(map[string]ssh.PublicKey)
 
@@ -175,6 +196,31 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 			return &HostKeyError{Host: hostname, Reason: err.Error(), Err: err}
 		}
 		if len(ke.Want) > 0 {
+			if policy == PolicyUpdate || policy == PolicyReplace {
+				mu.Lock()
+				defer mu.Unlock()
+
+				// Re-check inside the lock in case another goroutine already updated it
+				if isHostKeyRecorded(path, hostname, remote, key) {
+					return nil
+				}
+
+				linesToRemove := make(map[int]bool)
+				for _, w := range ke.Want {
+					if filepath.Clean(w.Filename) == filepath.Clean(path) && w.Line > 0 {
+						linesToRemove[w.Line] = true
+					}
+				}
+
+				if err := removeAndReplaceHostKey(path, linesToRemove, hostname, key); err != nil {
+					return &HostKeyError{Host: hostname, Reason: fmt.Sprintf("updating known_hosts: %v", err), Err: err}
+				}
+				fmt.Fprintf(os.Stderr, "NOTICE: updated known_hosts entry for %s (replaced mismatched key)\n", hostname)
+
+				reloadChecker()
+				return nil
+			}
+
 			return &HostKeyError{
 				Host:   hostname,
 				Reason: "the host key CHANGED since it was recorded in " + path + " (possible man-in-the-middle, or the device was replaced/re-keyed)",
@@ -209,7 +255,7 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 			}
 		}
 
-		if policy != PolicyAcceptNew {
+		if policy != PolicyAcceptNew && policy != PolicyUpdate && policy != PolicyReplace {
 			return &HostKeyError{
 				Host:   hostname,
 				Reason: "host is not in " + path + "; enroll it with -host-key-policy accept-new (first contact is trusted) or add its key manually",
@@ -221,6 +267,7 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 			if aerr := appendKnownHost(path, hostname, key); aerr != nil {
 				return &HostKeyError{Host: hostname, Reason: "could not record new host key: " + aerr.Error(), Err: aerr}
 			}
+			reloadChecker()
 		}
 		accepted[hostname] = key
 		if remote != nil {
@@ -228,6 +275,74 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 		}
 		return nil
 	}, nil
+}
+
+// removeAndReplaceHostKey removes lines matching lineNums or hostname/address from path,
+// and appends a new entry for hostname with newKey.
+func removeAndReplaceHostKey(path string, lineNums map[int]bool, hostname string, newKey ssh.PublicKey) error {
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	var remainingLines []string
+	curLine := 0
+
+	hostOnly, port, splitErr := net.SplitHostPort(hostname)
+	if splitErr != nil {
+		hostOnly = hostname
+		port = "22"
+	}
+
+	for scanner.Scan() {
+		curLine++
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// 1. If line number matched the exact Want line from knownhosts.New, drop it
+		if lineNums[curLine] {
+			continue
+		}
+
+		// 2. Also check if unhashed line starts with this hostname or IP
+		if trimmed != "" && !strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(trimmed, "@") && !strings.HasPrefix(trimmed, "|") {
+			fields := strings.Fields(trimmed)
+			if len(fields) >= 2 {
+				hosts := strings.Split(fields[0], ",")
+				matched := false
+				for _, h := range hosts {
+					if h == hostname || (port == "22" && h == hostOnly) || h == "["+hostOnly+"]:"+port {
+						matched = true
+						break
+					}
+				}
+				if matched {
+					continue
+				}
+			}
+		}
+
+		remainingLines = append(remainingLines, line)
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	// Append the new host key line
+	newLine := knownhosts.Line([]string{hostname}, newKey)
+	remainingLines = append(remainingLines, newLine)
+
+	out := strings.Join(remainingLines, "\n") + "\n"
+	tmp := fmt.Sprintf("%s.tmp.%d", path, time.Now().UnixNano())
+	if err := os.WriteFile(tmp, []byte(out), 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(path)
+		return os.Rename(tmp, path)
+	}
+	return nil
 }
 
 func isHostKeyRecorded(path string, hostname string, remote net.Addr, key ssh.PublicKey) bool {

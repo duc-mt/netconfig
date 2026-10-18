@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -151,12 +152,19 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 		if jumpKey == "" && jumpPass == "" {
 			jumpKey = tgt.Cred.KeyFile
 		}
-
 		jumpClient, err := t.pool.get(ctx, tgt.JumpCred.Host, jumpUser, jumpPass, jumpKey, tgt.ConnectTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("bastion %s: %w", tgt.JumpCred.Host, err)
 		}
 		sh, err := sshclient.ConnectViaJump(ctx, jumpClient, cfg)
+		if err != nil && !cfg.LegacyAlgorithms && isAlgorithmMismatch(err) {
+			legacyCfg := cfg
+			legacyCfg.LegacyAlgorithms = true
+			if retrySh, retryErr := sshclient.ConnectViaJump(ctx, jumpClient, legacyCfg); retryErr == nil {
+				sh = retrySh
+				err = nil
+			}
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -174,6 +182,11 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 					jumpClient, err := t.pool.get(ctx, cand.Device.Endpoint(), cand.Cred.Username, cand.Cred.Password, cand.Cred.KeyFile, tgt.ConnectTimeout)
 					if err == nil {
 						sh, err := sshclient.ConnectViaJump(ctx, jumpClient, cfg)
+						if err != nil && !cfg.LegacyAlgorithms && isAlgorithmMismatch(err) {
+							legacyCfg := cfg
+							legacyCfg.LegacyAlgorithms = true
+							sh, err = sshclient.ConnectViaJump(ctx, jumpClient, legacyCfg)
+						}
 						if err == nil {
 							_ = t.pool.memStore.Record(tgt.Device.Hostname, tgt.Device.Address, cand.Device.Hostname, cand.Device.Endpoint(), "memory-active")
 							return sh, nil
@@ -190,6 +203,14 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 
 	// 3. Direct connection
 	sh, directErr := sshclient.Connect(ctx, cfg)
+	if directErr != nil && !cfg.LegacyAlgorithms && isAlgorithmMismatch(directErr) {
+		legacyCfg := cfg
+		legacyCfg.LegacyAlgorithms = true
+		if retrySh, retryErr := sshclient.Connect(ctx, legacyCfg); retryErr == nil {
+			sh = retrySh
+			directErr = nil
+		}
+	}
 	if directErr == nil {
 		return sh, nil
 	}
@@ -240,6 +261,11 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 					continue
 				}
 				sh, err := sshclient.ConnectViaJump(ctx, jumpClient, cfg)
+				if err != nil && !cfg.LegacyAlgorithms && isAlgorithmMismatch(err) {
+					legacyCfg := cfg
+					legacyCfg.LegacyAlgorithms = true
+					sh, err = sshclient.ConnectViaJump(ctx, jumpClient, legacyCfg)
+				}
 				if err == nil {
 					if t.pool.memStore != nil {
 						_ = t.pool.memStore.Record(tgt.Device.Hostname, tgt.Device.Address, cand.Device.Hostname, cand.Device.Endpoint(), "auto-fallback")
@@ -254,4 +280,14 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 	}
 
 	return nil, directErr
+}
+
+func isAlgorithmMismatch(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "no common algorithm") ||
+		strings.Contains(s, "handshake failed: eof") ||
+		strings.Contains(s, "no matching")
 }

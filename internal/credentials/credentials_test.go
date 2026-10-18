@@ -210,7 +210,7 @@ func TestPromptFailureIsCached(t *testing.T) {
 func TestCredentialNeverPrintsPassword(t *testing.T) {
 	c := Credential{Username: "alice", Password: "hunter2-secret", EnablePassword: "enable-secret"}
 	for _, s := range []string{
-		fmt.Sprintf("%v", c), fmt.Sprintf("%+v", c), fmt.Sprintf("%s", c), fmt.Sprintf("%#v", c),
+		fmt.Sprintf("%v", c), fmt.Sprintf("%+v", c), c.String(), fmt.Sprintf("%#v", c),
 	} {
 		if strings.Contains(s, "hunter2-secret") || strings.Contains(s, "enable-secret") {
 			t.Errorf("secret leaked: %s", s)

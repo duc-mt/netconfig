@@ -1232,3 +1232,77 @@ FastEthernet0/0        192.168.1.1     YES manual up                    up
 		t.Errorf("JSON output file missing interface name: %s", string(data))
 	}
 }
+
+func TestIPLocker(t *testing.T) {
+	locker := newIPLocker()
+
+	// Empty IP should not panic or block
+	unlockEmpty := locker.lock("")
+	unlockEmpty()
+
+	// Mutual exclusion for same IP
+	ip := "192.0.2.1"
+	u1 := locker.lock(ip)
+
+	acquiredSecond := make(chan bool, 1)
+	go func() {
+		u2 := locker.lock(ip)
+		acquiredSecond <- true
+		u2()
+	}()
+
+	select {
+	case <-acquiredSecond:
+		t.Fatal("second lock acquired while first lock was still held")
+	case <-time.After(50 * time.Millisecond):
+		// Expected: second lock blocked
+	}
+
+	u1()
+
+	select {
+	case <-acquiredSecond:
+		// Expected: unblocked after u1()
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("second lock failed to acquire after first lock was released")
+	}
+
+	// Concurrent locking of different IPs should not block each other
+	uA := locker.lock("192.0.2.10")
+	doneB := make(chan bool, 1)
+	go func() {
+		uB := locker.lock("192.0.2.20")
+		uB()
+		doneB <- true
+	}()
+
+	select {
+	case <-doneB:
+		// Different IP succeeded without waiting for uA
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("lock on distinct IP was blocked")
+	}
+	uA()
+}
+
+func TestIsTransientRateLimitDrop(t *testing.T) {
+	tests := []struct {
+		detail   string
+		expected bool
+	}{
+		{"", false},
+		{"ssh: handshake failed: EOF", true},
+		{"handshake failed: eof", true},
+		{"read: connection reset by peer", true},
+		{"write: broken pipe", true},
+		{"ssh: unable to authenticate, attempted methods [password]", false},
+		{"dial tcp 10.0.0.1:22: i/o timeout", false},
+	}
+
+	for _, tt := range tests {
+		got := isTransientRateLimitDrop(tt.detail)
+		if got != tt.expected {
+			t.Errorf("isTransientRateLimitDrop(%q): expected %v, got %v", tt.detail, tt.expected, got)
+		}
+	}
+}

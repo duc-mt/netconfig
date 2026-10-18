@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -228,10 +229,31 @@ func ConnectViaJump(ctx context.Context, jumpClient *ssh.Client, cfg Config) (*S
 	return sh, nil
 }
 
+// CheckKeyPermissions inspects the given private key file's permissions. On Unix-like systems,
+// it returns a warning string if group or other bits are set (permissions looser than 0600).
+// Returns "" if the file has 0600 or stricter permissions, or if stat fails.
+func CheckKeyPermissions(path string) string {
+	if path == "" {
+		return ""
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	perm := fi.Mode().Perm()
+	if perm&0o077 != 0 {
+		return fmt.Sprintf("private key file %q has overly permissive permissions %#o (recommend 0600 or stricter)", path, perm)
+	}
+	return ""
+}
+
 func buildClientConfig(username, password, keyFile string, hk HostKeyCallback, legacy bool) (*ssh.ClientConfig, error) {
 	var authMethods []ssh.AuthMethod
 
 	if keyFile != "" {
+		if warn := CheckKeyPermissions(keyFile); warn != "" {
+			fmt.Fprintf(os.Stderr, "WARNING: %s\n", warn)
+		}
 		keyBytes, err := os.ReadFile(keyFile)
 		if err != nil {
 			return nil, fmt.Errorf("reading SSH key %q: %w", keyFile, err)
@@ -268,15 +290,71 @@ func buildClientConfig(username, password, keyFile string, hk HostKeyCallback, l
 		return nil, errors.New("no SSH authentication methods provided (specify password or key file)")
 	}
 
-	cc := &ssh.ClientConfig{
-		User:            username,
-		Auth:            authMethods,
-		HostKeyCallback: hk,
+	modernHostKeys := []string{
+		ssh.KeyAlgoED25519,
+		ssh.KeyAlgoECDSA256,
+		ssh.KeyAlgoECDSA384,
+		ssh.KeyAlgoECDSA521,
+		ssh.KeyAlgoRSASHA256,
+		ssh.KeyAlgoRSASHA512,
+		ssh.KeyAlgoRSA,
 	}
+	legacyHostKeys := []string{
+		ssh.KeyAlgoDSA, //nolint:staticcheck // SA1019: required for legacy network appliances
+	}
+
+	modernCiphers := []string{
+		"aes128-gcm@openssh.com",
+		"aes256-gcm@openssh.com",
+		"chacha20-poly1305@openssh.com",
+		"aes128-ctr",
+		"aes192-ctr",
+		"aes256-ctr",
+	}
+	legacyCiphers := []string{
+		"aes128-cbc",
+		"3des-cbc",
+		"arcfour",
+		"arcfour128",
+		"arcfour256",
+	}
+
+	modernKex := []string{
+		"curve25519-sha256",
+		"curve25519-sha256@libssh.org",
+		"ecdh-sha2-nistp256",
+		"ecdh-sha2-nistp384",
+		"ecdh-sha2-nistp521",
+		"diffie-hellman-group14-sha256",
+		"diffie-hellman-group16-sha512",
+		"diffie-hellman-group-exchange-sha256",
+	}
+	legacyKex := []string{
+		"diffie-hellman-group14-sha1",
+		"diffie-hellman-group-exchange-sha1",
+		"diffie-hellman-group1-sha1",
+	}
+
+	hostKeys := modernHostKeys
+	ciphers := modernCiphers
+	kex := modernKex
+
 	if legacy {
-		applyLegacy(cc)
+		hostKeys = append(slices.Clone(modernHostKeys), legacyHostKeys...)
+		ciphers = append(slices.Clone(modernCiphers), legacyCiphers...)
+		kex = append(slices.Clone(modernKex), legacyKex...)
 	}
-	return cc, nil
+
+	return &ssh.ClientConfig{
+		User:              username,
+		Auth:              authMethods,
+		HostKeyCallback:   hk,
+		HostKeyAlgorithms: hostKeys,
+		Config: ssh.Config{
+			Ciphers:      ciphers,
+			KeyExchanges: kex,
+		},
+	}, nil
 }
 
 func newShell(client *ssh.Client, cfg Config) (*Shell, error) {
@@ -322,30 +400,6 @@ func newShell(client *ssh.Client, cfg Config) (*Shell, error) {
 		close(sh.done)
 	}()
 	return sh, nil
-}
-
-// applyLegacy re-enables algorithms that current x/crypto does not offer by
-// default but that older network gear still requires. The modern algorithms
-// stay first in every list, so up-to-date devices never negotiate down.
-func applyLegacy(cc *ssh.ClientConfig) {
-	cc.KeyExchanges = []string{
-		"curve25519-sha256", "curve25519-sha256@libssh.org",
-		"ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521",
-		"diffie-hellman-group14-sha256",
-		"diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1",
-	}
-	cc.Ciphers = []string{
-		"aes128-gcm@openssh.com", "aes256-gcm@openssh.com", "chacha20-poly1305@openssh.com",
-		"aes128-ctr", "aes192-ctr", "aes256-ctr",
-		"aes128-cbc", "3des-cbc",
-	}
-	cc.HostKeyAlgorithms = []string{
-		"ssh-ed25519",
-		"ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521",
-		"rsa-sha2-512", "rsa-sha2-256",
-		"ssh-rsa",
-		"ssh-dss",
-	}
 }
 
 func wrapDial(err error) error {

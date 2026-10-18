@@ -299,3 +299,25 @@ func TestRouteMemoryCLI(t *testing.T) {
 		t.Fatalf("expected empty after clear, got:\n%s", out)
 	}
 }
+
+func TestUpdateKnownHostsFlags(t *testing.T) {
+	base := fixture(t, "cisco", "show version\n")
+
+	// Test -update-known-hosts flag accepts without error
+	code, out := runCLI(t, append(base, "-update-known-hosts", "-yes")...)
+	if code != task.ExitPartial {
+		t.Fatalf("exit = %d, want ExitPartial\n%s", code, out)
+	}
+
+	// Test -replace-host-keys flag accepts without error
+	code, out = runCLI(t, append(base, "-replace-host-keys", "-yes")...)
+	if code != task.ExitPartial {
+		t.Fatalf("exit = %d, want ExitPartial\n%s", code, out)
+	}
+
+	// Test -host-key-policy update
+	code, out = runCLI(t, append(base, "-host-key-policy", "update", "-yes")...)
+	if code != task.ExitPartial {
+		t.Fatalf("exit = %d, want ExitPartial\n%s", code, out)
+	}
+}

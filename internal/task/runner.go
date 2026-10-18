@@ -123,6 +123,38 @@ func (r *Runner) slow() time.Duration {
 	return 3
 }
 
+// ipLocker serializes execution per target IP address, preventing
+// parallel workers from overwhelming per-device limits such as JunOS
+// connection-limit (default: 10) or rate-limit (default: 5).
+type ipLocker struct {
+	mu    sync.Mutex
+	locks map[string]*sync.Mutex
+}
+
+func newIPLocker() *ipLocker {
+	return &ipLocker{
+		locks: make(map[string]*sync.Mutex),
+	}
+}
+
+func (l *ipLocker) lock(ip string) func() {
+	if ip == "" {
+		return func() {}
+	}
+	l.mu.Lock()
+	m, ok := l.locks[ip]
+	if !ok {
+		m = &sync.Mutex{}
+		l.locks[ip] = m
+	}
+	l.mu.Unlock()
+
+	m.Lock()
+	return func() {
+		m.Unlock()
+	}
+}
+
 // Run processes all jobs according to canary, batch size, and concurrency options.
 // It returns one Result per job, in job order. A failure (or panic) on one device
 // never affects others within the same batch.
@@ -199,6 +231,7 @@ func (r *Runner) Run(ctx context.Context, jobs []Job) []Result {
 
 	cumulativeCompleted := 0
 	cumulativeFailed := 0
+	locker := newIPLocker()
 
 	for bIdx, b := range batches {
 		if ctx.Err() != nil {
@@ -230,7 +263,9 @@ func (r *Runner) Run(ctx context.Context, jobs []Job) []Result {
 			go func() {
 				defer wg.Done()
 				for i := range idxChan {
+					unlock := locker.lock(jobs[i].Device.Address)
 					results[i] = r.runGuarded(ctx, jobs[i])
+					unlock()
 				}
 			}()
 		}
@@ -317,10 +352,28 @@ func (r *Runner) runGuarded(ctx context.Context, job Job) (res Result) {
 	return res
 }
 
+// isTransientRateLimitDrop reports whether an error detail indicates a transient
+// connection drop caused by device connection-limit or rate-limit exhaustion
+// (e.g. JunOS "connection-limit 10" or "rate-limit 5" terminating the handshake with EOF
+// or TCP reset).
+func isTransientRateLimitDrop(detail string) bool {
+	s := strings.ToLower(detail)
+	return strings.Contains(s, "handshake failed: eof") ||
+		strings.Contains(s, "connection reset by peer") ||
+		strings.Contains(s, "broken pipe")
+}
+
 func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
 	for attempt := 0; ; attempt++ {
 		r.executeAttempt(ctx, job, res)
-		if res.Status != StatusFailed || r.Opts.MaxRetries <= 0 || attempt >= r.Opts.MaxRetries {
+
+		isRateLimit := isTransientRateLimitDrop(res.Detail)
+		maxRetries := r.Opts.MaxRetries
+		if isRateLimit && maxRetries == 0 {
+			maxRetries = 1
+		}
+
+		if res.Status != StatusFailed || maxRetries <= 0 || attempt >= maxRetries {
 			break
 		}
 		if res.Category != CatConnectFailed && res.Category != CatSessionError && res.Category != CatTimeout {
@@ -331,7 +384,10 @@ func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
 		}
 
 		delay := time.Duration(1<<attempt) * time.Second
-		r.Log.Warnf(job.Device.Hostname, "transient error (%s): %s; retrying %d/%d in %v...", res.Category, res.Detail, attempt+1, r.Opts.MaxRetries, delay)
+		if isRateLimit {
+			delay = 3*time.Second + time.Duration(attempt)*time.Second
+		}
+		r.Log.Warnf(job.Device.Hostname, "transient error (%s): %s; retrying %d/%d in %v...", res.Category, res.Detail, attempt+1, maxRetries, delay)
 
 		res.Status = StatusUnknown
 		res.Category = ""
@@ -504,7 +560,7 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 			if step.Timed && (cat == CatTimeout || cat == CatSessionError) && !armed {
 				// The timed commit may have taken effect right before the
 				// session died (the classic lockout): assume the deadman runs.
-				armed, armedAt = true, r.now()
+				armed = true
 			}
 			if !r.Opts.OpMode {
 				r.afterFailure(ctx, sess, job, plan, res, armed)

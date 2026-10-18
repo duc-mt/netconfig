@@ -102,41 +102,43 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var vars stringList
 	fs.Var(&vars, "var", "template variable `name=value` (repeatable)")
 	var (
-		invPath        = fs.String("inventory", "inventory.csv", "inventory CSV: hostname,address,port,vendor,credential_group")
-		cmdsPath       = fs.String("commands", "", "plain text file with one configuration command per line")
-		tmplPath       = fs.String("template", "", "Go text/template rendered once per device (alternative to -commands)")
-		limit          = fs.String("limit", "", "only these devices: comma-separated hostname globs, or @group")
-		opMode         = fs.Bool("op", false, "operational mode: run commands in the operational shell without configure/commit/save")
-		dryRun         = fs.Bool("dry-run", false, "validate connectivity and simulate; never commits or saves anything")
-		yes            = fs.Bool("yes", false, "skip the [y/N] confirmation prompt")
-		force          = fs.Bool("force", false, "same as -yes; also accepts CRITICAL lockout risks that -strict-safety would block")
-		backup         = fs.Bool("backup", false, "save each device's running configuration before changing it")
-		backupDir      = fs.String("backup-dir", "backups", "directory for -backup snapshots")
-		rollbackOnFail = fs.Bool("rollback-on-fail", false, "restore pre-change backup if a device fails (requires -backup)")
-		strictSafety   = fs.Bool("strict-safety", true, "abort before connecting when the pre-flight lint finds a CRITICAL lockout risk (accept with -force) or a destructive command (accept with -allow-dangerous)")
-		allowDangerous = fs.Bool("allow-dangerous", false, "accept intentionally destructive commands (no router bgp, delete interfaces, default interface, clear ip bgp *, ...) that -strict-safety would block")
-		commitConfirm  = fs.Int("commit-confirm", 0, "arm an on-box deadman timer of `minutes`: the change reverts by itself unless confirmed after verification (0 = off)")
-		allowRebootRB  = fs.Bool("allow-reboot-rollback", false, "permit 'reload in <min>' as the deadman on platforms without hitless rollback (classic IOS)")
-		verifyFile     = fs.String("verify-file", "", "post-change health checks to run on each device (see README); '!@verify' blocks inside the commands file or template are honoured too")
-		planMode       = fs.Bool("plan", false, "preview risk, impact and rollback safety per device, then ask before proceeding (combine with -dry-run)")
-		showDiff       = fs.Bool("show-diff", false, "after a successful change, diff the post-change configuration against the pre-change backup (requires -backup)")
-		outputDir      = fs.String("output-dir", "", "write per-device command output to <dir>/<hostname>.txt")
-		jsonReport     = fs.String("json-report", "", "write a JSON run report to this file path")
-		csvReport      = fs.String("csv-report", "", "write a CSV run report to this file path")
-		concurrency    = fs.Int("concurrency", 5, "maximum number of devices configured at the same time")
-		maxRetries     = fs.Int("max-retries", 0, "maximum automatic retries for transient SSH connection/session errors")
-		connectTO      = fs.Duration("connect-timeout", 10*time.Second, "TCP connect + SSH handshake budget per device")
-		commandTO      = fs.Duration("command-timeout", 30*time.Second, "budget per command (commit/save/backup get 3x)")
-		keyFile        = fs.String("key-file", "", "path to an SSH private key file for device authentication (overrides NETCONFIG_KEY_FILE)")
-		logDir         = fs.String("log-dir", "logs", "directory for the timestamped audit log file")
-		envFile        = fs.String("env-file", ".env", "credentials file (KEY=VALUE lines); missing is fine")
-		knownHosts     = fs.String("known-hosts", "", "OpenSSH-format known_hosts file for host key checks (defaults to ~/.ssh/known_hosts or %USERPROFILE%\\.ssh\\known_hosts)")
-		hostKeyPolicy  = fs.String("host-key-policy", "strict", "strict | accept-new (trust on first use) | insecure (no verification)")
-		legacy         = fs.Bool("legacy-algorithms", false, "also offer SHA-1 key exchange and CBC ciphers for old devices")
-		autoConfirm    = fs.Bool("auto-confirm", true, "answer [y/n] / [confirm] dialogs raised by devices")
-		verbose        = fs.Bool("verbose", false, "show command/response traces on the console (always in the log file)")
-		noColor        = fs.Bool("no-color", false, "disable coloured console output")
-		showVersion    = fs.Bool("version", false, "print the version and exit")
+		invPath          = fs.String("inventory", "inventory.csv", "inventory CSV: hostname,address,port,vendor,credential_group")
+		cmdsPath         = fs.String("commands", "", "plain text file with one configuration command per line")
+		tmplPath         = fs.String("template", "", "Go text/template rendered once per device (alternative to -commands)")
+		limit            = fs.String("limit", "", "only these devices: comma-separated hostname globs, or @group")
+		opMode           = fs.Bool("op", false, "operational mode: run commands in the operational shell without configure/commit/save")
+		dryRun           = fs.Bool("dry-run", false, "validate connectivity and simulate; never commits or saves anything")
+		yes              = fs.Bool("yes", false, "skip the [y/N] confirmation prompt")
+		force            = fs.Bool("force", false, "same as -yes; also accepts CRITICAL lockout risks that -strict-safety would block")
+		backup           = fs.Bool("backup", false, "save each device's running configuration before changing it")
+		backupDir        = fs.String("backup-dir", "backups", "directory for -backup snapshots")
+		rollbackOnFail   = fs.Bool("rollback-on-fail", false, "restore pre-change backup if a device fails (requires -backup)")
+		strictSafety     = fs.Bool("strict-safety", true, "abort before connecting when the pre-flight lint finds a CRITICAL lockout risk (accept with -force) or a destructive command (accept with -allow-dangerous)")
+		allowDangerous   = fs.Bool("allow-dangerous", false, "accept intentionally destructive commands (no router bgp, delete interfaces, default interface, clear ip bgp *, ...) that -strict-safety would block")
+		commitConfirm    = fs.Int("commit-confirm", 0, "arm an on-box deadman timer of `minutes`: the change reverts by itself unless confirmed after verification (0 = off)")
+		allowRebootRB    = fs.Bool("allow-reboot-rollback", false, "permit 'reload in <min>' as the deadman on platforms without hitless rollback (classic IOS)")
+		verifyFile       = fs.String("verify-file", "", "post-change health checks to run on each device (see README); '!@verify' blocks inside the commands file or template are honoured too")
+		planMode         = fs.Bool("plan", false, "preview risk, impact and rollback safety per device, then ask before proceeding (combine with -dry-run)")
+		showDiff         = fs.Bool("show-diff", false, "after a successful change, diff the post-change configuration against the pre-change backup (requires -backup)")
+		outputDir        = fs.String("output-dir", "", "write per-device command output to <dir>/<hostname>.txt")
+		jsonReport       = fs.String("json-report", "", "write a JSON run report to this file path")
+		csvReport        = fs.String("csv-report", "", "write a CSV run report to this file path")
+		concurrency      = fs.Int("concurrency", 10, "maximum number of devices configured at the same time")
+		maxRetries       = fs.Int("max-retries", 0, "maximum automatic retries for transient SSH connection/session errors")
+		connectTO        = fs.Duration("connect-timeout", 10*time.Second, "TCP connect + SSH handshake budget per device")
+		commandTO        = fs.Duration("command-timeout", 30*time.Second, "budget per command (commit/save/backup get 3x)")
+		keyFile          = fs.String("key-file", "", "path to an SSH private key file for device authentication (overrides NETCONFIG_KEY_FILE)")
+		logDir           = fs.String("log-dir", "logs", "directory for the timestamped audit log file")
+		envFile          = fs.String("env-file", ".env", "credentials file (KEY=VALUE lines); missing is fine")
+		knownHosts       = fs.String("known-hosts", "", "OpenSSH-format known_hosts file for host key checks (defaults to ~/.ssh/known_hosts or %USERPROFILE%\\.ssh\\known_hosts)")
+		hostKeyPolicy    = fs.String("host-key-policy", "strict", "policy for host keys: 'strict' (reject unknown/changed), 'accept-new' (learn new), or 'update' (learn new and replace changed keys)")
+		updateKnownHosts = fs.Bool("update-known-hosts", false, "automatically remove mismatched existing keys and learn new keys in known_hosts (alias for -host-key-policy update)")
+		replaceHostKeys  = fs.Bool("replace-host-keys", false, "alias for -update-known-hosts")
+		legacy           = fs.Bool("legacy-algorithms", true, "allow negotiation of legacy SSH algorithms (3des-cbc, diffie-hellman-group1-sha1, ssh-dss) as fallback for older network gear")
+		autoConfirm      = fs.Bool("auto-confirm", true, "answer [y/n] / [confirm] dialogs raised by devices")
+		verbose          = fs.Bool("verbose", false, "show command/response traces on the console (always in the log file)")
+		noColor          = fs.Bool("no-color", false, "disable coloured console output")
+		showVersion      = fs.Bool("version", false, "print the version and exit")
 
 		// Jump host / bastion
 		jumpEnabled  = fs.Bool("jump", true, "enable jump host / bastion routing (set false to connect all devices directly, overriding inventory and env config)")
@@ -188,7 +190,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	if *initConfig {
 		created := 0
 		if _, err := os.Stat("inventory.csv"); os.IsNotExist(err) {
-			if err := os.WriteFile("inventory.csv", sampleInventory, 0644); err != nil {
+			if err := os.WriteFile("inventory.csv", sampleInventory, 0600); err != nil {
 				return fatal("creating inventory.csv: %v", err)
 			}
 			fmt.Fprintln(stdout, "[+] Created sample inventory.csv")
@@ -208,7 +210,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		}
 
 		if _, err := os.Stat("commands.txt"); os.IsNotExist(err) {
-			if err := os.WriteFile("commands.txt", sampleCommands, 0644); err != nil {
+			if err := os.WriteFile("commands.txt", sampleCommands, 0600); err != nil {
 				return fatal("creating commands.txt: %v", err)
 			}
 			fmt.Fprintln(stdout, "[+] Created sample commands.txt")
@@ -310,6 +312,9 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 	if *preDiff && *opMode {
 		return fatal("-pre-diff inspects configuration changes and cannot be used with -op")
+	}
+	if *updateKnownHosts || *replaceHostKeys {
+		*hostKeyPolicy = "update"
 	}
 	policy, err := sshclient.ParsePolicy(*hostKeyPolicy)
 	if err != nil {
@@ -507,16 +512,17 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 				continue
 			}
 			var jc credentials.JumpCredentials
-			if jobs[i].Device.JumpHost != "" {
+			switch {
+			case jobs[i].Device.JumpHost != "":
 				jc = resolver.ForJumpHost(jobs[i].Device.JumpHost)
 				if jc.Host == "" {
 					// Treat inventory jump_host value directly as host[:port]
 					jc.Host = jobs[i].Device.JumpHost
 				}
-			} else if *jumpHost != "" {
+			case *jumpHost != "":
 				jc = resolver.ForJumpHost("")
 				jc.Host = *jumpHost
-			} else if globalJumpDef.Host != "" {
+			case globalJumpDef.Host != "":
 				jc = globalJumpDef
 			}
 			if jc.Password != "" {

@@ -436,7 +436,7 @@ masked in logs and in the confirmation preview; what is *sent* to the device is 
 
 Commit/save/backup steps get 3x `-command-timeout`.
 
-## Host keys
+## Host keys and connection resilience
 
 Default `-host-key-policy strict`: hosts are verified against standard OpenSSH `known_hosts` files without generating a redundant local `./known_hosts`.
 - **Automatic 3-OS Discovery**:
@@ -445,8 +445,12 @@ Default `-host-key-policy strict`: hosts are verified against standard OpenSSH `
   - Supports tilde (`~`) expansion in `-known-hosts` if custom paths are provided.
 - Unknown hosts fail under `strict` with `HOSTKEY_FAILED` and a hint.
 - Run with `-host-key-policy accept-new` once to enroll devices on first contact (trust-on-first-use; securely appends only to the user's `~/.ssh/known_hosts` / `%USERPROFILE%\.ssh\known_hosts`, preventing duplicates; a *changed* key is still rejected).
+- **Auto-Replace Changed Host Keys (`-update-known-hosts` / `-replace-host-keys` / `-host-key-policy update`)**:
+  Automatically removes mismatched/stale existing keys and learns the new device key in `known_hosts` atomically, eliminating the need to manually run `ssh-keygen -R <host>`.
 - `insecure` disables verification and logs a warning.
-- Old devices that only offer SHA-1 key exchange or CBC ciphers need `-legacy-algorithms`.
+- **Algorithm Negotiation & Legacy Fallback**: Modern algorithms (including `diffie-hellman-group16-sha512` and `diffie-hellman-group-exchange-sha256`) are preferred. `-legacy-algorithms` is enabled by default (`true`), offering seamless negotiation for older devices requiring `3des-cbc`, `diffie-hellman-group1-sha1`, `diffie-hellman-group-exchange-sha1`, `arcfour`, or `ssh-dss`. Automatic detection retries with legacy algorithms if a cipher/kex mismatch occurs.
+- **Per-IP Concurrency Serialization**: Workers serialize connections targeting the same device IP address, preventing concurrent tasks from saturating switch limits (such as JunOS `connection-limit 10`).
+- **Transient Rate-Limit Auto-Backoff**: Handshake drops caused by token-bucket rate limits (e.g. JunOS `rate-limit 5`) automatically pause 3.0s–4.5s for replenishment and retry transparently.
 
 ## Logging and results
 

@@ -19,12 +19,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 
 	"netconfig/internal/vendor"
 )
@@ -319,7 +321,8 @@ func newKey(t *testing.T) ssh.PublicKey {
 
 func TestParsePolicy(t *testing.T) {
 	for in, want := range map[string]HostKeyPolicy{
-		"strict": PolicyStrict, " Accept-New ": PolicyAcceptNew, "INSECURE": PolicyInsecure,
+		"strict": PolicyStrict, " Accept-New ": PolicyAcceptNew, "INSECURE": PolicyInsecure, //nolint:gocritic // tests whitespace trimming
+		"update": PolicyUpdate, "replace": PolicyReplace,
 	} {
 		if got, err := ParsePolicy(in); err != nil || got != want {
 			t.Errorf("ParsePolicy(%q) = %q, %v", in, got, err)
@@ -723,5 +726,128 @@ func TestConnectViaJump(t *testing.T) {
 	}
 	if !strings.Contains(out, "output") {
 		t.Errorf("unexpected output: %q", out)
+	}
+}
+
+func TestCheckKeyPermissions(t *testing.T) {
+	if CheckKeyPermissions("") != "" {
+		t.Errorf("expected empty string for empty path")
+	}
+
+	tmpDir := t.TempDir()
+	keyFile := filepath.Join(tmpDir, "test_key")
+
+	if err := os.WriteFile(keyFile, []byte("fake-key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if warn := CheckKeyPermissions(keyFile); warn != "" {
+		t.Errorf("expected no warning for 0600 file, got: %s", warn)
+	}
+
+	// Make permissions permissive (0644)
+	_ = os.Chmod(keyFile, 0o644)
+	if warn := CheckKeyPermissions(keyFile); warn == "" {
+		t.Errorf("expected warning for 0644 file, got none")
+	}
+}
+
+func TestKnownHostsPolicyUpdate(t *testing.T) {
+	tmpDir := t.TempDir()
+	khPath := filepath.Join(tmpDir, "known_hosts")
+
+	pubA, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshPubA, err := ssh.NewPublicKey(pubA)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pubB, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshPubB, err := ssh.NewPublicKey(pubB)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Initial write of Key A for test-host:22
+	initialLine := knownhosts.Line([]string{"test-host:22"}, sshPubA)
+	if err := os.WriteFile(khPath, []byte(initialLine+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Strict policy should reject Key B
+	cbStrict, err := NewHostKeyCallback(khPath, PolicyStrict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteAddr := &net.TCPAddr{IP: net.ParseIP("192.0.2.1"), Port: 22}
+	err = cbStrict("test-host:22", remoteAddr, sshPubB)
+	if err == nil {
+		t.Fatal("expected Strict policy to reject mismatched key, but it succeeded")
+	}
+
+	// 3. Update policy should replace Key A with Key B and succeed
+	cbUpdate, err := NewHostKeyCallback(khPath, PolicyUpdate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cbUpdate("test-host:22", remoteAddr, sshPubB)
+	if err != nil {
+		t.Fatalf("expected Update policy to succeed and replace key, got: %v", err)
+	}
+
+	// 4. Verify known_hosts now has Key B
+	data, err := os.ReadFile(khPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.Contains(content, string(sshPubB.Marshal())) && !strings.Contains(content, strings.Fields(knownhosts.Line([]string{"test-host:22"}, sshPubB))[2]) {
+		t.Errorf("expected known_hosts to contain new key B line, got: %s", content)
+	}
+
+	// 5. Connecting with Key B again should succeed immediately
+	if err := cbUpdate("test-host:22", remoteAddr, sshPubB); err != nil {
+		t.Fatalf("re-verification with Key B failed: %v", err)
+	}
+}
+
+func TestBuildClientConfigAlgorithms(t *testing.T) {
+	// Modern config
+	ccModern, err := buildClientConfig("user", "pass", "", ssh.InsecureIgnoreHostKey(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hasGroup16 := slices.Contains(ccModern.Config.KeyExchanges, "diffie-hellman-group16-sha512")
+	if !hasGroup16 {
+		t.Errorf("expected modern KeyExchanges to contain diffie-hellman-group16-sha512")
+	}
+	hasGroupEx256 := slices.Contains(ccModern.Config.KeyExchanges, "diffie-hellman-group-exchange-sha256")
+	if !hasGroupEx256 {
+		t.Errorf("expected modern KeyExchanges to contain diffie-hellman-group-exchange-sha256")
+	}
+
+	// Legacy config
+	ccLegacy, err := buildClientConfig("user", "pass", "", ssh.InsecureIgnoreHostKey(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hasGroupEx1 := slices.Contains(ccLegacy.Config.KeyExchanges, "diffie-hellman-group-exchange-sha1")
+	if !hasGroupEx1 {
+		t.Errorf("expected legacy KeyExchanges to contain diffie-hellman-group-exchange-sha1")
+	}
+	hasArcfour := slices.Contains(ccLegacy.Config.Ciphers, "arcfour")
+	if !hasArcfour {
+		t.Errorf("expected legacy Ciphers to contain arcfour")
+	}
+	hasDSA := slices.Contains(ccLegacy.HostKeyAlgorithms, ssh.KeyAlgoDSA) //nolint:staticcheck // SA1019: required for legacy network appliances
+	if !hasDSA {
+		t.Errorf("expected legacy HostKeyAlgorithms to contain ssh-dss")
 	}
 }

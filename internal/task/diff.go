@@ -159,11 +159,12 @@ func flatLCSDiff(a, b []string) []string {
 	dp := make([]int, (len(a)+1)*stride)
 	for i := len(a) - 1; i >= 0; i-- {
 		for j := len(b) - 1; j >= 0; j-- {
-			if a[i] == b[j] {
+			switch {
+			case a[i] == b[j]:
 				dp[i*stride+j] = dp[(i+1)*stride+j+1] + 1
-			} else if dp[(i+1)*stride+j] >= dp[i*stride+j+1] {
+			case dp[(i+1)*stride+j] >= dp[i*stride+j+1]:
 				dp[i*stride+j] = dp[(i+1)*stride+j]
-			} else {
+			default:
 				dp[i*stride+j] = dp[i*stride+j+1]
 			}
 		}
@@ -199,11 +200,12 @@ func lcsLengths(a, b []string) []int {
 	for i := 0; i < len(a); i++ {
 		copy(prev, curr)
 		for j := 0; j < len(b); j++ {
-			if a[i] == b[j] {
+			switch {
+			case a[i] == b[j]:
 				curr[j+1] = prev[j] + 1
-			} else if prev[j+1] >= curr[j] {
+			case prev[j+1] >= curr[j]:
 				curr[j+1] = prev[j+1]
-			} else {
+			default:
 				curr[j+1] = curr[j]
 			}
 		}
@@ -218,11 +220,12 @@ func lcsLengthsRev(a, b []string) []int {
 		copy(prev, curr)
 		for j := len(b) - 1; j >= 0; j-- {
 			col := len(b) - j
-			if a[i] == b[j] {
+			switch {
+			case a[i] == b[j]:
 				curr[col] = prev[col-1] + 1
-			} else if prev[col] >= curr[col-1] {
+			case prev[col] >= curr[col-1]:
 				curr[col] = prev[col]
-			} else {
+			default:
 				curr[col] = curr[col-1]
 			}
 		}

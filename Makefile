@@ -21,8 +21,20 @@ vet:
 fmt:
 	gofmt -l -w cmd internal
 
+GOLANGCI_LINT := $(shell which golangci-lint 2>/dev/null || echo $(shell go env GOPATH 2>/dev/null)/bin/golangci-lint)
+
 lint:
-	golangci-lint run ./...
+	@if [ -x "$$(command -v $(GOLANGCI_LINT) 2>/dev/null)" ] || [ -f "$(GOLANGCI_LINT)" ]; then \
+		$(GOLANGCI_LINT) run ./...; \
+	else \
+		echo "golangci-lint not found. Running go vet and checking formatting..."; \
+		unformatted=$$(gofmt -l cmd internal); \
+		if [ -n "$$unformatted" ]; then \
+			echo "The following files are not formatted with gofmt:"; echo "$$unformatted"; exit 1; \
+		fi; \
+		go vet -mod=vendor ./...; \
+		echo "Format and vet passed. Run 'go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.2' for full linting."; \
+	fi
 
 # Run once on a machine with internet access, then commit/copy ./vendor into the air gap.
 vendor:
