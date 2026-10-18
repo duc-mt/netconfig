@@ -77,7 +77,9 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 		return nil, fmt.Errorf("load known_hosts %q: %w (create it, or use -host-key-policy accept-new to enroll devices on first contact)", path, err)
 	}
 
-	var mu sync.Mutex // serialises appends to the file
+	var mu sync.Mutex // serialises appends to the file and protects accepted map
+	accepted := make(map[string]ssh.PublicKey)
+
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		err := check(hostname, remote, key)
 		if err == nil {
@@ -94,7 +96,34 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 				Err:    err,
 			}
 		}
-		// Unknown host.
+
+		// Unknown host in initial known_hosts file. Check in-memory session cache.
+		mu.Lock()
+		defer mu.Unlock()
+
+		if prevKey, ok := accepted[hostname]; ok {
+			if string(prevKey.Marshal()) == string(key.Marshal()) {
+				return nil
+			}
+			return &HostKeyError{
+				Host:   hostname,
+				Reason: "the host key CHANGED during this run for " + hostname,
+				Err:    err,
+			}
+		}
+		if remote != nil {
+			if prevKey, ok := accepted[remote.String()]; ok {
+				if string(prevKey.Marshal()) == string(key.Marshal()) {
+					return nil
+				}
+				return &HostKeyError{
+					Host:   hostname,
+					Reason: "the host key CHANGED during this run for " + hostname,
+					Err:    err,
+				}
+			}
+		}
+
 		if policy != PolicyAcceptNew {
 			return &HostKeyError{
 				Host:   hostname,
@@ -102,10 +131,13 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 				Err:    err,
 			}
 		}
-		mu.Lock()
-		defer mu.Unlock()
+
 		if aerr := appendKnownHost(path, hostname, key); aerr != nil {
 			return &HostKeyError{Host: hostname, Reason: "could not record new host key: " + aerr.Error(), Err: aerr}
+		}
+		accepted[hostname] = key
+		if remote != nil {
+			accepted[remote.String()] = key
 		}
 		return nil
 	}, nil

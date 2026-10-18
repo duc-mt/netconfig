@@ -512,6 +512,7 @@ Key new flags:
 | `-jump-user` | `""` | SSH username for global bastion (overrides `NETCONFIG_JUMP_USERNAME`) |
 | `-jump-password` | `""` | SSH password for global bastion (overrides `NETCONFIG_JUMP_PASSWORD`) |
 | `-jump-key-file` | `""` | SSH private key file for global bastion (overrides `NETCONFIG_JUMP_KEY_FILE`) |
+| `-mesh-fallback` | `false` | Attempt SSH jump tunneling through neighboring inventory devices if direct connection fails |
 
 ### Jump Host / Bastion Proxy (`-jump`, `-jump-host`)
 

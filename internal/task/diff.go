@@ -28,49 +28,206 @@ func diffConfig(before, after string) (lines []string, added, removed int, ok bo
 		return nil, 0, 0, false
 	}
 
-	// lcs[i][j] = length of the longest common subsequence of a[i:] and b[j:].
-	lcs := make([][]int, len(a)+1)
-	for i := range lcs {
-		lcs[i] = make([]int, len(b)+1)
+	// 1. Trim common prefix
+	start := 0
+	for start < len(a) && start < len(b) && a[start] == b[start] {
+		start++
 	}
+
+	// 2. Trim common suffix
+	endA := len(a)
+	endB := len(b)
+	for endA > start && endB > start && a[endA-1] == b[endB-1] {
+		endA--
+		endB--
+	}
+
+	subA := a[start:endA]
+	subB := b[start:endB]
+
+	if len(subA) == 0 && len(subB) == 0 {
+		return nil, 0, 0, true
+	}
+
+	diffLines := hirschbergDiff(subA, subB)
+	for _, l := range diffLines {
+		if strings.HasPrefix(l, "+") {
+			added++
+		} else if strings.HasPrefix(l, "-") {
+			removed++
+		}
+	}
+	return diffLines, added, removed, true
+}
+
+const maxFlatDPCells = 250000
+
+func hirschbergDiff(a, b []string) []string {
+	if len(a) == 0 {
+		out := make([]string, len(b))
+		for i, s := range b {
+			out[i] = "+" + s
+		}
+		return out
+	}
+	if len(b) == 0 {
+		out := make([]string, len(a))
+		for i, s := range a {
+			out[i] = "-" + s
+		}
+		return out
+	}
+	if len(a) == 1 {
+		idx := -1
+		for i, s := range b {
+			if s == a[0] {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 {
+			out := make([]string, 0, len(b)-1)
+			for _, s := range b[:idx] {
+				out = append(out, "+"+s)
+			}
+			for _, s := range b[idx+1:] {
+				out = append(out, "+"+s)
+			}
+			return out
+		}
+		out := make([]string, 0, len(b)+1)
+		out = append(out, "-"+a[0])
+		for _, s := range b {
+			out = append(out, "+"+s)
+		}
+		return out
+	}
+	if len(b) == 1 {
+		idx := -1
+		for i, s := range a {
+			if s == b[0] {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 {
+			out := make([]string, 0, len(a)-1)
+			for _, s := range a[:idx] {
+				out = append(out, "-"+s)
+			}
+			for _, s := range a[idx+1:] {
+				out = append(out, "-"+s)
+			}
+			return out
+		}
+		out := make([]string, 0, len(a)+1)
+		for _, s := range a {
+			out = append(out, "-"+s)
+		}
+		out = append(out, "+"+b[0])
+		return out
+	}
+
+	// Use fast flat 1D DP for small/medium blocks
+	if len(a)*len(b) <= maxFlatDPCells {
+		return flatLCSDiff(a, b)
+	}
+
+	// Hirschberg divide-and-conquer for large blocks to guarantee linear O(min(N,M)) memory
+	mid := len(a) / 2
+	l1 := lcsLengths(a[:mid], b)
+	l2 := lcsLengthsRev(a[mid:], b)
+
+	m := len(b)
+	bestK := 0
+	maxSum := -1
+	for k := 0; k <= m; k++ {
+		sum := l1[k] + l2[m-k]
+		if sum > maxSum {
+			maxSum = sum
+			bestK = k
+		}
+	}
+
+	left := hirschbergDiff(a[:mid], b[:bestK])
+	right := hirschbergDiff(a[mid:], b[bestK:])
+	return append(left, right...)
+}
+
+func flatLCSDiff(a, b []string) []string {
+	stride := len(b) + 1
+	dp := make([]int, (len(a)+1)*stride)
 	for i := len(a) - 1; i >= 0; i-- {
 		for j := len(b) - 1; j >= 0; j-- {
-			switch {
-			case a[i] == b[j]:
-				lcs[i][j] = lcs[i+1][j+1] + 1
-			case lcs[i+1][j] >= lcs[i][j+1]:
-				lcs[i][j] = lcs[i+1][j]
-			default:
-				lcs[i][j] = lcs[i][j+1]
+			if a[i] == b[j] {
+				dp[i*stride+j] = dp[(i+1)*stride+j+1] + 1
+			} else if dp[(i+1)*stride+j] >= dp[i*stride+j+1] {
+				dp[i*stride+j] = dp[(i+1)*stride+j]
+			} else {
+				dp[i*stride+j] = dp[i*stride+j+1]
 			}
 		}
 	}
 
+	var lines []string
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
 		switch {
 		case a[i] == b[j]:
 			i++
 			j++
-		case lcs[i+1][j] >= lcs[i][j+1]:
+		case dp[(i+1)*stride+j] >= dp[i*stride+j+1]:
 			lines = append(lines, "-"+a[i])
-			removed++
 			i++
 		default:
 			lines = append(lines, "+"+b[j])
-			added++
 			j++
 		}
 	}
 	for ; i < len(a); i++ {
 		lines = append(lines, "-"+a[i])
-		removed++
 	}
 	for ; j < len(b); j++ {
 		lines = append(lines, "+"+b[j])
-		added++
 	}
-	return lines, added, removed, true
+	return lines
+}
+
+func lcsLengths(a, b []string) []int {
+	curr := make([]int, len(b)+1)
+	prev := make([]int, len(b)+1)
+	for i := 0; i < len(a); i++ {
+		copy(prev, curr)
+		for j := 0; j < len(b); j++ {
+			if a[i] == b[j] {
+				curr[j+1] = prev[j] + 1
+			} else if prev[j+1] >= curr[j] {
+				curr[j+1] = prev[j+1]
+			} else {
+				curr[j+1] = curr[j]
+			}
+		}
+	}
+	return curr
+}
+
+func lcsLengthsRev(a, b []string) []int {
+	curr := make([]int, len(b)+1)
+	prev := make([]int, len(b)+1)
+	for i := len(a) - 1; i >= 0; i-- {
+		copy(prev, curr)
+		for j := len(b) - 1; j >= 0; j-- {
+			col := len(b) - j
+			if a[i] == b[j] {
+				curr[col] = prev[col-1] + 1
+			} else if prev[col] >= curr[col-1] {
+				curr[col] = prev[col]
+			} else {
+				curr[col] = curr[col-1]
+			}
+		}
+	}
+	return curr
 }
 
 // splitConfigLines splits a configuration dump into non-blank lines,

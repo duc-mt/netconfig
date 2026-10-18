@@ -189,14 +189,7 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 	}
 
 	// 3. Direct connection
-	// If auto-fallback is available, use a 3.5s direct budget so an unresponsive direct connection
-	// doesn't stall for 10s before falling back to jump.
-	directCfg := cfg
-	if t.pool != nil && len(t.autoFallback) > 0 && directCfg.ConnectTimeout > 3500*time.Millisecond {
-		directCfg.ConnectTimeout = 3500 * time.Millisecond
-	}
-
-	sh, directErr := sshclient.Connect(ctx, directCfg)
+	sh, directErr := sshclient.Connect(ctx, cfg)
 	if directErr == nil {
 		return sh, nil
 	}

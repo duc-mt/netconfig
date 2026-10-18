@@ -144,6 +144,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		jumpUser     = fs.String("jump-user", "", "SSH username for the global jump host (overrides NETCONFIG_JUMP_USERNAME)")
 		jumpPassword = fs.String("jump-password", "", "SSH password for the global jump host (overrides NETCONFIG_JUMP_PASSWORD)")
 		jumpKeyFile  = fs.String("jump-key-file", "", "SSH private key file for the global jump host (overrides NETCONFIG_JUMP_KEY_FILE)")
+		meshFallback = fs.Bool("mesh-fallback", false, "attempt SSH jump tunneling through neighboring inventory devices if direct connection fails (disabled by default)")
 		tcpMSS       = fs.Int("tcp-mss", 1360, "TCP Maximum Segment Size for outgoing SSH sockets (0=OS default, >0=clamp MSS to avoid PMTU issues)")
 
 		// Route memory & auto-discovery
@@ -456,20 +457,21 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 
 	// ---- credentials -----------------------------------------------------
+	overrides := make(map[string]string)
 	if *keyFile != "" {
-		_ = os.Setenv("NETCONFIG_KEY_FILE", *keyFile)
+		overrides["NETCONFIG_KEY_FILE"] = *keyFile
 	}
 	if *jumpUser != "" {
-		_ = os.Setenv("NETCONFIG_JUMP_USERNAME", *jumpUser)
+		overrides["NETCONFIG_JUMP_USERNAME"] = *jumpUser
 	}
 	if *jumpPassword != "" {
-		_ = os.Setenv("NETCONFIG_JUMP_PASSWORD", *jumpPassword)
+		overrides["NETCONFIG_JUMP_PASSWORD"] = *jumpPassword
 	}
 	if *jumpKeyFile != "" {
-		_ = os.Setenv("NETCONFIG_JUMP_KEY_FILE", *jumpKeyFile)
+		overrides["NETCONFIG_JUMP_KEY_FILE"] = *jumpKeyFile
 	}
 	if *jumpHost != "" {
-		_ = os.Setenv("NETCONFIG_JUMP_HOST", *jumpHost)
+		overrides["NETCONFIG_JUMP_HOST"] = *jumpHost
 	}
 
 	dot, err := credentials.LoadDotEnv(*envFile)
@@ -479,7 +481,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	for _, w := range dot.Warnings {
 		log.Warnf("", "%s", w)
 	}
-	resolver := &credentials.Resolver{DotEnv: dot.Values, LookupEnv: os.LookupEnv}
+	resolver := &credentials.Resolver{DotEnv: dot.Values, LookupEnv: os.LookupEnv, Overrides: overrides}
 	if credentials.IsTerminal(stdin) {
 		resolver.Prompter = &credentials.TerminalPrompter{In: stdin, Out: stderr}
 	}
@@ -567,7 +569,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 
 	var autoFallbackTargets []task.Target
-	if *jumpEnabled {
+	if *jumpEnabled && *meshFallback {
 		for _, d := range allDevs {
 			if d.Endpoint() == "" {
 				continue

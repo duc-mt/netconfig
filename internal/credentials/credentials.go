@@ -83,6 +83,7 @@ type Resolver struct {
 	DotEnv    map[string]string           // tier 1 (values of the .env file; never exported to the process env)
 	LookupEnv func(string) (string, bool) // tier 2 (os.LookupEnv); nil disables the tier
 	Prompter  Prompter                    // tier 3; nil disables prompting
+	Overrides map[string]string           // explicit overrides (e.g. from CLI flags, highest priority)
 
 	mu    sync.Mutex
 	cache map[string]outcome
@@ -91,6 +92,9 @@ type Resolver struct {
 // EnvKey builds the variable name for a group and field, e.g.
 // EnvKey("dc-1", "PASSWORD") == "NETCONFIG_DC_1_PASSWORD".
 func EnvKey(group, field string) string {
+	if group == "" {
+		return globalKey(field)
+	}
 	var b strings.Builder
 	for _, r := range strings.ToUpper(group) {
 		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
@@ -106,6 +110,11 @@ func globalKey(field string) string { return "NETCONFIG_" + field }
 
 func (r *Resolver) lookup(group, field string) (string, bool) {
 	for _, key := range []string{EnvKey(group, field), globalKey(field)} {
+		if r.Overrides != nil {
+			if v := r.Overrides[key]; v != "" {
+				return v, true
+			}
+		}
 		if v := r.DotEnv[key]; v != "" {
 			return v, true
 		}
@@ -228,6 +237,11 @@ func (r *Resolver) lookupJump(cleanName, field string) (string, bool) {
 	keys = append(keys, "NETCONFIG_JUMP_"+field)
 
 	for _, key := range keys {
+		if r.Overrides != nil {
+			if v := r.Overrides[key]; v != "" {
+				return v, true
+			}
+		}
 		if v := r.DotEnv[key]; v != "" {
 			return v, true
 		}

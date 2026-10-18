@@ -371,3 +371,31 @@ func TestKeyFileCredentialsResolution(t *testing.T) {
 		t.Errorf("unexpected jumpDC key: %+v", jumpDC)
 	}
 }
+
+func TestOverridesBeatAllTiers(t *testing.T) {
+	r := &Resolver{
+		DotEnv: map[string]string{
+			"NETCONFIG_USERNAME":  "file-user",
+			"NETCONFIG_PASSWORD":  "file-pass",
+			"NETCONFIG_JUMP_HOST": "file-bastion:22",
+		},
+		LookupEnv: mapEnv(map[string]string{
+			"NETCONFIG_USERNAME": "env-user",
+		}),
+		Overrides: map[string]string{
+			"NETCONFIG_USERNAME":  "flag-user",
+			"NETCONFIG_JUMP_HOST": "flag-bastion:2222",
+		},
+	}
+	c, err := r.Resolve("dc1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Username != "flag-user" || c.Password != "file-pass" {
+		t.Errorf("got %q/%q, want flag-user/file-pass", c.Username, c.Password)
+	}
+	jump := r.JumpDefaults()
+	if jump.Host != "flag-bastion:2222" {
+		t.Errorf("got jump host %q, want flag-bastion:2222", jump.Host)
+	}
+}

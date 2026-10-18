@@ -354,6 +354,18 @@ func TestHostKeyPolicies(t *testing.T) {
 		t.Fatalf("known_hosts not written: %q err=%v", data, err)
 	}
 
+	// Calling accept again on the same host must succeed in-memory without duplicate file appends
+	if err := accept(host, remote, keyA); err != nil {
+		t.Fatalf("repeated accept-new call failed: %v", err)
+	}
+	data2, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(data2), "192.0.2.10") != 1 {
+		t.Fatalf("expected exactly 1 entry for host, got %d:\n%s", strings.Count(string(data2), "192.0.2.10"), data2)
+	}
+
 	// strict now accepts the enrolled key and rejects a different one.
 	strict, err := NewHostKeyCallback(path, PolicyStrict)
 	if err != nil {

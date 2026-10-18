@@ -74,3 +74,28 @@ func TestDiffConfigTooLargeIsSkipped(t *testing.T) {
 		t.Error("expected diffConfig to report not ok for input over maxDiffLines")
 	}
 }
+
+func TestDiffConfigLargeFilesPrefixSuffix(t *testing.T) {
+	var b1, b2 strings.Builder
+	for i := 0; i < 4000; i++ {
+		b1.WriteString("common prefix line " + strconv.Itoa(i) + "\n")
+		b2.WriteString("common prefix line " + strconv.Itoa(i) + "\n")
+	}
+	b1.WriteString("old middle line\n")
+	b2.WriteString("new middle line\n")
+	for i := 0; i < 4000; i++ {
+		b1.WriteString("common suffix line " + strconv.Itoa(i) + "\n")
+		b2.WriteString("common suffix line " + strconv.Itoa(i) + "\n")
+	}
+
+	lines, added, removed, ok := diffConfig(b1.String(), b2.String())
+	if !ok {
+		t.Fatal("expected ok for 8000 line diff with small edit")
+	}
+	if added != 1 || removed != 1 {
+		t.Fatalf("added/removed = %d/%d, want 1/1", added, removed)
+	}
+	if len(lines) != 2 || lines[0] != "-old middle line" || lines[1] != "+new middle line" {
+		t.Fatalf("unexpected diff lines: %v", lines)
+	}
+}

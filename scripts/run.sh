@@ -60,8 +60,10 @@ else
         exit 1
     fi
     
-    echo "Checking and installing required dependencies..."
-    (cd "$ROOT_DIR" && go mod tidy && go mod vendor)
+    if [ ! -d "$ROOT_DIR/vendor" ]; then
+        echo "Checking and installing required dependencies..."
+        (cd "$ROOT_DIR" && go mod tidy && go mod vendor)
+    fi
 
     if command -v make >/dev/null 2>&1; then
         (cd "$ROOT_DIR" && make build)

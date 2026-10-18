@@ -42,9 +42,13 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
-echo Checking and installing required dependencies...
-go mod tidy
-go mod vendor
+pushd "%ROOT_DIR%"
+
+if not exist "%ROOT_DIR%vendor" (
+    echo Vendor directory not found. Downloading dependencies...
+    go mod tidy
+    go mod vendor
+)
 
 echo Building binary...
 set VERSION=dev
@@ -52,7 +56,6 @@ for /f "delims=" %%i in ('git describe --tags --always --dirty 2^>nul') do set V
 set LDFLAGS=-s -w -X main.version=%VERSION%
 
 set CGO_ENABLED=0
-pushd "%ROOT_DIR%"
 go build -mod=vendor -trimpath -ldflags "%LDFLAGS%" -o "%ROOT_DIR%bin\netconfig.exe" .\cmd\netconfig
 popd
 set BINARY="%ROOT_DIR%bin\netconfig.exe"
