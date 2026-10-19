@@ -514,11 +514,23 @@ func TestValidateBackupCiscoSBAndASA(t *testing.T) {
 		{"sb ends with exit, CRLF", sb, "config-file-header\r\nswitch1a2b3c\r\n!\r\ninterface gigabitethernet1\r\nexit\r\n", true},
 		{"sb ends with end", sb, sbHeader + "interface gigabitethernet1\n description uplink\nend\n", true},
 		{"sb ends with end, CRLF", sb, "config-file-header\r\n!\r\ninterface gigabitethernet1\r\nend\r\n", true},
+		// SF/SG/CBS close every vlan/interface/line block with "exit", so "exit" is
+		// only a terminator when it is the last line.
+		{"sb cut mid-block after earlier exits", sb, sbHeader + "vlan database\nvlan 10\nexit\ninterface gigabitethernet1\n description uplink\nexit\ninterface gigabitethernet2\n description tru", false},
+		{"sb cut right after a block header", sb, sbHeader + "interface gigabitethernet1\nexit\ninterface gigabitethernet2", false},
+		{"sb cut mid-block, CRLF", sb, "config-file-header\r\n!\r\ninterface gigabitethernet1\r\nexit\r\ninterface gigabitethernet2\r\n description x", false},
+		{"sb end in the middle, cut later", sb, sbHeader + "interface gigabitethernet1\nend\ninterface gigabitethernet2\n shutd", false},
+		{"sb ends with exit, trailing whitespace", sb, sbHeader + "interface gigabitethernet1\nexit \r\n\r\n  \n", true},
+		{"sb ends with end, trailing blank lines", sb, sbHeader + "interface gigabitethernet1\nend\n\n", true},
 		{"sb without any end marker", sb, sbHeader + "interface gigabitethernet1\n description uplink\n", false},
 		{"sb empty", sb, "  \n", false},
 		{"sb no config markers", sb, "random text\nexit\n", false},
 		{"asa ends with : end", asa, asaHeader + "interface GigabitEthernet0/0\n nameif outside\n: end\n", true},
 		{"asa ends with : end, CRLF", asa, ": Saved\r\n!\r\ninterface GigabitEthernet0/0\r\n: end\r\n", true},
+		// Send strips the newline before the prompt, so ": end" is the last thing
+		// in a real backup.
+		{"asa ends with : end, no trailing newline", asa, asaHeader + "interface GigabitEthernet0/0\n nameif outside\n: end", true},
+		{"asa ends with : end, CRLF, no trailing newline", asa, ": Saved\r\n!\r\ninterface GigabitEthernet0/0\r\n: end", true},
 		{"asa plain end fallback", asa, asaHeader + "interface GigabitEthernet0/0\nend\n", true},
 		{"asa truncated", asa, asaHeader + "interface GigabitEthernet0/0\n nameif outside\n security-lev", false},
 		{"asa empty", asa, "", false},
@@ -541,6 +553,44 @@ func TestCiscoSBOverwritePromptIsSBOnly(t *testing.T) {
 		}
 		if reply, ok := mustLookup(t, name).ConfirmReply(prompt); ok {
 			t.Errorf("%s answers the SF/SG/CBS overwrite prompt with %q", name, reply)
+		}
+	}
+}
+
+func TestCiscoSBPagerAndASASavePrompt(t *testing.T) {
+	// SF/SG/CBS page with their own marker, not IOS's "--More--".
+	sb := mustLookup(t, "cisco_sb")
+	paged := func(line string) bool {
+		for _, re := range sb.Pagers {
+			if re.MatchString(line) {
+				return true
+			}
+		}
+		return false
+	}
+	for line, want := range map[string]bool{
+		"More: <space>,  Quit: q or CTRL+Z, One line: <return> ": true,
+		" --More-- ":                 true,
+		"switch1a2b3c#":              false,
+		"interface gigabitethernet1": false,
+	} {
+		if got := paged(line); got != want {
+			t.Errorf("cisco_sb pager match %q = %v, want %v", line, got, want)
+		}
+	}
+
+	// ASA asks whether to save before "reload in"; answering yes keeps the
+	// pre-change state, as on IOS. No other vendor answers this dialog.
+	const save = "System config has been modified. Save? [Y]es/[N]o:"
+	if reply, ok := mustLookup(t, "cisco_asa").ConfirmReply(save); !ok || reply != "y" {
+		t.Errorf("cisco_asa ConfirmReply(%q) = %q, %v; want %q, true", save, reply, ok, "y")
+	}
+	for _, name := range Names() {
+		if name == CiscoASA {
+			continue
+		}
+		if reply, ok := mustLookup(t, name).ConfirmReply(save); ok {
+			t.Errorf("%s answers the ASA save prompt with %q", name, reply)
 		}
 	}
 }

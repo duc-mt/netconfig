@@ -199,6 +199,7 @@ type Profile struct {
 	ErrorPatterns []*regexp.Regexp // matched per output line
 	BackupCommand string           // prints the full running configuration
 	EndMarkers    []string         // substrings expected at or near end of untruncated backup (e.g. "\nend", "\nreturn")
+	EndAnchored   bool             // EndMarkers must end the output, not merely occur in it (for terminators that also appear mid-config)
 	CandidateDiff string           // read-only command inside config mode to inspect candidate diff (e.g. "show | compare")
 
 	probe         string
@@ -228,8 +229,9 @@ func (p *Profile) ValidateBackup(output string) error {
 	if len(p.EndMarkers) == 0 {
 		return nil
 	}
+	tail := "\n" + strings.TrimRight(output, " \t\r\n")
 	for _, marker := range p.EndMarkers {
-		if strings.Contains(output, marker) {
+		if p.EndAnchored && strings.HasSuffix(tail, marker) || !p.EndAnchored && strings.Contains(output, marker) {
 			return nil
 		}
 	}
@@ -287,6 +289,14 @@ var (
 // "ERROR: % Invalid input ..." / "ERROR: Interface ...": the leading "%" that
 // reCiscoErr anchors on is then not at the start of the line.
 var reASAErr = regexp.MustCompile(`(?i)^\s*error:`)
+
+// rePagerSB is the SF/SG/CBS pager ("More: <space>, Quit: q or CTRL+Z, One
+// line: <return>"); the IOS "--More--" form does not match it.
+var rePagerSB = regexp.MustCompile(`(?i)more:\s*<space>`)
+
+// reASASave is the ASA's "System config has been modified. Save? [Y]es/[N]o:",
+// which the generic "[y/n]" / "[yes/no]" patterns do not match.
+var reASASave = regexp.MustCompile(`(?i)\[y\]es/\[n\]o\s*:?\s*$`)
 
 // genericConfirms are shared by all vendors. Each regexp is anchored to the end
 // of the (unterminated) last line, so a confirmation word in ordinary output
@@ -565,7 +575,14 @@ func newCiscoXE() *Profile {
 func newCiscoSB() *Profile {
 	p := ciscoLike(CiscoSB, "Cisco Small Business (SF/SG/CBS)", reCiscoErr)
 	p.DisablePaging = []string{"terminal datadump", "terminal length 0"}
+	// If both commands are refused the pager stays on, and an unanswered pager
+	// would stall the backup until the command timeout.
+	p.Pagers = append(p.Pagers, rePagerSB)
 	p.EndMarkers = []string{"\nend", "\r\nend", "\nexit", "\r\nexit"}
+	// Every vlan/interface/line block closes with "exit", so "exit" anywhere
+	// proves nothing: it only terminates the backup when it is the last line.
+	// The backup is also the only rollback source here (no on-box deadman).
+	p.EndAnchored = true
 	// Saving asks "Overwrite file [startup-config].... (Y/N)[N] ?" instead of
 	// IOS's "Destination filename [startup-config]?", and the default is N, so
 	// an unanswered prompt would leave the change unsaved. A new slice is built
@@ -584,8 +601,14 @@ func newCiscoASA() *Profile {
 	p := ciscoLike(CiscoASA, "Cisco ASA", reCiscoErr)
 	p.ErrorPatterns = append(p.ErrorPatterns, reASAErr)
 	p.DisablePaging = []string{"terminal pager 0"}
-	p.EndMarkers = []string{": end\n", ": end\r\n", "\nend", "\r\nend"}
+	// Send drops the newline in front of the final prompt, so a real backup ends
+	// in a bare ": end"; the newline-terminated forms only occur in files.
+	p.EndMarkers = []string{"\n: end", ": end\n", ": end\r\n", "\nend", "\r\nend"}
 	p.safety = RollbackRebootOnly
+	// "reload in" may first offer to save a modified configuration. As on IOS,
+	// yes keeps the pre-change state; a new slice because genericConfirms is
+	// shared by every vendor.
+	p.Confirms = append([]Confirm{{reASASave, "y"}}, genericConfirms...)
 	p.confirmApply = []Step{
 		{Kind: StepArm, Line: "reload in {mins}", Timed: true},
 		{Kind: StepEnter, Line: "configure terminal"},

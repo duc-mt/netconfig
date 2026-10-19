@@ -219,6 +219,34 @@ func TestConcurrentUseKeepsLinesIntact(t *testing.T) {
 	}
 }
 
+// Forms with more than one token between the keyword and the secret: a
+// privilege level ("enable password level 15 encrypted <hash>") or a digest
+// algorithm ("ntp authentication-key 1 md5 <key>"). Redacting the wrong token
+// leaves the real secret in the logs and in saved diffs.
+func TestRedactCommandMultiTokenSecrets(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"enable password level 15 encrypted 7f1a2d4e5f60718293a4b5c6d7e8aabb", "enable password level 15 encrypted <redacted>"},
+		{"enable password level 15 7 0822455D0A16", "enable password level 15 7 <redacted>"},
+		{"enable password level 15 S3cretPW", "enable password level 15 <redacted>"},
+		{"ntp authentication-key 1 md5 S3cretNTP", "ntp authentication-key 1 md5 <redacted>"},
+		{"sntp authentication-key 2 md5 S3cretSNTP", "sntp authentication-key 2 md5 <redacted>"},
+		{"ntp authentication-key 3 sha256 S3cretSHA", "ntp authentication-key 3 sha256 <redacted>"},
+		{"ip ospf message-digest-key 1 md5 S3cretOSPF", "ip ospf message-digest-key 1 md5 <redacted>"},
+		// unchanged behaviour
+		{"username cisco password encrypted 6b3c7f1a2d4e5f60 privilege 15", "username cisco password encrypted <redacted> privilege 15"},
+		{"enable password 8Ry2YjIyt7RRXU24 encrypted", "enable password <redacted> encrypted"},
+		{"username admin password 0 hunter2", "username admin password 0 <redacted>"},
+		{"password 1234", "password <redacted>"},
+		{"no password", "no password"},
+		{"ntp server 10.0.0.9", "ntp server 10.0.0.9"},
+	}
+	for _, c := range cases {
+		if got := RedactCommand(c.in); got != c.want {
+			t.Errorf("RedactCommand(%q)\n got  %q\n want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestRedactCommand(t *testing.T) {
 	cases := map[string]string{
 		"hostname sw1":                                                     "hostname sw1",

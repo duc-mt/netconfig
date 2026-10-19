@@ -165,6 +165,37 @@ func TestSendReturnsOutputWithoutEchoOrPrompt(t *testing.T) {
 	}
 }
 
+// A backup reaches ValidateBackup through Send, which drops the newline in
+// front of the final prompt: the configuration's last line arrives with
+// nothing after it. Feeding ValidateBackup hand-written strings with a
+// trailing newline hides exactly the bugs this exercises.
+func TestBackupValidatesAsReturnedBySend(t *testing.T) {
+	cases := []struct{ name, vendor, device string }{
+		{"ios", "cisco",
+			"show running-config\r\nversion 15.2\r\n!\r\ninterface GigabitEthernet0/0\r\n!\r\nend\r\nRouter#"},
+		{"asa", "cisco_asa",
+			"show running-config\r\n: Saved\r\n:\r\nASA Version 9.16(4)\r\n!\r\nhostname asa1\r\ninterface GigabitEthernet0/0\r\n nameif outside\r\n: end\r\nasa1#"},
+		{"small business", "cisco_sb",
+			"show running-config\r\nconfig-file-header\r\nswitch1a2b3c\r\nCLI v1.0\r\n@\r\n!\r\nvlan database\r\nvlan 10\r\nexit\r\ninterface gigabitethernet1\r\n description uplink\r\nexit\r\nswitch1a2b3c#"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			sh, in := newTestShell(t, c.vendor)
+			go func() {
+				waitForInput(t, in, "show running-config\n")
+				_, _ = sh.out.Write([]byte(c.device))
+			}()
+			out, err := sh.Send(context.Background(), "show running-config", 2*time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := sh.prof.ValidateBackup(out); err != nil {
+				t.Errorf("a complete backup was rejected: %v\nout tail = %q", err, out[max(0, len(out)-40):])
+			}
+		})
+	}
+}
+
 func TestPagerIsAdvancedAndErased(t *testing.T) {
 	sh, in := newTestShell(t, "cisco")
 	go func() {
@@ -179,6 +210,48 @@ func TestPagerIsAdvancedAndErased(t *testing.T) {
 	}
 	if out != "line1\nline2" {
 		t.Errorf("out = %q, want %q", out, "line1\nline2")
+	}
+}
+
+func TestSmallBusinessPagerIsAdvanced(t *testing.T) {
+	sh, in := newTestShell(t, "cisco_sb")
+	go func() {
+		waitForInput(t, in, "show running-config\n")
+		_, _ = sh.out.Write([]byte("show running-config\r\nline1\r\nMore: <space>,  Quit: q or CTRL+Z, One line: <return> "))
+		waitForInput(t, in, "show running-config\n ")
+		_, _ = sh.out.Write([]byte("\r                                                      \rline2\r\nswitch1a2b3c#"))
+	}()
+	out, err := sh.Send(context.Background(), "show running-config", 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "line1\nline2" {
+		t.Errorf("out = %q, want %q", out, "line1\nline2")
+	}
+}
+
+func TestSaveDialogsAreAnswered(t *testing.T) {
+	cases := []struct {
+		name, vendor, cmd, dialog, wantInput, after string
+	}{
+		{"small business overwrite", "cisco_sb", "write memory",
+			"Overwrite file [startup-config].... (Y/N)[N] ?", "write memory\nY\n", "\r\nCopy succeeded\r\nswitch1a2b3c#"},
+		{"asa save before reload", "cisco_asa", "reload in 5",
+			"System config has been modified. Save? [Y]es/[N]o:", "reload in 5\ny\n", "\r\nReload scheduled in 5 minutes\r\nasa1#"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			sh, in := newTestShell(t, c.vendor)
+			go func() {
+				waitForInput(t, in, c.cmd+"\n")
+				_, _ = sh.out.Write([]byte(c.cmd + "\r\n" + c.dialog))
+				waitForInput(t, in, c.wantInput)
+				_, _ = sh.out.Write([]byte(c.after))
+			}()
+			if _, err := sh.Send(context.Background(), c.cmd, 2*time.Second); err != nil {
+				t.Fatalf("the dialog was not answered: %v (device saw %q)", err, in.String())
+			}
+		})
 	}
 }
 

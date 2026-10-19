@@ -1,7 +1,9 @@
 # Sample inventory file for netconfig
 # Header is optional. Format: hostname,address,port,vendor[,credential_group[,jump_host]]
 #   - port: optional, defaults to 22 if empty
-#   - vendor: required (cisco, junos, huawei, fortinet, arista, vyos, ruijie, aruba, checkpoint)
+#   - vendor: required (cisco, cisco_sb, cisco_asa, junos, huawei, fortinet, arista, vyos, ruijie, aruba, checkpoint)
+#       cisco_sb  = Cisco Small Business SF/SG/CBS; rollback rating UNSAFE (no "reload in", so no on-box deadman)
+#       cisco_asa = Cisco ASA; rollback rating REBOOT ONLY (deadman is "reload in N", needs -allow-reboot-rollback)
 #   - credential_group: optional, defaults to "default" (maps to NETCONFIG_USERNAME/PASSWORD or KEY_FILE in .env)
 #   - jump_host: optional; leave blank for direct connections, or set to bastion name / host[:port]
 hostname,address,port,vendor,credential_group,jump_host

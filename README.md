@@ -223,7 +223,9 @@ treated as classic IOS.
 Two further Cisco vendor keys have their own profiles. `cisco_sb` (Cisco Small Business SF/SG/CBS;
 aliases `cisco-sf`, `cisco-sg`, `cbs`, `cbs350`, `sg300`, `sg350`, `sg500`, `sf300`, `sf500`) is rated
 `UNSAFE`: it has no `reload in`, so `-commit-confirm` never arms a timer on it. `cisco_asa` (aliases
-`asa`, `ftd`) is rated `REBOOT ONLY`, like classic IOS.
+`asa`, `ftd`) is rated `REBOOT ONLY`, like classic IOS. The `ftd` alias only selects this profile:
+Firepower Threat Defense's default CLI is not an ASA shell and its configuration is managed centrally,
+so changes through it are unverified.
 
 The flow on a `SAFE` device: arm the timed commit, open a **fresh SSH session** and run the platform
 probe (an established session survives many lockouts; a new one does not), run the `-verify-file`
@@ -434,8 +436,8 @@ masked in logs and in the confirmation preview; what is *sent* to the device is 
 | Platform | Enter | Leave / persist | Notes |
 |---|---|---|---|
 | Cisco IOS/IOS-XE | `configure terminal` | `end`, `write memory` | `enable` is issued if the login lands in user EXEC; `terminal length 0` |
-| Cisco Small Business (SF/SG/CBS) | `configure terminal` | `end`, `write memory` | `terminal datadump`, then `terminal length 0` (a device rejects the one its firmware lacks); the save prompt `Overwrite file [startup-config].... (Y/N)[N] ?` is answered `Y`; a backup may end in `exit` instead of `end` |
-| Cisco ASA | `configure terminal` | `end`, `write memory` | `terminal pager 0`; a backup ends in `: end`; rejections are printed as `ERROR: ...` |
+| Cisco Small Business (SF/SG/CBS) | `configure terminal` | `end`, `write memory` | `terminal datadump`, then `terminal length 0` (a device rejects the one its firmware lacks); the `More: <space>` pager and the save prompt `Overwrite file [startup-config].... (Y/N)[N] ?` (answered `Y`) are handled; a backup must *end* with `exit` or `end` (checked on the last line, because `exit` also closes every block) or it is rejected as truncated, which matters because the backup is this platform's only rollback source |
+| Cisco ASA | `configure terminal` | `end`, `write memory` | `terminal pager 0`; a backup ends in `: end`; rejections are printed as `ERROR: ...`; the `Save? [Y]es/[N]o:` question that can precede `reload in` is answered `y` |
 | Junos | `configure` | `commit`, `exit` | `set cli screen-length 0` |
 | Huawei VRP | `system-view` | `return`, `save` | `screen-length 0 temporary`; `h3c`, `comware` and `hp-comware` are aliases |
 | FortiOS | none (commands are `config ... end` blocks) | saved by each `end` | `--More--` is answered, nothing is changed on the device |
