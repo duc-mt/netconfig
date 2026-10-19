@@ -21,10 +21,14 @@ func TestRollbackSafetyClassification(t *testing.T) {
 		"ios-xe": RollbackSafe, "iosxe": RollbackSafe, "cisco-ios-xe": RollbackSafe, "IOS_XE": RollbackSafe,
 		// classic IOS: only a timed reload
 		"cisco": RollbackRebootOnly, "ios": RollbackRebootOnly, "cisco-ios": RollbackRebootOnly,
+		// ASA: "reload in <min>" / "reload cancel", same as classic IOS
+		"cisco_asa": RollbackRebootOnly, "asa": RollbackRebootOnly, "ftd": RollbackRebootOnly,
 		// no independent on-box watchdog
 		"huawei": RollbackClientOnly, "fortinet": RollbackClientOnly, "ruijie": RollbackClientOnly,
 		"aruba": RollbackClientOnly, "checkpoint": RollbackClientOnly, "paloalto": RollbackClientOnly,
 		"pfsense": RollbackClientOnly, "sophos": RollbackClientOnly,
+		// Small Business SF/SG/CBS: "reload in" is not supported
+		"cisco_sb": RollbackClientOnly, "sg350": RollbackClientOnly, "cbs350": RollbackClientOnly,
 	}
 	for name, want := range cases {
 		if got := mustLookup(t, name).Safety(); got != want {
@@ -49,7 +53,7 @@ func TestIOSXEVariantKeepsCanonicalName(t *testing.T) {
 	if xe.Name != Cisco || classic.Name != Cisco {
 		t.Fatalf("both stay the canonical %q vendor (templates compare on it): %q / %q", Cisco, xe.Name, classic.Name)
 	}
-	if slices.Contains(Names(), "ios-xe") || len(Names()) != 12 {
+	if slices.Contains(Names(), "ios-xe") || len(Names()) != 14 {
 		t.Fatalf("the variant must not become a separate canonical vendor: %v", Names())
 	}
 	// Everything but the safety mechanism is shared.
@@ -105,6 +109,8 @@ func TestCommitConfirmPlans(t *testing.T) {
 		{"ios-xe", "ios-xe", opts, ConfirmNative,
 			[]string{"configure terminal revert timer 5", "hostname lab1", "end", "", "configure confirm", "write memory"}, nil},
 		{"classic ios with reload allowed", "ios", PlanOptions{CommitConfirm: 5, AllowReboot: true}, ConfirmReload,
+			[]string{"reload in 5", "configure terminal", "hostname lab1", "end", "", "reload cancel", "write memory"}, nil},
+		{"cisco asa with reload allowed", "cisco_asa", PlanOptions{CommitConfirm: 5, AllowReboot: true}, ConfirmReload,
 			[]string{"reload in 5", "configure terminal", "hostname lab1", "end", "", "reload cancel", "write memory"}, nil},
 	}
 	for _, tc := range cases {
@@ -162,7 +168,7 @@ func TestCommitConfirmPlanStructure(t *testing.T) {
 
 func TestCommitConfirmNotArmedWhereImpossible(t *testing.T) {
 	cmds := []string{"hostname lab1"}
-	for _, name := range []string{"huawei", "fortinet", "ruijie", "aruba", "checkpoint", "paloalto", "pfsense", "sophos"} {
+	for _, name := range []string{"huawei", "fortinet", "ruijie", "aruba", "cisco_sb", "checkpoint", "paloalto", "pfsense", "sophos"} {
 		p := mustLookup(t, name)
 		plan := p.BuildPlan(cmds, PlanOptions{CommitConfirm: 5, AllowReboot: true})
 		plain := p.BuildPlan(cmds, PlanOptions{})
@@ -183,7 +189,7 @@ func TestCommitConfirmNotArmedWhereImpossible(t *testing.T) {
 }
 
 func TestCommitConfirmIgnoredOnDryRun(t *testing.T) {
-	for _, name := range []string{"junos", "vyos", "arista", "ios-xe", "ios"} {
+	for _, name := range []string{"junos", "vyos", "arista", "ios-xe", "ios", "cisco_asa", "cisco_sb"} {
 		plan := mustLookup(t, name).BuildPlan(testCmds, PlanOptions{DryRun: true, CommitConfirm: 5, AllowReboot: true, Verify: true})
 		if plan.Confirm != ConfirmNone || !plan.DryRun || slices.Contains(kinds(plan.Steps), StepVerify) {
 			t.Errorf("%s: dry-run must stay a dry run: %+v", name, plan)
@@ -282,5 +288,102 @@ func TestStepKindStrings(t *testing.T) {
 	}
 	if StepKind(99).String() != "unknown" {
 		t.Error("out-of-range kinds read as unknown")
+	}
+}
+
+func TestCiscoSBPlan(t *testing.T) {
+	sb := mustLookup(t, "cisco_sb")
+	if sb.Name != CiscoSB || sb.Display != "Cisco Small Business (SF/SG/CBS)" {
+		t.Fatalf("identity = %q / %q", sb.Name, sb.Display)
+	}
+	if !slices.Equal(sb.DisablePaging, []string{"terminal datadump", "terminal length 0"}) {
+		t.Errorf("paging suppression = %q", sb.DisablePaging)
+	}
+	if sb.BackupCommand != "show running-config" {
+		t.Errorf("backup command = %q", sb.BackupCommand)
+	}
+	if sb.Safety() != RollbackClientOnly {
+		t.Fatalf("Safety = %v, want client-only: SF/SG/CBS has no \"reload in\"", sb.Safety())
+	}
+
+	plan := sb.BuildPlan(testCmds, PlanOptions{})
+	want := []string{"configure terminal", "hostname lab1", "ntp server 10.0.0.9", "end", "write memory"}
+	if got := lines(plan.Steps); !slices.Equal(got, want) {
+		t.Fatalf("plan:\n got  %q\n want %q", got, want)
+	}
+	wantKinds := []StepKind{StepEnter, StepBody, StepBody, StepExit, StepPersist}
+	if got := kinds(plan.Steps); !slices.Equal(got, wantKinds) {
+		t.Errorf("kinds = %v, want %v", got, wantKinds)
+	}
+	if last := plan.Steps[len(plan.Steps)-1]; !last.Slow {
+		t.Error("write memory must be marked slow")
+	}
+
+	// No timer exists: a commit-confirm request must not arm "reload in".
+	for _, opts := range []PlanOptions{{CommitConfirm: 5}, {CommitConfirm: 5, AllowReboot: true}} {
+		p := sb.BuildPlan(testCmds, opts)
+		if p.Confirm != ConfirmNone || p.Window != 0 || len(p.Abort) != 0 {
+			t.Errorf("opts %+v armed a deadman: %+v", opts, p)
+		}
+		if got := lines(p.Steps); !slices.Equal(got, want) {
+			t.Errorf("opts %+v changed the plan: %q", opts, got)
+		}
+		if slices.Contains(lines(p.Steps), "reload in 5") || slices.Contains(lines(p.Steps), "reload cancel") {
+			t.Errorf("opts %+v: SF/SG/CBS does not support reload timers: %q", opts, lines(p.Steps))
+		}
+	}
+	if got := lines(sb.BuildPlan(testCmds, PlanOptions{}).Cleanup); !slices.Equal(got, []string{"end"}) {
+		t.Errorf("cleanup = %q, want just \"end\" (a failed change is never saved)", got)
+	}
+}
+
+func TestCiscoASAPlan(t *testing.T) {
+	asa := mustLookup(t, "cisco_asa")
+	if asa.Name != CiscoASA || asa.Display != "Cisco ASA" {
+		t.Fatalf("identity = %q / %q", asa.Name, asa.Display)
+	}
+	if !slices.Equal(asa.DisablePaging, []string{"terminal pager 0"}) {
+		t.Errorf("paging suppression = %q, want only \"terminal pager 0\"", asa.DisablePaging)
+	}
+	if asa.BackupCommand != "show running-config" {
+		t.Errorf("backup command = %q", asa.BackupCommand)
+	}
+	if asa.Safety() != RollbackRebootOnly {
+		t.Fatalf("Safety = %v, want reboot-only", asa.Safety())
+	}
+
+	plain := asa.BuildPlan(testCmds, PlanOptions{})
+	wantPlain := []string{"configure terminal", "hostname lab1", "ntp server 10.0.0.9", "end", "write memory"}
+	if got := lines(plain.Steps); !slices.Equal(got, wantPlain) {
+		t.Fatalf("plain plan:\n got  %q\n want %q", got, wantPlain)
+	}
+
+	// Armed with the operator's consent: reload in N before the change, cancel
+	// after verification, save last.
+	armed := asa.BuildPlan(testCmds, PlanOptions{CommitConfirm: 7, AllowReboot: true})
+	wantArmed := []string{"reload in 7", "configure terminal", "hostname lab1", "ntp server 10.0.0.9", "end", "", "reload cancel", "write memory"}
+	if armed.Confirm != ConfirmReload || armed.Window != 7 {
+		t.Fatalf("Confirm=%v Window=%d, want reload/7", armed.Confirm, armed.Window)
+	}
+	if got := lines(armed.Steps); !slices.Equal(got, wantArmed) {
+		t.Fatalf("armed plan:\n got  %q\n want %q", got, wantArmed)
+	}
+	first := armed.Steps[0]
+	if first.Kind != StepArm || !first.Timed {
+		t.Errorf("first step must arm the timer and start the deadman: %+v", first)
+	}
+	if idx := slices.Index(lines(armed.Steps), "reload cancel"); armed.Steps[idx].Kind != StepConfirm || idx < slices.Index(kinds(armed.Steps), StepVerify) {
+		t.Errorf("reload cancel must be a confirm step after verification: %+v", armed.Steps)
+	}
+	if len(armed.Cleanup) == 0 {
+		t.Error("an armed plan needs cleanup steps")
+	}
+
+	// A disruptive reload needs an explicit opt-in.
+	if p := asa.BuildPlan(testCmds, PlanOptions{CommitConfirm: 7}); p.Confirm != ConfirmNone || !slices.Equal(lines(p.Steps), wantPlain) {
+		t.Errorf("ASA must not reload without -allow-reboot-rollback: %+v", p)
+	}
+	if p := asa.BuildPlan(testCmds, PlanOptions{AllowReboot: true}); p.Confirm != ConfirmNone {
+		t.Error("-allow-reboot-rollback without -commit-confirm must do nothing")
 	}
 }

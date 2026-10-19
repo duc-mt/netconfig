@@ -273,7 +273,7 @@ func (l *linter) port() int {
 
 func (l *linter) ciscoLike() bool {
 	switch l.ctx.Vendor {
-	case "cisco", "arista", "ruijie", "aruba", "huawei":
+	case "cisco", "cisco_sb", "cisco_asa", "arista", "ruijie", "aruba", "huawei":
 		return true
 	}
 	return false

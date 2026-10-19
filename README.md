@@ -4,7 +4,7 @@ Apply configuration commands to many network devices over SSH, concurrently, fro
 single static binary. Built for air-gapped management networks: no runtime
 dependencies, no network access other than SSH to the devices.
 
-Supported platforms: Cisco IOS/IOS-XE, Juniper Junos, Huawei VRP, Fortinet FortiOS, Arista EOS, VyOS, Ruijie RGOS, Aruba AOS-CX/AOS-S, Check Point Gaia, Palo Alto PAN-OS, pfSense, Sophos.
+Supported platforms: Cisco IOS/IOS-XE, Cisco Small Business (SF/SG/CBS), Cisco ASA, Juniper Junos, Huawei VRP, Fortinet FortiOS, Arista EOS, VyOS, Ruijie RGOS, Aruba AOS-CX/AOS-S, Check Point Gaia, Palo Alto PAN-OS, pfSense, Sophos.
 
 > **Status:** written without access to a Go toolchain or real devices. Nothing here has
 > been compiled or run yet. Follow [Verify before first use](#verify-before-first-use)
@@ -214,11 +214,16 @@ is classified by what it can do:
 | Rating (summary table) | `-plan` label | Platforms | Mechanism |
 |---|---|---|---|
 | `SAFE` | `SAFE` | Junos, VyOS, Arista EOS, Cisco IOS-XE | `commit confirmed N`, `commit-confirm N`, session `commit timer`, `configure terminal revert timer N` |
-| `REBOOT REQUIRED` | `REBOOT ONLY` | classic Cisco IOS | `reload in N` ... `reload cancel`; needs `-allow-reboot-rollback` |
-| `UNSAFE / OOB REQUIRED` | `UNSAFE` | Huawei, FortiOS, Ruijie, Aruba, Check Point, PAN-OS, pfSense, Sophos | none |
+| `REBOOT REQUIRED` | `REBOOT ONLY` | classic Cisco IOS, Cisco ASA | `reload in N` ... `reload cancel`; needs `-allow-reboot-rollback` |
+| `UNSAFE / OOB REQUIRED` | `UNSAFE` | Huawei, FortiOS, Ruijie, Aruba, Cisco Small Business (SF/SG/CBS), Check Point, PAN-OS, pfSense, Sophos | none |
 
 IOS-XE is selected by the vendor names `ios-xe`, `iosxe` or `cisco-ios-xe`; plain `cisco` / `ios` is
 treated as classic IOS.
+
+Two further Cisco vendor keys have their own profiles. `cisco_sb` (Cisco Small Business SF/SG/CBS;
+aliases `cisco-sf`, `cisco-sg`, `cbs`, `cbs350`, `sg300`, `sg350`, `sg500`, `sf300`, `sf500`) is rated
+`UNSAFE`: it has no `reload in`, so `-commit-confirm` never arms a timer on it. `cisco_asa` (aliases
+`asa`, `ftd`) is rated `REBOOT ONLY`, like classic IOS.
 
 The flow on a `SAFE` device: arm the timed commit, open a **fresh SSH session** and run the platform
 probe (an established session survives many lockouts; a new one does not), run the `-verify-file`
@@ -228,7 +233,7 @@ device rolls back on its own (`VERIFY FAILED`). With `-rollback-on-fail`, Junos 
 confirmation, the device is reported `CONFIRM_FAILED` rather than "succeeded". If the arming command
 is rejected or looks like an error, the device is **not changed**.
 
-* **Without `-allow-reboot-rollback`** a classic IOS device falls back to client-side rollback
+* **Without `-allow-reboot-rollback`** a classic IOS or Cisco ASA device falls back to client-side rollback
   (`-rollback-on-fail`) and a warning says so. With it, `reload in N` is armed before the change and
   cancelled after verification: if anything fails the device *reloads* to its saved configuration.
 * **On `UNSAFE` platforms** the run continues without a safety net and logs:
@@ -353,7 +358,7 @@ edge-mx1,10.20.0.1,,junos,dc2
 
 Header, blank lines and `#` comments are optional. Empty `port` means 22, empty
 `credential_group` means `default`. Vendor accepts aliases (`ios`, `ios-xe`, `eos`, `juniper`,
-`vrp`, `fortios`, `fortigate`, ...). All row errors are reported together with line numbers.
+`vrp`, `fortios`, `fortigate`, `cisco_sb`, `sg350`, `cisco_asa`, `asa`, `h3c`, ...). All row errors are reported together with line numbers.
 `-limit 'core-*,@dc2'` selects by hostname glob or `@credential_group`; a pattern that
 matches nothing is an error.
 
@@ -414,7 +419,7 @@ masked in logs and in the confirmation preview; what is *sent* to the device is 
   |---|---|
   | Junos | `configure`, your commands, `show \| compare`, `commit check`, `rollback 0`, `exit`: real device-side validation, nothing committed |
   | Arista EOS | config session: your commands, `show session-config diffs`, `abort`: validated, nothing applied |
-  | Cisco, Huawei, FortiOS | no candidate configuration exists, so only connectivity/login/privilege and a read-only probe (`show clock`, `display clock`, `get system status`); the commands that *would* run are listed in the log but not sent |
+  | Cisco (IOS, SB, ASA), Huawei, FortiOS | no candidate configuration exists, so only connectivity/login/privilege and a read-only probe (`show clock`, `display clock`, `get system status`); the commands that *would* run are listed in the log but not sent |
 
   Dry run never sends `commit`, `write memory` or `save`.
 * **Interrupt (Ctrl-C):** no new devices start, running ones get the safe cleanup above, the
@@ -429,8 +434,10 @@ masked in logs and in the confirmation preview; what is *sent* to the device is 
 | Platform | Enter | Leave / persist | Notes |
 |---|---|---|---|
 | Cisco IOS/IOS-XE | `configure terminal` | `end`, `write memory` | `enable` is issued if the login lands in user EXEC; `terminal length 0` |
+| Cisco Small Business (SF/SG/CBS) | `configure terminal` | `end`, `write memory` | `terminal datadump`, then `terminal length 0` (a device rejects the one its firmware lacks); the save prompt `Overwrite file [startup-config].... (Y/N)[N] ?` is answered `Y`; a backup may end in `exit` instead of `end` |
+| Cisco ASA | `configure terminal` | `end`, `write memory` | `terminal pager 0`; a backup ends in `: end`; rejections are printed as `ERROR: ...` |
 | Junos | `configure` | `commit`, `exit` | `set cli screen-length 0` |
-| Huawei VRP | `system-view` | `return`, `save` | `screen-length 0 temporary` |
+| Huawei VRP | `system-view` | `return`, `save` | `screen-length 0 temporary`; `h3c`, `comware` and `hp-comware` are aliases |
 | FortiOS | none (commands are `config ... end` blocks) | saved by each `end` | `--More--` is answered, nothing is changed on the device |
 | Arista EOS | `configure terminal` | `end`, `write memory` | `terminal length 0` |
 
@@ -511,7 +518,7 @@ Key new flags:
 | `-strict-safety` | `true` | Abort before connecting on a `CRITICAL` lockout risk (`-force` accepts) or a destructive command (`-allow-dangerous` accepts) |
 | `-allow-dangerous` | `false` | Accept intentionally destructive commands (`no router bgp`, `delete interfaces`, `clear ip bgp *`, ...) |
 | `-commit-confirm MIN` | `0` | Arm an on-box deadman timer of MIN minutes; confirm only after verification (0 = off) |
-| `-allow-reboot-rollback` | `false` | Permit `reload in MIN` as the deadman on classic IOS |
+| `-allow-reboot-rollback` | `false` | Permit `reload in MIN` as the deadman on classic IOS and Cisco ASA |
 | `-verify-file FILE` | `""` | Post-change health checks (`!@verify` blocks in the commands file/template also count) |
 | `-plan` | `false` | Show the risk / impact / rollback-safety matrix and ask `Proceed ...? [y/N]` (combine with `-dry-run`) |
 | `-key-file` | `""` | Path to SSH private key file for device authentication (overrides `NETCONFIG_KEY_FILE`) |

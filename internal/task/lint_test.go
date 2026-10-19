@@ -46,6 +46,11 @@ func TestLintRules(t *testing.T) {
 		{"re-assert mgmt ip is harmless", "cisco", []string{"interface Gi0/1", "ip address 10.0.0.1 255.255.255.0"}, "", 0, ""},
 		{"readdress interface", "cisco", []string{"interface Gi0/1", "ip address 10.9.9.9 255.255.255.0"}, "interface-readdressed", RiskMedium, KindLockout},
 		{"readdress mgmt interface", "arista", []string{"interface Management1", "ip address 10.9.9.9/24"}, "mgmt-ip-changed", RiskCritical, KindLockout},
+		{"readdress interface (cisco_sb)", "cisco_sb", []string{"interface vlan 1", "ip address 10.9.9.9 255.255.255.0"}, "interface-readdressed", RiskMedium, KindLockout},
+		{"re-assert mgmt ip is harmless (cisco_sb)", "cisco_sb", []string{"interface vlan 1", "ip address 10.0.0.1 255.255.255.0"}, "", 0, ""},
+		{"readdress mgmt interface (cisco_asa)", "cisco_asa", []string{"interface Management0/0", "ip address 10.9.9.9 255.255.255.0"}, "mgmt-ip-changed", RiskCritical, KindLockout},
+		{"remove interface (cisco_sb)", "cisco_sb", []string{"no interface vlan 1"}, "delete-interface", RiskHigh, KindDestructive},
+		{"remove mgmt interface (cisco_asa)", "cisco_asa", []string{"no interface Management0/0"}, "mgmt-interface-removed", RiskCritical, KindLockout},
 		{"junos address add does not replace", "junos", []string{"set interfaces ge-0/0/1 unit 0 family inet address 10.9.9.9/24"}, "", 0, ""},
 		{"vrf move drops the address", "cisco", []string{"interface Gi0/1", "ip vrf forwarding BLUE"}, "interface-vrf-moved", RiskHigh, KindLockout},
 		// --- default gateway ---

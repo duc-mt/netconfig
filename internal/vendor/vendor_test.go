@@ -2,6 +2,7 @@ package vendor
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -38,6 +39,9 @@ func TestLookupAliases(t *testing.T) {
 		"paloalto": PaloAlto, "panos": PaloAlto,
 		"pfsense": PfSense,
 		"sophos":  Sophos, "sfos": Sophos,
+		"cisco_sb": CiscoSB, "Cisco-SB": CiscoSB, "SG350": CiscoSB, "CBS350": CiscoSB,
+		"cisco_asa": CiscoASA, "ASA": CiscoASA, "FTD": CiscoASA,
+		"h3c": Huawei, "Comware": Huawei, "HP_Comware": Huawei,
 	}
 	for in, want := range cases {
 		p, ok := Lookup(in)
@@ -48,8 +52,56 @@ func TestLookupAliases(t *testing.T) {
 	if _, ok := Lookup("nokia"); ok {
 		t.Error("Lookup(nokia) should fail")
 	}
-	if got := Names(); !slices.Equal(got, []string{"arista", "aruba", "checkpoint", "cisco", "fortinet", "huawei", "junos", "paloalto", "pfsense", "ruijie", "sophos", "vyos"}) {
+	if got := Names(); !slices.Equal(got, []string{"arista", "aruba", "checkpoint", "cisco", "cisco_asa", "cisco_sb", "fortinet", "huawei", "junos", "paloalto", "pfsense", "ruijie", "sophos", "vyos"}) {
 		t.Errorf("Names() = %v", got)
+	}
+}
+
+func TestLookupCiscoSBAndASAAliases(t *testing.T) {
+	groups := map[string][]string{
+		CiscoSB: {
+			"cisco_sb", "cisco_sf", "cisco_sg", "ciscosb", "ciscosf", "ciscosg",
+			"cbs", "cbs350", "sg300", "sg350", "sg500", "sf300", "sf500",
+		},
+		CiscoASA: {"cisco_asa", "asa", "cisco_ftd", "ftd"},
+		Huawei:   {"h3c", "comware", "hp_comware"},
+	}
+	for want, names := range groups {
+		for _, name := range names {
+			// Lookup folds case and treats "_", "-" and " " alike.
+			variants := []string{
+				name,
+				strings.ToUpper(name),
+				strings.ReplaceAll(name, "_", "-"),
+				strings.ReplaceAll(name, "_", " "),
+				"  " + name + "\t",
+			}
+			for _, in := range variants {
+				if p, ok := Lookup(in); !ok || p.Name != want {
+					t.Errorf("Lookup(%q) = %v, %v; want %s", in, p, ok, want)
+				}
+			}
+		}
+	}
+}
+
+// Lookup normalises its input before consulting the alias table, so a key
+// that is not already in normalised form can never match and silently does
+// nothing. Canonical names such as "cisco_sb" must also resolve themselves.
+func TestAliasTableIsReachable(t *testing.T) {
+	for key, canonical := range aliases {
+		norm := strings.NewReplacer("_", "-", " ", "-").Replace(strings.ToLower(strings.TrimSpace(key)))
+		if key != norm {
+			t.Errorf("alias key %q is unreachable: Lookup normalises it to %q", key, norm)
+		}
+		if _, ok := registry[canonical]; !ok {
+			t.Errorf("alias %q points at unregistered vendor %q", key, canonical)
+		}
+	}
+	for _, name := range Names() {
+		if p, ok := Lookup(name); !ok || p.Name != name {
+			t.Errorf("canonical name %q does not resolve to itself: %v, %v", name, p, ok)
+		}
 	}
 }
 
@@ -64,6 +116,10 @@ func TestApplyPlans(t *testing.T) {
 		{"arista", cisco},
 		{"ruijie", cisco},
 		{"aruba", cisco},
+		{"cisco_sb", cisco},
+		{"sg350", cisco},
+		{"cisco_asa", cisco},
+		{"asa", cisco},
 		{"junos", []string{"configure", "hostname lab1", "ntp server 10.0.0.9", "commit", "exit"}},
 		{"huawei", []string{"system-view", "hostname lab1", "ntp server 10.0.0.9", "return", "save"}},
 		{"fortinet", []string{"hostname lab1", "ntp server 10.0.0.9"}},
@@ -118,7 +174,7 @@ func TestDryRunNeverPersists(t *testing.T) {
 }
 
 func TestDryRunProbeOnlyVendors(t *testing.T) {
-	for _, name := range []string{"cisco", "huawei", "fortinet", "ruijie", "aruba", "checkpoint"} {
+	for _, name := range []string{"cisco", "cisco_sb", "cisco_asa", "huawei", "fortinet", "ruijie", "aruba", "checkpoint"} {
 		plan := mustLookup(t, name).BuildPlan(testCmds, PlanOptions{DryRun: true})
 		if plan.Validates {
 			t.Errorf("%s: must not claim device-side validation", name)
@@ -219,6 +275,17 @@ func TestPrompts(t *testing.T) {
 		{"vyos", "vyos@vpc-transit-node01# ", true},
 		{"vyos", "[edit]", false},
 		{"checkpoint", "my-gw> ", true},
+		{"cisco_sb", "switch1a2b3c#", true},
+		{"cisco_sb", "switch1a2b3c>", true},
+		{"cisco_sb", "switch1a2b3c(config)#", true},
+		{"cisco_sb", "switch1a2b3c(config-if)# ", true},
+		{"cisco_sb", "% Unrecognized command", false},
+		{"cisco_asa", "asa1#", true},
+		{"cisco_asa", "asa1>", true},
+		{"cisco_asa", "asa1/pri/act#", true},
+		{"cisco_asa", "asa1/pri/act(config)# ", true},
+		{"cisco_asa", "asa1(config-if)#", true},
+		{"cisco_asa", "ERROR: % Invalid input detected at '^' marker.", false},
 	}
 	for _, c := range cases {
 		if got := mustLookup(t, c.vendor).Prompt.MatchString(c.line); got != c.want {
@@ -258,6 +325,23 @@ func TestFindError(t *testing.T) {
 		{"vyos", "Configuration error: commit failed", true},
 		{"vyos", "vyos@router# ", false},
 		{"checkpoint", "CLISH error: command not found", true},
+		{"cisco_sb", "% Unrecognized command\r\n", true},
+		{"cisco_sb", "% Invalid input detected at '^' marker.", true},
+		{"cisco_sb", "Copy succeeded", false},
+		{"cisco_asa", "% Invalid input detected at '^' marker.", true},
+		{"cisco_asa", "Cryptochecksum: 0123abcd 4567ef01\n[OK]", false},
+		// ASA prefixes its rejections with "ERROR: ", which the IOS pattern
+		// (anchored on a leading "%") does not see.
+		{"cisco_asa", "ERROR: % Invalid input detected at '^' marker.\r\n", true},
+		{"cisco_asa", "ERROR: % Incomplete command.", true},
+		{"cisco_asa", "ERROR: Interface name Gi0/9 doesn't exist", true},
+		{"cisco_asa", "INFO: Converting 10.0.0.0 to 10.0.0.0", false},
+		{"cisco_asa", "WARNING: IP address 10.0.0.1 is in use", false},
+		{"cisco_asa", "banner motd ERROR: restricted system", false},
+		{"cisco_asa", ": end", false},
+		// ...and the ASA rule must not leak into the other Cisco-style vendors.
+		{"cisco", "ERROR: not an IOS error format", false},
+		{"cisco_sb", "ERROR: not an SB error format", false},
 	}
 	for _, c := range cases {
 		_, got := mustLookup(t, c.vendor).FindError(c.output)
@@ -382,5 +466,81 @@ func TestPreDiffPlans(t *testing.T) {
 	wantCisco := []string{"configure terminal", "hostname lab1", "end", "write memory"}
 	if got := lines(cisco.Steps); !slices.Equal(got, wantCisco) {
 		t.Errorf("Cisco PreDiff steps = %v, want %v", got, wantCisco)
+	}
+}
+
+func TestCiscoSBConfirmReply(t *testing.T) {
+	sb := mustLookup(t, "cisco_sb")
+	cases := []struct {
+		prompt string
+		reply  string
+		ok     bool
+	}{
+		{"Proceed with reload? [confirm]", "", true},
+		{"Do you want to continue? [y/n]: ", "y", true},
+		{"Do you really want to replace them? [yes/no]: ", "yes", true},
+		{"Destination filename [startup-config]? ", "", true},
+		// "write memory" / "copy running-config startup-config" on SF/SG/CBS
+		// default to N, so the question must be answered explicitly.
+		{"Overwrite file [startup-config].... (Y/N)[N] ?", "Y", true},
+		{"Overwrite file [startup-config].... (Y/N)[N] ? ", "Y", true},
+		{"overwrite file [startup-config]...(y/n)[n]?", "Y", true},
+		{"Overwrite file [startup-config]", "", false},
+		{"Building configuration...", "", false},
+		{"switch1a2b3c#", "", false},
+	}
+	for _, c := range cases {
+		reply, ok := sb.ConfirmReply(c.prompt)
+		if ok != c.ok || reply != c.reply {
+			t.Errorf("ConfirmReply(%q) = %q, %v; want %q, %v", c.prompt, reply, ok, c.reply, c.ok)
+		}
+	}
+}
+
+func TestValidateBackupCiscoSBAndASA(t *testing.T) {
+	sb := mustLookup(t, "cisco_sb")
+	asa := mustLookup(t, "cisco_asa")
+
+	const sbHeader = "config-file-header\nswitch1a2b3c\nCLI v1.0\n@\n!\n"
+	const asaHeader = ": Saved\n:\nASA Version 9.16(4)\n!\nhostname asa1\n"
+
+	cases := []struct {
+		name   string
+		p      *Profile
+		output string
+		wantOK bool
+	}{
+		{"sb ends with exit", sb, sbHeader + "interface gigabitethernet1\n description uplink\nexit\n", true},
+		{"sb ends with exit, CRLF", sb, "config-file-header\r\nswitch1a2b3c\r\n!\r\ninterface gigabitethernet1\r\nexit\r\n", true},
+		{"sb ends with end", sb, sbHeader + "interface gigabitethernet1\n description uplink\nend\n", true},
+		{"sb ends with end, CRLF", sb, "config-file-header\r\n!\r\ninterface gigabitethernet1\r\nend\r\n", true},
+		{"sb without any end marker", sb, sbHeader + "interface gigabitethernet1\n description uplink\n", false},
+		{"sb empty", sb, "  \n", false},
+		{"sb no config markers", sb, "random text\nexit\n", false},
+		{"asa ends with : end", asa, asaHeader + "interface GigabitEthernet0/0\n nameif outside\n: end\n", true},
+		{"asa ends with : end, CRLF", asa, ": Saved\r\n!\r\ninterface GigabitEthernet0/0\r\n: end\r\n", true},
+		{"asa plain end fallback", asa, asaHeader + "interface GigabitEthernet0/0\nend\n", true},
+		{"asa truncated", asa, asaHeader + "interface GigabitEthernet0/0\n nameif outside\n security-lev", false},
+		{"asa empty", asa, "", false},
+		{"asa no config markers", asa, "random text\n: end\n", false},
+	}
+	for _, c := range cases {
+		err := c.p.ValidateBackup(c.output)
+		if (err == nil) != c.wantOK {
+			t.Errorf("%s: ValidateBackup error = %v, want ok=%v", c.name, err, c.wantOK)
+		}
+	}
+}
+
+// The SB save prompt must not leak into the shared confirmation list.
+func TestCiscoSBOverwritePromptIsSBOnly(t *testing.T) {
+	const prompt = "Overwrite file [startup-config].... (Y/N)[N] ?"
+	for _, name := range Names() {
+		if name == CiscoSB {
+			continue
+		}
+		if reply, ok := mustLookup(t, name).ConfirmReply(prompt); ok {
+			t.Errorf("%s answers the SF/SG/CBS overwrite prompt with %q", name, reply)
+		}
 	}
 }

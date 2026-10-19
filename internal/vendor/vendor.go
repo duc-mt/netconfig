@@ -17,6 +17,8 @@ import (
 // Canonical vendor names.
 const (
 	Cisco      = "cisco"
+	CiscoSB    = "cisco_sb"
+	CiscoASA   = "cisco_asa"
 	Junos      = "junos"
 	Huawei     = "huawei"
 	Fortinet   = "fortinet"
@@ -281,6 +283,11 @@ var (
 	reSophosErr     = regexp.MustCompile(`(?i)^\s*(?:% Error:|Unknown parameter|Syntax Error)`)
 )
 
+// reASAErr complements reCiscoErr for the ASA, which prints rejections as
+// "ERROR: % Invalid input ..." / "ERROR: Interface ...": the leading "%" that
+// reCiscoErr anchors on is then not at the start of the line.
+var reASAErr = regexp.MustCompile(`(?i)^\s*error:`)
+
 // genericConfirms are shared by all vendors. Each regexp is anchored to the end
 // of the (unterminated) last line, so a confirmation word in ordinary output
 // is never mistaken for a question.
@@ -539,6 +546,53 @@ func newCiscoXE() *Profile {
 		{Kind: StepExit, Line: "end"},
 		{Kind: StepVerify},
 		{Kind: StepConfirm, Line: "configure confirm"},
+		{Kind: StepPersist, Line: "write memory", Slow: true},
+	}
+	p.confirmCleanup = p.applyCleanup
+	return p
+}
+
+// newCiscoSB is the Cisco Small Business line (SF/SG/CBS). It shares the IOS
+// prompt, error format and "configure terminal" / "end" / "write memory"
+// flow, but differs where automation notices:
+//   - paging is turned off with "terminal datadump" (older firmware) or
+//     "terminal length 0"; a device rejects whichever it does not know and
+//     the session logs a warning instead of failing;
+//   - a backup does not always end in "end": it may end in "exit";
+//   - there is no "reload in <min>", so there is no on-box deadman at all and
+//     a change that cuts the management session can only be undone from the
+//     console (RollbackClientOnly, and confirmApply is deliberately nil).
+func newCiscoSB() *Profile {
+	p := ciscoLike(CiscoSB, "Cisco Small Business (SF/SG/CBS)", reCiscoErr)
+	p.DisablePaging = []string{"terminal datadump", "terminal length 0"}
+	p.EndMarkers = []string{"\nend", "\r\nend", "\nexit", "\r\nexit"}
+	// Saving asks "Overwrite file [startup-config].... (Y/N)[N] ?" instead of
+	// IOS's "Destination filename [startup-config]?", and the default is N, so
+	// an unanswered prompt would leave the change unsaved. A new slice is built
+	// because genericConfirms is shared by every vendor.
+	p.Confirms = append([]Confirm{
+		{regexp.MustCompile(`(?i)overwrite file \[[^\]]*\]\.*\s*\(y/n\)\s*\[[yn]\]\s*\?\s*$`), "Y"},
+	}, genericConfirms...)
+	p.safety = RollbackClientOnly
+	return p
+}
+
+// newCiscoASA is the Cisco ASA. It is IOS like but pages with
+// "terminal pager 0", ends its running configuration with ": end" and, like
+// classic IOS, can only revert through a timed reload.
+func newCiscoASA() *Profile {
+	p := ciscoLike(CiscoASA, "Cisco ASA", reCiscoErr)
+	p.ErrorPatterns = append(p.ErrorPatterns, reASAErr)
+	p.DisablePaging = []string{"terminal pager 0"}
+	p.EndMarkers = []string{": end\n", ": end\r\n", "\nend", "\r\nend"}
+	p.safety = RollbackRebootOnly
+	p.confirmApply = []Step{
+		{Kind: StepArm, Line: "reload in {mins}", Timed: true},
+		{Kind: StepEnter, Line: "configure terminal"},
+		{Kind: StepBody},
+		{Kind: StepExit, Line: "end"},
+		{Kind: StepVerify},
+		{Kind: StepConfirm, Line: "reload cancel"},
 		{Kind: StepPersist, Line: "write memory", Slow: true},
 	}
 	p.confirmCleanup = p.applyCleanup
@@ -811,10 +865,17 @@ var ciscoXE = newCiscoXE()
 
 var ciscoXEAliases = map[string]bool{"ios-xe": true, "iosxe": true, "cisco-ios-xe": true}
 
+// Keys must already be in the form Lookup normalises its input to: lower case,
+// with "-" standing in for "_" and spaces. "cisco-sb" therefore also answers
+// to "cisco_sb" and "Cisco SB"; a key containing "_" could never match.
 var aliases = map[string]string{
 	"cisco": Cisco, "cisco-ios": Cisco, "cisco-ios-xe": Cisco, "ios": Cisco, "ios-xe": Cisco, "iosxe": Cisco,
+	"cisco-sb": CiscoSB, "cisco-sf": CiscoSB, "cisco-sg": CiscoSB, "ciscosb": CiscoSB, "ciscosf": CiscoSB, "ciscosg": CiscoSB,
+	"cbs": CiscoSB, "cbs350": CiscoSB, "sg300": CiscoSB, "sg350": CiscoSB, "sg500": CiscoSB, "sf300": CiscoSB, "sf500": CiscoSB,
+	"cisco-asa": CiscoASA, "asa": CiscoASA, "cisco-ftd": CiscoASA, "ftd": CiscoASA,
 	"junos": Junos, "juniper": Junos, "juniper-junos": Junos,
 	"huawei": Huawei, "vrp": Huawei, "huawei-vrp": Huawei,
+	"h3c": Huawei, "comware": Huawei, "hp-comware": Huawei,
 	"fortinet": Fortinet, "fortios": Fortinet, "fortigate": Fortinet,
 	"arista": Arista, "eos": Arista, "arista-eos": Arista,
 	"vyos": VyOS, "vyatta": VyOS,
@@ -828,7 +889,7 @@ var aliases = map[string]string{
 
 func init() {
 	for _, p := range []*Profile{
-		newCisco(), newJunos(), newHuawei(), newFortinet(), newArista(),
+		newCisco(), newCiscoSB(), newCiscoASA(), newJunos(), newHuawei(), newFortinet(), newArista(),
 		newVyOS(), newRuijie(), newAruba(), newCheckPoint(), newPaloAlto(), newPfSense(), newSophos(),
 	} {
 		registry[p.Name] = p
