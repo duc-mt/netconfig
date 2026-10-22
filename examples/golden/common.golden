@@ -1,0 +1,19 @@
+# Golden baseline applied to EVERY device, whatever its vendor.
+#
+# One rule per line. Lines starting with #, ! or // are comments.
+#
+#   <line>          required line (exact match; indentation, repeated spaces
+#                   and quote characters are ignored)
+#   re: <regex>     required: at least one line matches the RE2 regex
+#   not: <line>     forbidden line
+#   not-re: <regex> forbidden: no line may match the RE2 regex
+#
+# Note: with -redact=true (the default) secrets are stored as <REDACTED>,
+# so write rules against the redacted text.
+
+# Some login banner / MOTD must be configured (RouterOS keeps it under /system note).
+re: (?i)\b(banner|motd|system note)\b
+
+# Some NTP (or SNTP) source and some syslog destination must be configured.
+re: (?i)\bs?ntp\b
+re: (?i)\b(syslog|logging)\b

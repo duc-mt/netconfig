@@ -1,0 +1,6 @@
+# Golden baseline for Cisco IOS / IOS-XE (also reachable as cisco.golden).
+service password-encryption
+no ip http server
+re: ^ntp server\s+\S+
+re: ^logging host\s+\S+
+not: ip http server

@@ -77,14 +77,24 @@ else
     fi
 fi
 
+# A subcommand (backup, show-backup) as the first argument is passed through
+# untouched. Otherwise this is the classic configuration runner, which falls
+# back to commands.txt unless told where its commands come from.
 HAS_CMD=0
-for arg in "$@"; do
-    case "$arg" in
-        -commands|-commands=*|-template|-template=*|-h|--help|-version)
-            HAS_CMD=1
-            ;;
-    esac
-done
+case "$1" in
+    backup|show-backup)
+        HAS_CMD=1
+        ;;
+    *)
+        for arg in "$@"; do
+            case "$arg" in
+                -commands|-commands=*|-template|-template=*|-h|--help|-version)
+                    HAS_CMD=1
+                    ;;
+            esac
+        done
+        ;;
+esac
 
 if [ "$HAS_CMD" -eq 0 ]; then
     set -- "$@" -commands commands.txt

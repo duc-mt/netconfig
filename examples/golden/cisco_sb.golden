@@ -1,0 +1,6 @@
+# Golden baseline for Cisco Small Business (SF/SG/CBS) switches (file name = canonical
+# vendor key; sg350.golden, cbs350.golden, ... work too). The CLI differs from IOS
+# (SNTP, "exit"-terminated blocks), so cisco_ios.golden is NOT applied to these devices.
+re: ^(sntp|ntp) server\s+\S+$
+re: ^logging host\s+\S+
+not: ip telnet server

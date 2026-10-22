@@ -1,0 +1,5 @@
+# Golden baseline for VyOS gateways (file name = canonical vendor key).
+set service ntp server time1.vyos.net
+re: ^set system syslog host\s+\S+
+set service ssh port 22
+not: set service telnet

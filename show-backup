@@ -1,0 +1,9 @@
+#!/bin/sh
+# ==============================================================================
+# Script Name:   show-backup
+# Description:   Shortcut for "./run show-backup": view or locate the newest
+#                saved backup of a device.
+# Usage:         ./show-backup [-d] [-p] [-l] [node-name]
+# ==============================================================================
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$SCRIPT_DIR/run" show-backup "$@"

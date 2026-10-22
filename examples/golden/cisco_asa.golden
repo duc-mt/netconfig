@@ -1,0 +1,7 @@
+# Golden baseline for Cisco ASA / Firepower FTD in ASA mode (also reachable as asa.golden,
+# ftd.golden). The CLI differs from IOS, so cisco_ios.golden is NOT applied to these devices.
+re: ^ntp server\s+\S+
+re: ^logging host\s+\S+\s+\S+
+ssh version 2
+# Any "telnet <ip> <mask> <interface>" access line (IPv4 or IPv6); "telnet timeout N" is fine.
+not-re: ^telnet\s+[0-9a-f:.]+(/\d+)?\s+\S+

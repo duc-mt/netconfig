@@ -4,6 +4,10 @@ Apply configuration commands to many network devices over SSH, concurrently, fro
 single static binary. Built for air-gapped management networks: no runtime
 dependencies, no network access other than SSH to the devices.
 
+The same binary also archives configurations and watches them for change and drift:
+[`netconfig backup`](#backup-change-detection-and-drift-netconfig-backup) and
+`netconfig show-backup` (formerly the standalone `netbackup` tool).
+
 Supported platforms: Cisco IOS/IOS-XE, Cisco Small Business (SF/SG/CBS), Cisco ASA, Juniper Junos, Huawei VRP, Fortinet FortiOS, Arista EOS, VyOS, Ruijie RGOS, Aruba AOS-CX/AOS-S, Check Point Gaia, Palo Alto PAN-OS, pfSense, Sophos.
 
 > **Status:** written without access to a Go toolchain or real devices. Nothing here has
@@ -350,6 +354,196 @@ netconfig [Batch 1/3] [Workers: 5] [Active: 3] [Elapsed: 00:12]
 - Interleaves cleanly with log messages and clears itself upon completion, leaving only the clean final summary table.
 - Disable via `-dashboard=false` or set `NO_COLOR=1` / run non-interactively in CI pipelines.
 
+## Backup, change detection and drift (`netconfig backup`)
+
+```sh
+./run backup                                    # every device in inventory.csv
+./run backup -limit '@dc1' -concurrency 20      # one credential group, 20 at a time
+./run backup -dry-run                           # prove login and paging setup; save nothing
+./run backup -golden-dir golden -html-report 'backups/{run}/report.html' -md-changelog reports/CHANGELOG.md
+./run show-backup core-sw1                      # view the newest backup of a device
+./run backup -h                                 # every flag
+```
+
+`backup` reads the same `inventory.csv`, credentials (`.env`, `NETCONFIG_*`), jump hosts, host-key
+policy and route memory as a configuration run, and connects through the same engine, so login,
+`enable`, paging and per-vendor quirks behave identically. For each device it runs the platform's
+backup command, validates that the output is complete, masks secrets, compares it with the previous
+backup, saves it, prunes old backups, and reports. One device failing never stops the others.
+`-limit` takes comma-separated hostname globs or `@group`, exactly as in a configuration run.
+
+> `backup` is not the classic runner's `-backup` flag. That takes a pre-change snapshot of the
+> devices it is about to change, as flat `backups/<host>_<timestamp>.cfg` files. The two can share
+> the `backups/` directory without interfering; `backup` and `show-backup` only read and write
+> the `backup-*` run directories described below.
+
+### Where backups go
+
+```text
+backups/
+  backup-2026-10-12-0757/              one directory per run
+    cisco_ios/core-sw1.cfg             <platform>/<hostname><extension>
+    cisco_ios/core-sw1.diff            only when the configuration changed since last time
+    juniper_junos/edge-mx1.set
+```
+
+| Platform (vendor key) | Directory | Extension |
+|---|---|---|
+| `cisco`, `cisco_sb`, `cisco_asa`, `huawei`, `arista`, `aruba`, `ruijie`, `paloalto`, `sophos` | `cisco_ios`, `cisco_sb`, `cisco_asa`, `huawei_vrp`, `arista`, `aruba`, `ruijie`, `paloalto`, `sophos` | `.cfg` |
+| `junos` | `juniper_junos` | `.set` (archived as `show configuration \| display set`, one statement per line) |
+| `fortinet` | `fortigate` | `.conf` |
+| `checkpoint` | `checkpoint_gaia` | `.cfg` |
+| `pfsense` | `pfsense` | `.xml` |
+| `vyos` | `vyos` | `.config` |
+
+The directory names are the ones the standalone netbackup used, so an existing backup tree, its
+retention and its "diff against the previous backup" carry straight over. Backups and diffs are
+written `0600` in `0700` directories, atomically (a crash never leaves a half-written file).
+
+A backup is only saved if it passes the platform's validation: no error from the device, and the
+platform's end-of-configuration marker present (`: end` on an ASA; `exit` or `end` as the **last**
+line on Small Business, whose `exit` also closes every block). A truncated capture is reported as
+`TRUNCATED_OUTPUT` and never replaces a good backup.
+
+### Change detection and retention
+
+* A device whose configuration is unchanged since the last run is reported `UNCHANGED` and nothing is
+  written (`-force` saves it anyway). Otherwise the new file is saved and the `.diff` shows `+`/`-`.
+* **Volatile lines are ignored** when comparing (`-ignore-volatile`, default on): `! Last configuration
+  change at ...`, `Current configuration : N bytes`, Junos `## Last changed`, ASA `: Written by ...`,
+  VyOS/pfSense/Gaia generated-on banners, uptime and `ntp clock-period` counters. A device whose only
+  differences are such lines is `UNCHANGED (volatile lines only)`. The saved file is never filtered.
+  Add site-specific noise with `-volatile-patterns <file>` (see `examples/volatile-patterns.txt`).
+* **Retention** keeps the newest `-retention-count` backups per device (default **10**; 0 disables) and,
+  with `-retention-days N`, deletes those older than N days. Only `backup-*` run directories are touched.
+
+### Secrets are masked on disk
+
+With `-redact` (default on) passwords, password and enable hashes, pre-shared keys, SNMP communities,
+RADIUS/TACACS keys and similar are replaced by `<REDACTED>` before anything is written. It understands
+the multi-token forms of each platform (`enable password level 15 encrypted <hash>`, `username x
+password encrypted <hash>`, ASA `ikev1 pre-shared-key` / `failover key` / `snmp-server host ... community`).
+
+* **Limitation:** because secrets are stored masked, *rotating* a password produces no diff. Creating,
+  deleting or re-parameterising a user or community is still detected.
+* Masking is pattern based. It is a safety net, not a vault: keep the backup directory access-controlled,
+  and use `-redact=false` only where you need restorable configurations and trust the storage.
+
+### Risk classification
+
+Every added or removed diff line is classified; the highest level found is attached to the device.
+
+| Level | Triggers |
+|---|---|
+| **CRITICAL** | AAA / TACACS / RADIUS, local users and credentials, SNMP communities, ACLs, firewall rules, SSH port / ciphers |
+| **WARNING** | BGP, OSPF, default and static routes, VLANs, interface `shutdown` / `no shutdown` |
+| **INFO** | NTP, description / remark, hostname, banner |
+
+It shows next to the diff counts in the result table, in the run summary (`RISK=CRITICAL(ACL)`), as an
+inline `<== CRITICAL: ACL` marker on the offending diff lines (logged at `WARN`), and in a **Risk alerts**
+block at the end of the run. Description and remark lines never escalate. Rules live in
+`internal/backup/risk.go` (`builtinRiskSpecs`, first match wins).
+
+### Golden-config compliance
+
+`-golden-dir <dir>` holds one `<vendor>.golden` per platform (the vendor key or any alias: `cisco.golden`,
+`cisco_ios.golden`, `asa.golden`, `sg350.golden`, `h3c.golden`, ...) plus an optional `common.golden` for
+every device; `-compliance-rules <file>` takes `[vendor]` sections instead. See `examples/golden/`.
+Cisco SB and Cisco ASA do **not** inherit the IOS rules, since their CLI differs. A baseline for a
+platform netconfig does not support (MikroTik) is reported as an error, not silently ignored.
+
+```text
+# A comment ("!" and "//" also start one), on its own line.
+service password-encryption          # required line (exact match)
+re: ^ntp server\s+\S+                # at least one line must match this regex
+not: ip http server                  # forbidden line
+not-re: community\s+public\b         # no line may match this regex
+```
+
+Drifts are reported per device as `missing`, `mismatch` or `forbidden`; devices are checked on every run,
+including unchanged ones. A baseline that cannot be loaded only disables the check (a warning); it never
+stops the backup.
+
+### Reports and the result table
+
+* `-result-table` (default on) prints a per-device table (status, risk, compliance, size, duration, error)
+  to stdout after the run. Progress, the run summary and the risk alerts go to stderr and the log file.
+* `-html-report` writes one self-contained HTML file (no scripts, no external resources); `-md-changelog`
+  keeps a running Markdown changelog (newest run first; a file not created by this tool is appended to,
+  never overwritten); `-json-report` and `-csv-report` are for CMDB ingestion. Paths may contain `{run}`,
+  `{timestamp}` and `{date}`. A report that cannot be written is a warning and never changes the exit code.
+* Exit status: `0` every device succeeded, `1` usage or configuration error, `2` the run finished but at
+  least one device failed.
+
+### Failures and retries
+
+Failures are classified: `CONNECTION_TIMEOUT_OR_UNREACHABLE`, `CONNECT_FAILED`, `AUTHENTICATION_FAILED`,
+`COMMAND_REJECTED_OR_FAILED`, `COMMAND_TIMEOUT`, `SSH_SESSION_ERROR`, `TRUNCATED_OUTPUT`, `LOCAL_IO_ERROR`,
+`UNKNOWN_ERROR`. With `-retries N` a
+device is retried after connection problems, timeouts, dropped sessions and truncated output, but
+**never** after a rejected password (every attempt counts towards an account lockout), a changed host key,
+or a command the device refused. A device whose credentials are missing is not contacted at all.
+
+### Key flags
+
+| Flag | Default | |
+|---|---|---|
+| `-inventory` | `inventory.csv` | device list |
+| `-limit` | all | hostname globs (comma-separated) or `@group` |
+| `-backup-dir` (`-out`) | `backups` | where run directories are created |
+| `-retention-count` / `-retention-days` | `10` / `0` | how many / how old to keep (0 = no limit) |
+| `-redact` | on | mask secrets in saved files |
+| `-force` (`-save-unchanged`) | off | save even if unchanged |
+| `-ignore-volatile`, `-volatile-patterns` | on, none | semantic diff |
+| `-golden-dir`, `-compliance-rules` | none | drift checking |
+| `-html-report`, `-md-changelog` (`-md-report`), `-json-report`, `-csv-report` | none | reports |
+| `-concurrency` | `10` | devices in parallel (one session per address at a time) |
+| `-retries`, `-retry-delay`, `-dial-jitter` | `0`, `2s`, `100ms` | resilience |
+| `-connect-timeout`, `-command-timeout` | `10s`, `30s` | the backup command itself gets 3x |
+| `-dry-run` | off | connect, log in and set up paging; no command, no files |
+| `-host-key-policy` (`-known-hosts-policy`), `-known-hosts`, `-legacy-algorithms` | `update`, `~/.ssh/known_hosts`, on | as for a configuration run |
+| `-jump`, `-jump-host`, `-mesh-fallback`, `-memory` | on, none, off, on | routing; `-mesh-fallback` is opt-in |
+
+### Viewing backups: `show-backup`
+
+```sh
+./show-backup core-sw1        # newest backup, in $PAGER (or less) on a terminal, printed otherwise
+./show-backup gw-01           # a part of a name works (case-insensitive); you choose if several match
+./show-backup -d core-sw1     # the newest diff
+./show-backup -p core-sw1     # just the file's path (for scripts: cat "$(./show-backup -p core-sw1)")
+./show-backup -l              # every device that has a backup
+```
+
+`./show-backup` is a shortcut for `./run show-backup`. It honours `-backup-dir` and works for every
+platform's extension. When several devices match and there is no terminal to ask on, it lists them and
+exits `1`.
+
+### Migrating from the standalone `netbackup`
+
+`netbackup <flags>` becomes `netconfig backup <flags>`; `./show-backup` is unchanged. Existing
+inventories, `.env` files, golden baselines and backup trees keep working:
+
+* **Flags**: netbackup's spellings stay accepted: `-out`, `-md-report`, `-save-unchanged`,
+  `-known-hosts-policy`, `-update-known-hosts`, `-replace-host-keys`, `-insecure-ignore-host-key`,
+  `-show-diff`.
+* **Environment**: `NETBACKUP_<X>` is read as `NETCONFIG_<X>` (an explicit `NETCONFIG_` name wins), with a
+  warning to rename it.
+* **Vendor names**: every vendor spelling netbackup accepted (`cisco_ios`, `juniper_junos`, `fortigate`,
+  `checkpoint_gaia`, `huawei_vrp`, ...) still resolves; backups keep landing in the same directories.
+
+What differs, deliberately:
+
+* `-retention-count` defaults to **10** (netbackup: 0, keep everything).
+* `-mesh-fallback` is **opt-in**; netbackup always tunnelled through neighbouring devices when a direct
+  connection failed, which routes credentials through other devices.
+* `-verbose` logs the connection and login steps (as in a configuration run); in netbackup it aliased `-diff`.
+* `-log-format json` is rejected with a pointer to `-json-report`. `-init`, `-show-memory` and
+  `-clear-memory` stay on the top-level command (`netconfig -init`).
+* Authentication failures, host-key mismatches and refused commands are **no longer retried** by `-retries`.
+* **MikroTik RouterOS and the `generic` platform are not supported** (netconfig has no profile for them);
+  such devices fail with `unsupported vendor` and a `mikrotik.golden` file is reported as an error.
+* If a commands file is literally named `backup` or `show-backup`, pass it as `-commands backup`.
+
 ## Inventory
 
 ```csv
@@ -552,6 +746,12 @@ internal/vendor          per-vendor prompts, pagers, confirmations, errors, conf
 internal/sshclient       dial/handshake/auth, PTY shell, expect loop, host key policies, SafeBuffer
 internal/task            jobs, worker pool, backup, dry-run, rollback, per-device output, JSON report
 internal/logging         console + file logger, secret masking
+internal/backup          the backup engine: worker pool, change detection, diff, risk, retention,
+                           console summary, browsing a backup tree
+internal/redact          masks secrets in configuration text before it is saved
+internal/compliance      golden-config baselines and drift
+internal/report          HTML report, Markdown changelog, JSON/CSV, result table
+internal/errcat          failure categories used in summaries and reports
 ```
 
 `task` depends only on small interfaces (`Transport`, `Session`), so its tests run against a fake

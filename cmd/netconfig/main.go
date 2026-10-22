@@ -62,6 +62,10 @@ Usage:
   netconfig -template config.tmpl -var ntp=10.0.0.1 [flags]
   netconfig -op -commands <(echo "show ip ospf route") [flags]
 
+Subcommands:
+  netconfig backup [flags]              archive device configurations, detect changes (netconfig backup -h)
+  netconfig show-backup [flags] [node]  view, diff or locate saved backups (netconfig show-backup -h)
+
 Supported vendors: %s
 
 Credentials are never accepted as flags (they would be visible in "ps").
@@ -88,7 +92,23 @@ func (s *stringList) Set(v string) error {
 }
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	os.Exit(dispatch(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+}
+
+// dispatch routes the first argument to a subcommand. Anything else is the
+// classic configuration runner, so "netconfig -commands commands.txt" and
+// "netconfig commands.txt" behave exactly as before. (A commands file that is
+// literally named "backup" or "show-backup" must now be given as -commands.)
+func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
+	if len(args) > 0 {
+		switch args[0] {
+		case "backup":
+			return runBackup(args[1:], stdin, stdout, stderr)
+		case "show-backup":
+			return runShowBackup(args[1:], stdin, stdout, stderr)
+		}
+	}
+	return run(args, stdin, stdout, stderr)
 }
 
 func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
