@@ -523,14 +523,13 @@ or a command the device refused. A device whose credentials are missing is not c
 ```
 
 It honours `-backup-dir` and works for every platform's extension. When several devices match and there
-is no terminal to ask on, it lists them and exits `1`. `./show-backup` is kept as a shortcut for
-`./run backup show` (the name netbackup users know). Only the *first* argument after `backup` selects
+is no terminal to ask on, it lists them and exits `1`. Only the *first* argument after `backup` selects
 `show`, so a flag value such as `-limit show` is still a device filter.
 
 ### Migrating from the standalone `netbackup`
 
-`netbackup <flags>` becomes `netconfig backup <flags>`, and `./show-backup` still works (it now runs
-`netconfig backup show`; there is no `netconfig show-backup` command). Existing
+`netbackup <flags>` becomes `netconfig backup <flags>`, and browsing backups uses
+`netconfig backup show` / `./run backup show` (there is no `netconfig show-backup` command). Existing
 inventories, `.env` files, golden baselines and backup trees keep working:
 
 * **Flags**: netbackup's spellings stay accepted: `-out`, `-md-report`, `-save-unchanged`,

@@ -37,7 +37,6 @@ func launcherTree(t *testing.T) string {
 	}
 	repo := filepath.Join("..", "..")
 	copyFile(filepath.Join(repo, "run"), filepath.Join(root, "run"))
-	copyFile(filepath.Join(repo, "show-backup"), filepath.Join(root, "show-backup"))
 	copyFile(filepath.Join(repo, "scripts", "run.sh"), filepath.Join(root, "scripts", "run.sh"))
 	stub := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done\n"
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
@@ -97,26 +96,5 @@ func TestLauncherRoutesSubcommandsWithoutAppendingCommands(t *testing.T) {
 		if got := launch(t, root, "run", tt.args...); strings.Join(got, "\x00") != strings.Join(tt.want, "\x00") {
 			t.Errorf("run %s: binary got %q, want %q", tt.name, got, tt.want)
 		}
-	}
-}
-
-func TestShowBackupHelperScript(t *testing.T) {
-	root := launcherTree(t)
-	got := launch(t, root, "show-backup", "-p", "core-sw1")
-	if want := []string{"backup", "show", "-p", "core-sw1"}; strings.Join(got, "\x00") != strings.Join(want, "\x00") {
-		t.Errorf("./show-backup passed %q, want %q", got, want)
-	}
-
-	// it works when invoked from another directory through a relative path
-	cmd := exec.Command("/bin/sh", filepath.Join(root, "show-backup"), "-l")
-	cmd.Dir = t.TempDir()
-	out, err := cmd.CombinedOutput()
-	if err != nil || strings.Join(strings.Fields(string(out)), " ") != "backup show -l" {
-		t.Errorf("from another directory: %v %q", err, out)
-	}
-
-	info, err := os.Stat(filepath.Join("..", "..", "show-backup"))
-	if err != nil || info.Mode()&0o111 == 0 {
-		t.Errorf("the show-backup helper must be executable: %v %v", info, err)
 	}
 }
