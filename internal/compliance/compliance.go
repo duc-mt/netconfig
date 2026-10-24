@@ -191,7 +191,7 @@ func (b *Baseline) rulesFor(vendorName string) []Rule {
 	}
 	var rules []Rule
 	rules = append(rules, b.sections[commonSection]...)
-	if key, ok := canonicalKey(vendorName); ok {
+	if key, ok := vendor.Canonical(vendorName); ok {
 		rules = append(rules, b.sections[key]...)
 	}
 	return rules
@@ -203,7 +203,7 @@ func sectionKey(name string) (string, error) {
 	if n == commonSection || n == "all" {
 		return commonSection, nil
 	}
-	if key, ok := canonicalKey(n); ok {
+	if key, ok := vendor.Canonical(n); ok {
 		return key, nil
 	}
 	return "", fmt.Errorf("unknown vendor %q", name)
@@ -460,14 +460,4 @@ func nearMisses(requiredNorm string, lines, norms []string) []string {
 		}
 	}
 	return found
-}
-
-// canonicalKey resolves a vendor name or alias ("cisco_ios", "ios", "cisco")
-// to the canonical name of its netconfig vendor profile.
-func canonicalKey(name string) (string, bool) {
-	p, ok := vendor.Lookup(name)
-	if !ok {
-		return "", false
-	}
-	return p.Name, true
 }

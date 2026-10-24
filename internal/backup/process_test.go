@@ -253,12 +253,14 @@ func TestProcessConfigOversizedDiffDegradesToWarning(t *testing.T) {
 	dir := t.TempDir()
 	dev, profile := testDevice(t, "vyos", "gw1")
 
-	var b strings.Builder
-	for i := 0; i < maxDiffLines; i++ {
+	// a configuration replaced wholesale: far more changed lines than the diff
+	// is willing to look for (a large file with few changes is diffed fine)
+	var b, c strings.Builder
+	for i := 0; i < 2500; i++ {
 		b.WriteString("set line " + strconv.Itoa(i) + "\n")
+		c.WriteString("set other " + strconv.Itoa(i) + "\n")
 	}
-	before := b.String()
-	after := before + "set one more line\n"
+	before, after := b.String(), c.String()
 	seedBackup(t, dir, "backup-2026-10-12-0000", dev, profile, before)
 
 	cfg := Config{OutputDir: dir, RunName: "backup-2026-10-13-0000", IgnoreVolatile: true}

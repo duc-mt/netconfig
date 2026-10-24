@@ -1,6 +1,6 @@
 // ==============================================================================
-// File name:     show_backup_cmd_test.go
-// Description:   Tests for the "show-backup" subcommand.
+// File name:     backup_show_cmd_test.go
+// Description:   Tests for the "backup show" subcommand.
 // License:       MIT
 // ==============================================================================
 package main
@@ -47,8 +47,8 @@ func backupTree(t *testing.T) string {
 	return root
 }
 
-// showBackup runs the subcommand with a non-terminal stdin and captured output.
-func showBackup(t *testing.T, args ...string) (code int, stdout, stderr string) {
+// backupShow runs the subcommand with a non-terminal stdin and captured output.
+func backupShow(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	in, err := os.Open(os.DevNull)
 	if err != nil {
@@ -56,13 +56,13 @@ func showBackup(t *testing.T, args ...string) (code int, stdout, stderr string) 
 	}
 	defer in.Close()
 	var out, errb bytes.Buffer
-	code = runShowBackup(args, in, &out, &errb)
+	code = runBackupShow(args, in, &out, &errb)
 	return code, out.String(), errb.String()
 }
 
 func TestShowBackupListsNodes(t *testing.T) {
 	root := backupTree(t)
-	code, out, _ := showBackup(t, "-backup-dir", root, "-l")
+	code, out, _ := backupShow(t, "-backup-dir", root, "-l")
 	if code != 0 {
 		t.Fatalf("exit %d", code)
 	}
@@ -81,7 +81,7 @@ func TestShowBackupListsNodes(t *testing.T) {
 func TestShowBackupMissingDirectory(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "nope")
 	for _, args := range [][]string{{"-backup-dir", missing, "-l"}, {"-backup-dir", missing, "core"}} {
-		code, _, errOut := showBackup(t, args...)
+		code, _, errOut := backupShow(t, args...)
 		if code != 1 || !strings.Contains(errOut, missing) || !strings.Contains(errOut, "not found") {
 			t.Errorf("%v: exit %d, stderr %q", args, code, errOut)
 		}
@@ -90,14 +90,14 @@ func TestShowBackupMissingDirectory(t *testing.T) {
 
 func TestShowBackupPrintsThePathOfTheNewestFile(t *testing.T) {
 	root := backupTree(t)
-	code, out, _ := showBackup(t, "-backup-dir", root, "-p", "core-sw1")
+	code, out, _ := backupShow(t, "-backup-dir", root, "-p", "core-sw1")
 	want := filepath.Join(root, "backup-2026-10-02-0100", "cisco_ios", "core-sw1.cfg") + "\n"
 	if code != 0 || out != want {
 		t.Errorf("exit %d, out %q, want %q", code, out, want)
 	}
 
 	// an exact name wins over a longer name that merely contains it
-	_, out, _ = showBackup(t, "-backup-dir", root, "-p", "CORE-SW1")
+	_, out, _ = backupShow(t, "-backup-dir", root, "-p", "CORE-SW1")
 	if out != want {
 		t.Errorf("case-insensitive exact match: %q", out)
 	}
@@ -105,7 +105,7 @@ func TestShowBackupPrintsThePathOfTheNewestFile(t *testing.T) {
 
 func TestShowBackupAcceptsFlagsAfterTheNodeAndTheOutAlias(t *testing.T) {
 	root := backupTree(t)
-	code, out, _ := showBackup(t, "core-sw1", "-p", "-out", root)
+	code, out, _ := backupShow(t, "core-sw1", "-p", "-out", root)
 	if code != 0 || !strings.HasSuffix(strings.TrimSpace(out), "core-sw1.cfg") {
 		t.Errorf("exit %d, out %q", code, out)
 	}
@@ -113,7 +113,7 @@ func TestShowBackupAcceptsFlagsAfterTheNodeAndTheOutAlias(t *testing.T) {
 
 func TestShowBackupUniqueSubstringMatch(t *testing.T) {
 	root := backupTree(t)
-	code, out, _ := showBackup(t, "-backup-dir", root, "-p", "edge")
+	code, out, _ := backupShow(t, "-backup-dir", root, "-p", "edge")
 	if code != 0 || !strings.HasSuffix(strings.TrimSpace(out), filepath.Join("juniper_junos", "edge-mx1.set")) {
 		t.Errorf("exit %d, out %q", code, out)
 	}
@@ -121,7 +121,7 @@ func TestShowBackupUniqueSubstringMatch(t *testing.T) {
 
 func TestShowBackupDisplaysTheFileWhenNotOnATerminal(t *testing.T) {
 	root := backupTree(t)
-	code, out, _ := showBackup(t, "-backup-dir", root, "core-sw1")
+	code, out, _ := backupShow(t, "-backup-dir", root, "core-sw1")
 	if code != 0 {
 		t.Fatalf("exit %d", code)
 	}
@@ -135,28 +135,28 @@ func TestShowBackupDisplaysTheFileWhenNotOnATerminal(t *testing.T) {
 
 func TestShowBackupDiff(t *testing.T) {
 	root := backupTree(t)
-	code, out, _ := showBackup(t, "-backup-dir", root, "-d", "core-sw1")
+	code, out, _ := backupShow(t, "-backup-dir", root, "-d", "core-sw1")
 	if code != 0 || !strings.Contains(out, "==> Latest diff for 'core-sw1'") || !strings.Contains(out, "+NEW\n-OLD\n") {
 		t.Errorf("exit %d, out %q", code, out)
 	}
 
 	// edge-mx1 has a configuration but never changed, so no diff
-	code, _, errOut := showBackup(t, "-backup-dir", root, "-d", "edge-mx1")
+	code, _, errOut := backupShow(t, "-backup-dir", root, "-d", "edge-mx1")
 	if code != 1 || !strings.Contains(errOut, "No diff files found matching 'edge-mx1'") {
 		t.Errorf("exit %d, stderr %q", code, errOut)
 	}
 }
 
 func TestShowBackupNoMatchSuggestsTheList(t *testing.T) {
-	code, _, errOut := showBackup(t, "-backup-dir", backupTree(t), "ghost")
+	code, _, errOut := backupShow(t, "-backup-dir", backupTree(t), "ghost")
 	if code != 1 || !strings.Contains(errOut, "No config files found matching 'ghost'") ||
-		!strings.Contains(errOut, "netconfig show-backup -l") {
+		!strings.Contains(errOut, "netconfig backup show -l") {
 		t.Errorf("exit %d, stderr %q", code, errOut)
 	}
 }
 
 func TestShowBackupAmbiguousWithoutATerminalListsTheCandidates(t *testing.T) {
-	code, out, errOut := showBackup(t, "-backup-dir", backupTree(t), "gw-a")
+	code, out, errOut := backupShow(t, "-backup-dir", backupTree(t), "gw-a")
 	if code != 1 || out != "" {
 		t.Errorf("exit %d, stdout %q", code, out)
 	}
@@ -175,11 +175,11 @@ func TestShowBackupUsageErrors(t *testing.T) {
 		"unknown flag":  {"-backup-dir", root, "-zzz", "a"},
 		"directory arg": {"-backup-dir"},
 	} {
-		if code, _, _ := showBackup(t, args...); code != 1 {
+		if code, _, _ := backupShow(t, args...); code != 1 {
 			t.Errorf("%s: exit %d, want 1", name, code)
 		}
 	}
-	if code, _, errOut := showBackup(t, "-h"); code != 0 || !strings.Contains(errOut, "netconfig show-backup") {
+	if code, _, errOut := backupShow(t, "-h"); code != 0 || !strings.Contains(errOut, "netconfig backup show") {
 		t.Errorf("-h: exit %d, stderr %q", code, errOut)
 	}
 }
@@ -233,4 +233,13 @@ func TestPagerCommand(t *testing.T) {
 			t.Errorf("%s: pagerCommand(%q, %v) = %q, want %q", tt.name, tt.pager, tt.hasLess, got, tt.want)
 		}
 	}
+}
+
+func openDevNull(t *testing.T) *os.File {
+	t.Helper()
+	f, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
 }

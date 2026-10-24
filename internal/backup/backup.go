@@ -481,7 +481,7 @@ func compareConfigs(cfg Config, vendorKey, before, after string) (lines []string
 
 	lines, added, removed, ok = diffConfig(before, after)
 	if !ok {
-		warn = "change detection skipped: configuration too large to diff"
+		warn = "change detection skipped: configuration too large to diff (or too much of it changed)"
 	}
 	return lines, added, removed, ok, warn
 }
@@ -632,35 +632,29 @@ func findMatchingBackups(outputDir string, dev inventory.Device, ext string) ([]
 		return nil, err
 	}
 
-	var matching []fileEntry
-	filename := sanitize(dev.Hostname) + ext
-	filenameAltPrefix := sanitize(dev.Hostname) + "_"
+	// A device's file in a run is called <host><ext>, or <host>_<address><ext>
+	// when another device had already taken that name (see save). Those two
+	// names are looked up directly. Listing each platform directory instead
+	// would cost (devices x runs x devices) over a whole run, and matching on
+	// the "<host>_" prefix would claim other devices' files ("core" would
+	// own "core_backup.cfg") and let retention delete them.
+	names := []string{
+		sanitize(dev.Hostname) + ext,
+		sanitize(dev.Hostname) + "_" + sanitize(dev.Address) + ext,
+	}
 	vCandidates := vendorCandidates(dev)
 
+	var matching []fileEntry
 	for _, entry := range entries {
 		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "backup-") {
 			continue
 		}
-
 		for _, vName := range vCandidates {
 			vendorDir := filepath.Join(outputDir, entry.Name(), vName)
-			ventries, err := os.ReadDir(vendorDir)
-			if err != nil {
-				continue
-			}
-
-			for _, v := range ventries {
-				if v.IsDir() {
-					continue
-				}
-				if v.Name() == filename || (strings.HasPrefix(v.Name(), filenameAltPrefix) && strings.HasSuffix(v.Name(), ext)) {
-					info, err := v.Info()
-					if err == nil {
-						matching = append(matching, fileEntry{
-							path:    filepath.Join(vendorDir, v.Name()),
-							modTime: info.ModTime(),
-						})
-					}
+			for _, name := range names {
+				path := filepath.Join(vendorDir, name)
+				if info, err := os.Stat(path); err == nil && !info.IsDir() {
+					matching = append(matching, fileEntry{path: path, modTime: info.ModTime()})
 				}
 			}
 		}
@@ -672,7 +666,10 @@ func findMatchingBackups(outputDir string, dev inventory.Device, ext string) ([]
 
 	// Sort newest first
 	slices.SortFunc(matching, func(a, b fileEntry) int {
-		return b.modTime.Compare(a.modTime)
+		if cmp := b.modTime.Compare(a.modTime); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(b.path, a.path)
 	})
 
 	return matching, nil

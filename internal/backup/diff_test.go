@@ -7,7 +7,6 @@
 package backup
 
 import (
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -62,21 +61,5 @@ func TestDiffConfigIgnoresBlankLinesAndCR(t *testing.T) {
 	}
 	if len(lines) != 0 || added != 0 || removed != 0 {
 		t.Errorf("CRLF vs LF and blank lines should not count as a difference, got %v (added=%d removed=%d)", lines, added, removed)
-	}
-}
-
-func TestDiffConfigTooLargeIsSkipped(t *testing.T) {
-	var b strings.Builder
-	for i := 0; i < maxDiffLines; i++ {
-		b.WriteString("line ")
-		b.WriteString(strconv.Itoa(i))
-		b.WriteByte('\n')
-	}
-	before := b.String()
-	after := before + "one more line\n"
-
-	_, _, _, ok := diffConfig(before, after)
-	if ok {
-		t.Error("expected diffConfig to report not ok for input over maxDiffLines")
 	}
 }

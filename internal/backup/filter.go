@@ -186,7 +186,7 @@ func (f *VolatileFilter) Len() int {
 // activeRules returns the rules that apply to the given vendor name or alias.
 // An unknown vendor still gets the vendor-agnostic (custom) rules.
 func (f *VolatileFilter) activeRules(vendorName string) []volatileRule {
-	key, _ := canonicalKey(vendorName)
+	key, _ := vendor.Canonical(vendorName)
 	active := make([]volatileRule, 0, len(f.rules))
 	for _, r := range f.rules {
 		if r.appliesTo(key) {
@@ -235,14 +235,4 @@ func (f *VolatileFilter) Apply(vendorName, config string) string {
 		kept = append(kept, line)
 	}
 	return strings.Join(kept, "\n")
-}
-
-// canonicalKey resolves a vendor name or alias ("cisco_ios", "ios", "cisco")
-// to the canonical name of its netconfig vendor profile.
-func canonicalKey(name string) (string, bool) {
-	p, ok := vendor.Lookup(name)
-	if !ok {
-		return "", false
-	}
-	return p.Name, true
 }

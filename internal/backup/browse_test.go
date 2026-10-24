@@ -195,7 +195,7 @@ func TestNodesAreTrackedPerKind(t *testing.T) {
 	}
 }
 
-// "show-backup -d" can only offer devices that have a diff: most devices have
+// "backup show -d" can only offer devices that have a diff: most devices have
 // a configuration but only those that changed have a diff.
 func TestListDiffNodes(t *testing.T) {
 	got, err := ListDiffNodes(sampleTree(t))
@@ -213,5 +213,55 @@ func TestListDiffNodes(t *testing.T) {
 	}
 	if _, err := ListDiffNodes(filepath.Join(root, "nope")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("missing dir: %v", err)
+	}
+}
+
+// A Tree is scanned once: listing, matching and looking up the newest file all
+// answer from that one pass over the directory.
+func TestTreeAnswersEveryQuestionFromOneScan(t *testing.T) {
+	root := sampleTree(t)
+	tree, err := ScanTree(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the directory is gone: only a cached scan can still answer
+	listing := tree.Nodes(false)
+	for _, e := range []string{"backup-2026-10-01-0100", "backup-2026-10-02-0100", "reports"} {
+		if err := os.RemoveAll(filepath.Join(root, e)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if again := tree.Nodes(false); !slices.Equal(listing, again) || len(listing) != 6 {
+		t.Errorf("a second listing must not depend on the directory: %q then %q", listing, again)
+	}
+	if got := tree.Nodes(true); !slices.Equal(got, []string{"core-sw1"}) {
+		t.Errorf("diff nodes = %q", got)
+	}
+}
+
+func TestTreeLatestAgreesWithTheStandaloneFunctions(t *testing.T) {
+	root := sampleTree(t)
+	tree, err := ScanTree(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range []string{"core-sw1", "edge-mx1", "fw-1", "gw", "vy1", "dist.dc1.example.com"} {
+		want, werr := Latest(root, node, false)
+		got, gerr := tree.Latest(node, false)
+		if got != want || (werr == nil) != (gerr == nil) {
+			t.Errorf("%s: tree says %q (%v), Latest says %q (%v)", node, got, gerr, want, werr)
+		}
+	}
+	if _, err := tree.Latest("ghost", false); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("unknown node: %v", err)
+	}
+	if _, err := tree.Latest("edge-mx1", true); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a node without a diff: %v", err)
+	}
+	if nodes, _ := ListNodes(root); !slices.Equal(nodes, tree.Nodes(false)) {
+		t.Errorf("ListNodes %q differs from Tree.Nodes %q", nodes, tree.Nodes(false))
+	}
+	if _, err := ScanTree(filepath.Join(root, "nope")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("missing directory: %v", err)
 	}
 }

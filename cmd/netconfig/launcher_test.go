@@ -69,8 +69,12 @@ func TestLauncherRoutesSubcommandsWithoutAppendingCommands(t *testing.T) {
 		{"backup", []string{"backup", "-limit", "core-*", "-dry-run"}, []string{"backup", "-limit", "core-*", "-dry-run"}},
 		{"backup without flags", []string{"backup"}, []string{"backup"}},
 		{"backup help", []string{"backup", "--help"}, []string{"backup", "--help"}},
-		{"show-backup", []string{"show-backup", "-l"}, []string{"show-backup", "-l"}},
-		{"show-backup node", []string{"show-backup", "-d", "core-sw1"}, []string{"show-backup", "-d", "core-sw1"}},
+		{"backup show", []string{"backup", "show", "-l"}, []string{"backup", "show", "-l"}},
+		{"backup show node", []string{"backup", "show", "-d", "core-sw1"}, []string{"backup", "show", "-d", "core-sw1"}},
+		{"backup show help", []string{"backup", "show", "--help"}, []string{"backup", "show", "--help"}},
+		// the retired spelling is not a subcommand any more: the binary answers it
+		// with a rename hint (see TestOldShowBackupFormSaysWhatToUseInstead)
+		{"old show-backup", []string{"show-backup", "-l"}, []string{"show-backup", "-l", "-commands", "commands.txt"}},
 
 		// the classic runner still defaults to commands.txt
 		{"no arguments", nil, []string{"-commands", "commands.txt"}},
@@ -99,7 +103,7 @@ func TestLauncherRoutesSubcommandsWithoutAppendingCommands(t *testing.T) {
 func TestShowBackupHelperScript(t *testing.T) {
 	root := launcherTree(t)
 	got := launch(t, root, "show-backup", "-p", "core-sw1")
-	if want := []string{"show-backup", "-p", "core-sw1"}; strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+	if want := []string{"backup", "show", "-p", "core-sw1"}; strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 		t.Errorf("./show-backup passed %q, want %q", got, want)
 	}
 
@@ -107,7 +111,7 @@ func TestShowBackupHelperScript(t *testing.T) {
 	cmd := exec.Command("/bin/sh", filepath.Join(root, "show-backup"), "-l")
 	cmd.Dir = t.TempDir()
 	out, err := cmd.CombinedOutput()
-	if err != nil || strings.Join(strings.Fields(string(out)), " ") != "show-backup -l" {
+	if err != nil || strings.Join(strings.Fields(string(out)), " ") != "backup show -l" {
 		t.Errorf("from another directory: %v %q", err, out)
 	}
 

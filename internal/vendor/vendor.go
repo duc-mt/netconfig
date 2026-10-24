@@ -935,6 +935,17 @@ func Lookup(name string) (*Profile, bool) {
 	return p, ok
 }
 
+// Canonical resolves a vendor name or alias ("cisco_ios", "ios", "sg350") to
+// the canonical name of its profile ("cisco", "cisco_sb"). Callers that key
+// their own tables by vendor use it instead of repeating Lookup.
+func Canonical(name string) (string, bool) {
+	p, ok := Lookup(name)
+	if !ok {
+		return "", false
+	}
+	return p.Name, true
+}
+
 // Names lists the canonical vendor names, sorted.
 func Names() []string {
 	names := make([]string, 0, len(registry))

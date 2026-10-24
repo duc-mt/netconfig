@@ -594,3 +594,26 @@ func TestCiscoSBPagerAndASASavePrompt(t *testing.T) {
 		}
 	}
 }
+
+func TestCanonicalResolvesAnyAliasToTheProfileName(t *testing.T) {
+	for in, want := range map[string]string{
+		"cisco_ios": Cisco, "IOS": Cisco, "sg350": CiscoSB, "Cisco-ASA": CiscoASA, "h3c": Huawei,
+		"juniper": Junos, "fortigate": Fortinet, "vyos": VyOS,
+	} {
+		if got, ok := Canonical(in); !ok || got != want {
+			t.Errorf("Canonical(%q) = %q, %v; want %q", in, got, ok, want)
+		}
+	}
+	for _, in := range []string{"", "mikrotik", "no such vendor"} {
+		if got, ok := Canonical(in); ok || got != "" {
+			t.Errorf("Canonical(%q) = %q, %v; want nothing", in, got, ok)
+		}
+	}
+	// it agrees with Lookup for every registered name
+	for _, name := range Names() {
+		p, _ := Lookup(name)
+		if got, ok := Canonical(name); !ok || got != p.Name {
+			t.Errorf("Canonical(%q) = %q, %v", name, got, ok)
+		}
+	}
+}

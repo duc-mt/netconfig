@@ -431,11 +431,11 @@ func TestDispatchRoutesSubcommandsAndKeepsTheClassicRunner(t *testing.T) {
 	in, _ := os.Open(os.DevNull)
 	defer in.Close()
 
-	// show-backup is routed to its own command
+	// "backup show" is routed to the viewer, like "user add" would be
 	root := backupTree(t)
 	var out, errb bytes.Buffer
-	if code := dispatch([]string{"show-backup", "-backup-dir", root, "-l"}, in, &out, &errb); code != 0 || !strings.Contains(out.String(), "core-sw1") {
-		t.Errorf("show-backup: exit %d, out %q", code, out.String())
+	if code := dispatch([]string{"backup", "show", "-backup-dir", root, "-l"}, in, &out, &errb); code != 0 || !strings.Contains(out.String(), "core-sw1") {
+		t.Errorf("backup show: exit %d, out %q, err %q", code, out.String(), errb.String())
 	}
 
 	// anything else is the configuration runner: -version proves it ran
@@ -488,5 +488,65 @@ func TestCredentialErrorIsAnAuthFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `"dc1"`) {
 		t.Errorf("message: %v", err)
+	}
+}
+
+// Only the first word after "backup" selects the viewer: a flag value that
+// happens to be "show" must not.
+func TestBackupShowIsSelectedByTheFirstArgumentOnly(t *testing.T) {
+	e := newBackupEnv(t, "hostname,address,port,vendor,credential_group\nsw1,10.0.0.1,22,cisco,\n")
+	e.tr.output["sw1"] = iosBackup
+
+	code, stdout, stderr := e.run("-limit", "show")
+	if code != task.ExitFatal || !strings.Contains(stderr, "show") {
+		t.Errorf("-limit show is a device filter that matches nothing: exit %d\n%s", code, stderr)
+	}
+	if strings.Contains(stdout+stderr, "Available nodes") || strings.Contains(stderr, "==> Latest") {
+		t.Error("a flag value of \"show\" opened the viewer")
+	}
+	if len(e.tr.opens) != 0 {
+		t.Errorf("devices were contacted: %v", e.tr.opens)
+	}
+
+	// the viewer is reached, with its own flags, by the first argument
+	in := openDevNull(t)
+	defer in.Close()
+	var out, errb bytes.Buffer
+	if code := dispatch([]string{"backup", "show", "-h"}, in, &out, &errb); code != 0 || !strings.Contains(errb.String(), "netconfig backup show") {
+		t.Errorf("backup show -h: exit %d\n%s", code, errb.String())
+	}
+}
+
+// "netconfig show-backup" no longer exists. Without a hint it would be taken
+// for a commands file called show-backup and fail with a confusing message.
+func TestOldShowBackupFormSaysWhatToUseInstead(t *testing.T) {
+	in := openDevNull(t)
+	defer in.Close()
+	for _, args := range [][]string{{"show-backup", "-l"}, {"show-backup", "core-sw1", "-commands", "commands.txt"}} {
+		var out, errb bytes.Buffer
+		code := dispatch(args, in, &out, &errb)
+		if code != task.ExitFatal || !strings.Contains(errb.String(), "netconfig backup show") || strings.Contains(errb.String(), "commands file") {
+			t.Errorf("%v: exit %d\n%s", args, code, errb.String())
+		}
+		if out.Len() != 0 {
+			t.Errorf("%v wrote to stdout: %q", args, out.String())
+		}
+	}
+}
+
+// The backup help mentions how to get to the viewer.
+func TestBackupHelpPointsToShow(t *testing.T) {
+	in := openDevNull(t)
+	defer in.Close()
+	var out, errb bytes.Buffer
+	dispatch([]string{"backup", "-h"}, in, &out, &errb)
+	if !strings.Contains(errb.String(), "netconfig backup show [flags] [node-name]") {
+		t.Errorf("backup -h does not mention the show subcommand:\n%s", errb.String())
+	}
+	out.Reset()
+	errb.Reset()
+	dispatch([]string{"-h"}, in, &out, &errb)
+	if !strings.Contains(errb.String(), "netconfig backup show") || strings.Contains(errb.String(), "netconfig show-backup") {
+		t.Errorf("the top-level help must list the new form only:\n%s", errb.String())
 	}
 }

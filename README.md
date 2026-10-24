@@ -6,7 +6,7 @@ dependencies, no network access other than SSH to the devices.
 
 The same binary also archives configurations and watches them for change and drift:
 [`netconfig backup`](#backup-change-detection-and-drift-netconfig-backup) and
-`netconfig show-backup` (formerly the standalone `netbackup` tool).
+`netconfig backup show` (formerly the standalone `netbackup` tool).
 
 Supported platforms: Cisco IOS/IOS-XE, Cisco Small Business (SF/SG/CBS), Cisco ASA, Juniper Junos, Huawei VRP, Fortinet FortiOS, Arista EOS, VyOS, Ruijie RGOS, Aruba AOS-CX/AOS-S, Check Point Gaia, Palo Alto PAN-OS, pfSense, Sophos.
 
@@ -361,7 +361,7 @@ netconfig [Batch 1/3] [Workers: 5] [Active: 3] [Elapsed: 00:12]
 ./run backup -limit '@dc1' -concurrency 20      # one credential group, 20 at a time
 ./run backup -dry-run                           # prove login and paging setup; save nothing
 ./run backup -golden-dir golden -html-report 'backups/{run}/report.html' -md-changelog reports/CHANGELOG.md
-./run show-backup core-sw1                      # view the newest backup of a device
+./run backup show core-sw1                      # view the newest backup of a device
 ./run backup -h                                 # every flag
 ```
 
@@ -374,7 +374,7 @@ backup, saves it, prunes old backups, and reports. One device failing never stop
 
 > `backup` is not the classic runner's `-backup` flag. That takes a pre-change snapshot of the
 > devices it is about to change, as flat `backups/<host>_<timestamp>.cfg` files. The two can share
-> the `backups/` directory without interfering; `backup` and `show-backup` only read and write
+> the `backups/` directory without interfering; `backup` and `backup show` only read and write
 > the `backup-*` run directories described below.
 
 ### Where backups go
@@ -414,6 +414,10 @@ line on Small Business, whose `exit` also closes every block). A truncated captu
   VyOS/pfSense/Gaia generated-on banners, uptime and `ntp clock-period` counters. A device whose only
   differences are such lines is `UNCHANGED (volatile lines only)`. The saved file is never filtered.
   Add site-specific noise with `-volatile-patterns <file>` (see `examples/volatile-patterns.txt`).
+* **Large configurations are fine.** The diff costs time and memory in proportion to the number of lines
+  that *changed*, not the size of the file: a 100,000-line configuration with a few edits diffs in
+  milliseconds. It is skipped (with a warning, and the new backup is still saved) only when more than 3,000
+  lines changed, i.e. the configuration was replaced wholesale, or the two files exceed 400,000 lines together.
 * **Retention** keeps the newest `-retention-count` backups per device (default **10**; 0 disables) and,
   with `-retention-days N`, deletes those older than N days. Only `backup-*` run directories are touched.
 
@@ -504,23 +508,29 @@ or a command the device refused. A device whose credentials are missing is not c
 | `-host-key-policy` (`-known-hosts-policy`), `-known-hosts`, `-legacy-algorithms` | `update`, `~/.ssh/known_hosts`, on | as for a configuration run |
 | `-jump`, `-jump-host`, `-mesh-fallback`, `-memory` | on, none, off, on | routing; `-mesh-fallback` is opt-in |
 
-### Viewing backups: `show-backup`
+### Viewing backups: `backup show`
+
+`show` is a subcommand of `backup`, in the same way `user add` is a subcommand of `user`:
+`./run backup` takes a backup, `./run backup show` looks at one.
 
 ```sh
-./show-backup core-sw1        # newest backup, in $PAGER (or less) on a terminal, printed otherwise
-./show-backup gw-01           # a part of a name works (case-insensitive); you choose if several match
-./show-backup -d core-sw1     # the newest diff
-./show-backup -p core-sw1     # just the file's path (for scripts: cat "$(./show-backup -p core-sw1)")
-./show-backup -l              # every device that has a backup
+./run backup show core-sw1        # newest backup, in $PAGER (or less) on a terminal, printed otherwise
+./run backup show gw-01           # a part of a name works (case-insensitive); you choose if several match
+./run backup show -d core-sw1     # the newest diff
+./run backup show -p core-sw1     # just the file's path (for scripts: cat "$(./run backup show -p core-sw1)")
+./run backup show -l              # every device that has a backup
+./run backup show -h              # its flags
 ```
 
-`./show-backup` is a shortcut for `./run show-backup`. It honours `-backup-dir` and works for every
-platform's extension. When several devices match and there is no terminal to ask on, it lists them and
-exits `1`.
+It honours `-backup-dir` and works for every platform's extension. When several devices match and there
+is no terminal to ask on, it lists them and exits `1`. `./show-backup` is kept as a shortcut for
+`./run backup show` (the name netbackup users know). Only the *first* argument after `backup` selects
+`show`, so a flag value such as `-limit show` is still a device filter.
 
 ### Migrating from the standalone `netbackup`
 
-`netbackup <flags>` becomes `netconfig backup <flags>`; `./show-backup` is unchanged. Existing
+`netbackup <flags>` becomes `netconfig backup <flags>`, and `./show-backup` still works (it now runs
+`netconfig backup show`; there is no `netconfig show-backup` command). Existing
 inventories, `.env` files, golden baselines and backup trees keep working:
 
 * **Flags**: netbackup's spellings stay accepted: `-out`, `-md-report`, `-save-unchanged`,
@@ -542,7 +552,7 @@ What differs, deliberately:
 * Authentication failures, host-key mismatches and refused commands are **no longer retried** by `-retries`.
 * **MikroTik RouterOS and the `generic` platform are not supported** (netconfig has no profile for them);
   such devices fail with `unsupported vendor` and a `mikrotik.golden` file is reported as an error.
-* If a commands file is literally named `backup` or `show-backup`, pass it as `-commands backup`.
+* If a commands file is literally named `backup`, pass it as `-commands backup`.
 
 ## Inventory
 

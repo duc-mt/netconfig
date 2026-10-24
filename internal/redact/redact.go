@@ -15,11 +15,20 @@ package redact
 
 import (
 	"regexp"
+	"strings"
+	"unicode/utf8"
 )
 
 type patternRule struct {
 	re   *regexp.Regexp
 	repl string
+
+	// block marks a rule that spans lines and so has to see the whole text;
+	// needs is a substring the text must contain for it to match at all, which
+	// lets Config skip the rule (and its cost) for the typical configuration.
+	// Every other rule is applied one line at a time.
+	block bool
+	needs string
 }
 
 var commonPatterns = []patternRule{
@@ -27,6 +36,9 @@ var commonPatterns = []patternRule{
 	{
 		re:   regexp.MustCompile(`(?s)-----BEGIN[ A-Z0-9_-]*PRIVATE KEY-----.*?-----END[ A-Z0-9_-]*PRIVATE KEY-----`),
 		repl: "-----BEGIN PRIVATE KEY-----\n<REDACTED>\n-----END PRIVATE KEY-----",
+
+		block: true,
+		needs: "-----BEGIN",
 	},
 	// Cisco / IOS-XE / Ruijie / Aruba password and secret definitions
 	{
@@ -121,12 +133,81 @@ var commonPatterns = []patternRule{
 	},
 }
 
+// blockRules and lineRules split commonPatterns by whether a rule spans lines.
+var blockRules, lineRules = func() (block, line []patternRule) {
+	for _, r := range commonPatterns {
+		if r.block {
+			block = append(block, r)
+		} else {
+			line = append(line, r)
+		}
+	}
+	return block, line
+}()
+
+// secretStems are lower-case fragments of which every line rule needs at least
+// one in a line it is going to mask (passw: password/passwd/password-hash,
+// passph: passphrase, key: every "...-key"/"key ..." form, ...). A line with
+// none of them cannot match any rule, so mayHoldSecret lets it skip all of them;
+// that is true of nearly every line of a configuration. Adding a rule means
+// adding its stem here; the tests fail if a rule's example line would be skipped.
+var secretStems = []string{
+	"passw", "passph", "secret", "key", "community", "snmp", "md5", "cipher", "auth", "priv", "radius",
+}
+
+// mayHoldSecret reports whether a line could be masked by a line rule. It errs
+// on the side of "yes": the rules match case-insensitively with Unicode case
+// folding ("ſ" matches "s"), which lower-casing does not reproduce, so any line
+// with a non-ASCII byte takes the full path.
+func mayHoldSecret(line string) bool {
+	for i := 0; i < len(line); i++ {
+		if line[i] >= utf8.RuneSelf {
+			return true
+		}
+	}
+	lower := strings.ToLower(line)
+	for _, stem := range secretStems {
+		if strings.Contains(lower, stem) {
+			return true
+		}
+	}
+	return false
+}
+
 // Config processes raw configuration text and replaces recognized sensitive
 // credentials, hashes, and community strings with redacted placeholders.
+//
+// The line rules are applied to one line at a time. Over a whole configuration
+// the regexp package has to use its general (NFA) engine, which runs at under
+// 2 MB/s for these patterns; on a single line it uses the far faster
+// backtracking engine, which makes a large configuration roughly an order of
+// magnitude cheaper to redact. The result is the same as applying every rule to
+// the whole text, which the tests check against exactly that reference.
 func Config(content string) string {
-	result := content
-	for _, rule := range commonPatterns {
-		result = rule.re.ReplaceAllString(result, rule.repl)
+	for _, rule := range blockRules {
+		if strings.Contains(content, rule.needs) {
+			content = rule.re.ReplaceAllString(content, rule.repl)
+		}
 	}
-	return result
+
+	var b strings.Builder
+	b.Grow(len(content))
+	for rest := content; rest != ""; {
+		line := rest
+		if i := strings.IndexByte(rest, '\n'); i >= 0 {
+			line, rest = rest[:i+1], rest[i+1:]
+		} else {
+			rest = ""
+		}
+		if mayHoldSecret(line) {
+			for _, rule := range lineRules {
+				// MatchString does not allocate, ReplaceAllString always does.
+				if rule.re.MatchString(line) {
+					line = rule.re.ReplaceAllString(line, rule.repl)
+				}
+			}
+		}
+		b.WriteString(line)
+	}
+	return b.String()
 }

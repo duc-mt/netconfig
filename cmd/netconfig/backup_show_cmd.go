@@ -1,6 +1,6 @@
 // ==============================================================================
-// File name:     show_backup_cmd.go
-// Description:   The "show-backup" subcommand: view or locate a saved backup.
+// File name:     backup_show_cmd.go
+// Description:   The "backup show" subcommand: view or locate a saved backup.
 // License:       MIT
 // ==============================================================================
 package main
@@ -21,9 +21,9 @@ import (
 	"netconfig/internal/task"
 )
 
-const showBackupUsageText = `Usage:
-  netconfig show-backup [flags] <node-name>
-  netconfig show-backup -l
+const backupShowUsageText = `Usage:
+  netconfig backup show [flags] <node-name>
+  netconfig backup show -l
 
 View or locate the newest saved configuration of a device. <node-name> may be
 part of a name (case-insensitive); if several devices match, you are asked to
@@ -31,26 +31,27 @@ choose. The file is shown with $PAGER (or less) on a terminal and printed
 as-is otherwise.
 
 Examples:
-  netconfig show-backup core-sw1
-  netconfig show-backup gw-01            (asks which one if several match)
-  netconfig show-backup -d core-sw1      (the latest diff instead)
-  netconfig show-backup -p core-sw1      (only print the file's path)
-  netconfig show-backup -l               (list every device with a backup)
-
-Flags:
+  netconfig backup show core-sw1
+  netconfig backup show gw-01            (asks which one if several match)
+  netconfig backup show -d core-sw1      (the latest diff instead)
+  netconfig backup show -p core-sw1      (only print the file's path)
+  netconfig backup show -l               (list every device with a backup)
 `
 
-// runShowBackup is "netconfig show-backup".
-func runShowBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
+// backupShowFlagGroups is the help layout of "backup show".
+var backupShowFlagGroups = []flagGroup{{"Flags", []string{"l", "d", "p", "backup-dir"}}}
+
+// runBackupShow is "netconfig backup show".
+func runBackupShow(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var (
 		dir                  string
 		diff, pathOnly, list bool
 	)
-	fs := flag.NewFlagSet("netconfig show-backup", flag.ContinueOnError)
+	fs := flag.NewFlagSet("netconfig backup show", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprint(stderr, showBackupUsageText)
-		fs.PrintDefaults()
+		fmt.Fprint(stderr, backupShowUsageText)
+		printFlagGroups(stderr, fs, backupShowFlagGroups)
 	}
 	fs.StringVar(&dir, "backup-dir", "backups", "directory holding the backups")
 	fs.StringVar(&dir, "out", "backups", "alias for -backup-dir")
@@ -61,8 +62,8 @@ func runShowBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int 
 	fs.BoolVar(&list, "l", false, "list all devices that have a backup")
 	fs.BoolVar(&list, "list", false, "alias for -l")
 
-	// Flags may come before or after the node name ("show-backup -d gw-01",
-	// "show-backup gw-01 -d"); the flag package stops at the first non-flag.
+	// Flags may come before or after the node name ("backup show -d gw-01",
+	// "backup show gw-01 -d"); the flag package stops at the first non-flag.
 	var positional []string
 	for rest := args; ; {
 		if err := fs.Parse(rest); err != nil {
@@ -82,18 +83,24 @@ func runShowBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int 
 		return task.ExitFatal
 	}
 
-	listFn, kind := backup.ListNodes, "config"
+	kind := "config"
 	if diff {
-		listFn, kind = backup.ListDiffNodes, "diff"
+		kind = "diff"
+	}
+
+	// One scan of the backup tree answers the listing, the name match and the
+	// lookup of the newest file.
+	tree, err := backup.ScanTree(dir)
+	if err != nil {
+		if list {
+			return fail("netconfig backup show: %v", err)
+		}
+		return fail("Error: %v", err)
 	}
 
 	if list {
-		nodes, err := backup.ListNodes(dir)
-		if err != nil {
-			return fail("netconfig show-backup: %v", err)
-		}
 		fmt.Fprintln(stdout, "Available nodes in backup history:")
-		for _, n := range nodes {
+		for _, n := range tree.Nodes(false) {
 			fmt.Fprintf(stdout, "  - %s\n", n)
 		}
 		return task.ExitOK
@@ -113,14 +120,10 @@ func runShowBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int 
 	}
 	query := positional[0]
 
-	nodes, err := listFn(dir)
-	if err != nil {
-		return fail("Error: %v", err)
-	}
-	exact, matches := backup.MatchNodes(nodes, query)
+	exact, matches := backup.MatchNodes(tree.Nodes(diff), query)
 	if len(matches) == 0 {
 		fmt.Fprintf(stderr, "No %s files found matching '%s' in %s.\n", kind, query, dir)
-		fmt.Fprintln(stderr, "Run 'netconfig show-backup -l' to view all available devices.")
+		fmt.Fprintln(stderr, "Run 'netconfig backup show -l' to view all available devices.")
 		return task.ExitFatal
 	}
 
@@ -145,7 +148,7 @@ func runShowBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int 
 		}
 	}
 
-	file, err := backup.Latest(dir, selected, diff)
+	file, err := tree.Latest(selected, diff)
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -156,7 +159,7 @@ func runShowBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int 
 
 	fmt.Fprintf(stdout, "==> Latest %s for '%s': %s\n", kind, selected, file)
 	if err := display(file, stdin, stdout, stderr); err != nil {
-		return fail("netconfig show-backup: %v", err)
+		return fail("netconfig backup show: %v", err)
 	}
 	return task.ExitOK
 }
@@ -210,7 +213,7 @@ func display(path string, stdin *os.File, stdout, stderr io.Writer) error {
 			if err == nil {
 				return nil
 			}
-			fmt.Fprintf(stderr, "netconfig show-backup: pager %q failed (%v); printing the file instead\n", argv[0], err)
+			fmt.Fprintf(stderr, "netconfig backup show: pager %q failed (%v); printing the file instead\n", argv[0], err)
 		}
 	}
 	f, err := os.Open(path)

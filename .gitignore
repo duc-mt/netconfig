@@ -11,6 +11,10 @@ Thumbs.db
 
 # Root builds and test coverage
 /netconfig*
+# a "go build" run inside cmd/netconfig leaves its binary there
+/cmd/netconfig/netconfig
+/cmd/netconfig/netconfig.exe
+/cmd/netconfig/*.test
 coverage.out
 *.out
 

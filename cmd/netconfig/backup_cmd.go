@@ -32,19 +32,22 @@ import (
 const backupUsageText = `netconfig backup: archive device configurations, detect changes and report drift.
 
 Usage:
-  netconfig backup [flags]
+  netconfig backup [flags]                       back up the devices in the inventory
+  netconfig backup show [flags] [node-name]      view or locate the newest saved backup
+                                                 (see: netconfig backup show -h)
 
 Each device's configuration is saved as <backup-dir>/<run>/<platform>/<host>.<ext>.
 A device whose configuration is unchanged since its last backup is not written
 again (volatile lines such as clock stamps are ignored when comparing), and
 secrets are masked in the saved files unless -redact=false.
 
+Credentials come from -env-file or the environment (NETCONFIG_USERNAME and
+NETCONFIG_PASSWORD, or per credential group); NETBACKUP_* names are accepted too.
+
 Exit status: 0 every device succeeded, 1 usage or configuration error,
 2 at least one device failed.
 
 Platforms: %s
-
-Flags:
 `
 
 // newBackupTransport builds the session opener for a backup run. Tests replace
@@ -53,27 +56,40 @@ var newBackupTransport = func(hostKey sshclient.HostKeyCallback, legacy bool, po
 	return sshTransport{hostKey: hostKey, legacy: legacy, pool: pool, autoFallback: autoFallback, tcpMSS: tcpMSS}
 }
 
-// backupOpts holds the command line of "netconfig backup".
+// backupOpts holds the command line of "netconfig backup": the flags every
+// connecting command shares, plus those specific to backups.
 type backupOpts struct {
-	inventory, backupDir, logDir, logFormat, envFile, keyFile string
-	limit                                                     string
-	retries                                                   int
-	retryDelay, dialJitter                                    time.Duration
-	concurrency                                               int
-	connectTimeout, commandTimeout                            time.Duration
-	redact, force, dryRun, diff, ignoreVolatile               bool
-	retentionCount, retentionDays                             int
-	knownHosts, hostKeyPolicy                                 string
-	updateKnownHosts, insecureHostKey                         bool
-	legacyAlgorithms, resultTable                             bool
-	volatilePatterns, goldenDir, complianceRules              string
-	htmlReport, mdReport, jsonReport, csvReport               string
-	jump                                                      bool
-	jumpHost, jumpUser, jumpPassword, jumpKeyFile             string
-	tcpMSS                                                    int
-	memory                                                    bool
-	memoryFile                                                string
-	meshFallback, noColor, verbose                            bool
+	commonFlags
+
+	backupDir string
+	logFormat string
+
+	retries                int
+	retryDelay, dialJitter time.Duration
+	retentionCount         int
+	retentionDays          int
+	redact, force, dryRun  bool
+	diff, ignoreVolatile   bool
+	resultTable            bool
+	insecureHostKey        bool
+	verbose                bool
+	volatilePatterns       string
+	goldenDir              string
+	complianceRules        string
+	htmlReport, mdReport   string
+	jsonReport, csvReport  string
+}
+
+// backupFlagGroups organises the help. Every flag of the command must appear in
+// one of them (a test enforces it, and anything missed is still listed under
+// "Other flags").
+var backupFlagGroups = []flagGroup{
+	{"Devices", []string{"inventory", "limit", "concurrency", "dry-run"}},
+	{"Backups", []string{"backup-dir", "retention-count", "retention-days", "redact", "force", "ignore-volatile", "volatile-patterns", "diff"}},
+	{"Reports and compliance", []string{"golden-dir", "compliance-rules", "result-table", "html-report", "md-changelog", "json-report", "csv-report"}},
+	{"Connection", []string{"connect-timeout", "command-timeout", "retries", "retry-delay", "dial-jitter", "env-file", "key-file", "host-key-policy", "update-known-hosts", "known-hosts", "insecure-ignore-host-key", "legacy-algorithms", "tcp-mss"}},
+	{"Jump hosts and routing", []string{"jump", "jump-host", "jump-user", "jump-password", "jump-key-file", "mesh-fallback", "memory", "memory-file"}},
+	{"Logging", []string{"log-dir", "log-format", "no-color", "verbose"}},
 }
 
 // newBackupFlagSet declares the flags. The names follow the task's
@@ -85,11 +101,10 @@ func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
 		fmt.Fprintf(stderr, backupUsageText, strings.Join(vendor.Names(), ", "))
-		fs.PrintDefaults()
+		printFlagGroups(stderr, fs, backupFlagGroups)
 	}
+	o.register(fs)
 
-	fs.StringVar(&o.inventory, "inventory", "inventory.csv", "inventory CSV: hostname,address,port,vendor,credential_group")
-	fs.StringVar(&o.limit, "limit", "", "only these devices: comma-separated hostname globs, or @group")
 	fs.StringVar(&o.backupDir, "backup-dir", "backups", "directory to write backup files into")
 	fs.StringVar(&o.backupDir, "out", "backups", "alias for -backup-dir")
 	fs.IntVar(&o.retentionCount, "retention-count", 10, "maximum number of recent backups to keep per device (0 to disable)")
@@ -111,42 +126,26 @@ func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {
 	fs.BoolVar(&o.resultTable, "result-table", true, "print a per-device result table to stdout after the run")
 	fs.BoolVar(&o.dryRun, "dry-run", false, "test connection, login and paging setup without pulling or saving configuration")
 
-	fs.IntVar(&o.concurrency, "concurrency", 10, "maximum number of devices to back up in parallel")
 	fs.IntVar(&o.retries, "retries", 0, "retry attempts per device after a connection failure (never after a rejected login)")
 	fs.DurationVar(&o.retryDelay, "retry-delay", 2*time.Second, "delay between retries per device")
 	fs.DurationVar(&o.dialJitter, "dial-jitter", 100*time.Millisecond, "random delay up to this value before each connection (0 to disable)")
-	fs.DurationVar(&o.connectTimeout, "connect-timeout", 10*time.Second, "TCP connect + SSH handshake timeout per device")
-	fs.DurationVar(&o.commandTimeout, "command-timeout", 30*time.Second, "per-command time budget; the backup command itself gets 3x")
 
-	fs.StringVar(&o.envFile, "env-file", ".env", "optional .env file holding NETCONFIG_USERNAME / NETCONFIG_PASSWORD (NETBACKUP_* names are accepted too)")
-	fs.StringVar(&o.keyFile, "key-file", "", "SSH private key file for device authentication (overrides NETCONFIG_KEY_FILE)")
-	fs.StringVar(&o.knownHosts, "known-hosts", "", "OpenSSH known_hosts file used to verify device host keys (default: ~/.ssh/known_hosts)")
-	fs.StringVar(&o.hostKeyPolicy, "host-key-policy", "update", "host keys: 'strict' (reject unknown/changed), 'accept-new' (learn new), or 'update' (learn new and replace changed keys)")
 	fs.StringVar(&o.hostKeyPolicy, "known-hosts-policy", "update", "alias for -host-key-policy")
-	fs.BoolVar(&o.updateKnownHosts, "update-known-hosts", false, "alias for -host-key-policy update")
-	fs.BoolVar(&o.updateKnownHosts, "replace-host-keys", false, "alias for -update-known-hosts")
 	fs.BoolVar(&o.insecureHostKey, "insecure-ignore-host-key", false, "DANGEROUS: skip host key verification entirely (exposes connections to MITM)")
-	fs.BoolVar(&o.legacyAlgorithms, "legacy-algorithms", true, "allow legacy SSH algorithms (3des-cbc, diffie-hellman-group1-sha1, ssh-dss) as a fallback for older gear")
-	fs.IntVar(&o.tcpMSS, "tcp-mss", 1360, "TCP Maximum Segment Size for outgoing SSH sockets (0 = OS default)")
 
-	fs.BoolVar(&o.jump, "jump", true, "enable jump host / bastion routing (false connects every device directly)")
-	fs.StringVar(&o.jumpHost, "jump-host", "", "global default bastion host[:port] for devices not reachable directly")
-	fs.StringVar(&o.jumpUser, "jump-user", "", "SSH username for the global jump host (overrides NETCONFIG_JUMP_USERNAME)")
-	fs.StringVar(&o.jumpPassword, "jump-password", "", "SSH password for the global jump host (visible in the process list; prefer NETCONFIG_JUMP_PASSWORD)")
-	fs.StringVar(&o.jumpKeyFile, "jump-key-file", "", "SSH private key file for the global jump host (overrides NETCONFIG_JUMP_KEY_FILE)")
-	fs.BoolVar(&o.meshFallback, "mesh-fallback", false, "if a direct connection fails, try tunnelling through neighbouring inventory devices (off by default: it routes credentials through other devices)")
-	fs.BoolVar(&o.memory, "memory", true, "remember learned routing and fallback paths across runs")
-	fs.StringVar(&o.memoryFile, "memory-file", memory.DefaultFile, "persistent memory file for learned device routes")
-
-	fs.StringVar(&o.logDir, "log-dir", "logs", "directory to write run logs into")
 	fs.StringVar(&o.logFormat, "log-format", "text", "log format: only 'text' is supported (use -json-report for machine-readable results)")
-	fs.BoolVar(&o.noColor, "no-color", false, "disable colored output")
 	fs.BoolVar(&o.verbose, "verbose", false, "log the connection and login steps for each device")
 	return fs
 }
 
 // runBackup is "netconfig backup".
 func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
+	// "backup show" is a subcommand of backup. Only the first argument selects
+	// it, so a flag value that happens to be "show" (-limit show) does not.
+	if len(args) > 0 && args[0] == "show" {
+		return runBackupShow(args[1:], stdin, stdout, stderr)
+	}
+
 	var o backupOpts
 	fs := newBackupFlagSet(&o, stderr)
 	if err := fs.Parse(args); err != nil {
@@ -175,7 +174,7 @@ func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	if o.logFormat != "text" {
 		return fatal("-log-format %q is not supported (only 'text'); use -json-report for machine-readable results", o.logFormat)
 	}
-	if o.updateKnownHosts {
+	if o.updateKnownHosts || o.replaceHostKeys {
 		o.hostKeyPolicy = "update"
 	}
 	if o.insecureHostKey {

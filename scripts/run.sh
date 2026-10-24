@@ -77,12 +77,12 @@ else
     fi
 fi
 
-# A subcommand (backup, show-backup) as the first argument is passed through
-# untouched. Otherwise this is the classic configuration runner, which falls
-# back to commands.txt unless told where its commands come from.
+# A subcommand (backup, and "backup show" under it) as the first argument is
+# passed through untouched. Otherwise this is the classic configuration runner,
+# which falls back to commands.txt unless told where its commands come from.
 HAS_CMD=0
 case "$1" in
-    backup|show-backup)
+    backup)
         HAS_CMD=1
         ;;
     *)

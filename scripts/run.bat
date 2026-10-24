@@ -7,7 +7,7 @@ rem Created:       2026-10-10
 rem Version:       1.0.0
 rem License:       MIT
 rem ==============================================================================
-rem Usage:         run.bat [options]   |   run.bat backup [options]   |   run.bat show-backup [options]
+rem Usage:         run.bat [options]   |   run.bat backup [options]   |   run.bat backup show [options]
 rem Notes:         every argument, including a leading subcommand, is passed to the binary as is
 rem ==============================================================================
 
