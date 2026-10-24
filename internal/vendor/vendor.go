@@ -757,7 +757,7 @@ func newVyOS() *Profile {
 		Name:          VyOS,
 		Display:       "VyOS",
 		Prompt:        reVyOSPrompt,
-		DisablePaging: []string{"set console page off"},
+		DisablePaging: []string{"set terminal length 0"},
 		Confirms:      genericConfirms,
 		ErrorPatterns: []*regexp.Regexp{reVyOSErr},
 		BackupCommand: "show configuration commands",
