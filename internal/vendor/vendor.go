@@ -193,15 +193,17 @@ type Profile struct {
 
 	Prompt        *regexp.Regexp   // matches the last output line when the device is ready for input
 	UserPrompt    *regexp.Regexp   // unprivileged prompt; if matched, EnableCommand is needed first
+	PromptPrefix  *regexp.Regexp   // optional multi-line prompt prefix (e.g. Junos "{master:0}") stripped with the prompt
 	EnableCommand string           // "" when the vendor has no privilege escalation step
 	DisablePaging []string         // session-local commands that turn the pager off
 	Pagers        []*regexp.Regexp // "--More--" style markers; answered with a space
 	Confirms      []Confirm
-	ErrorPatterns []*regexp.Regexp // matched per output line
-	BackupCommand string           // prints the full running configuration
-	EndMarkers    []string         // substrings expected at or near end of untruncated backup (e.g. "\nend", "\nreturn")
-	EndAnchored   bool             // EndMarkers must end the output, not merely occur in it (for terminators that also appear mid-config)
-	CandidateDiff string           // read-only command inside config mode to inspect candidate diff (e.g. "show | compare")
+	ErrorPatterns []*regexp.Regexp         // matched per output line
+	BackupCommand string                   // prints the full running configuration
+	EndMarkers    []string                 // substrings expected at or near end of untruncated backup (e.g. "\nend", "\nreturn")
+	EndAnchored   bool                     // EndMarkers must end the output, not merely occur in it (for terminators that also appear mid-config)
+	ValidateTail  func(output string) bool // optional fallback validation when EndAnchored is true but trailing global config is present
+	CandidateDiff string                   // read-only command inside config mode to inspect candidate diff (e.g. "show | compare")
 
 	probe         string
 	apply         []Step // StepBody is a placeholder for the user's commands
@@ -236,6 +238,9 @@ func (p *Profile) ValidateBackup(output string) error {
 			return nil
 		}
 	}
+	if p.ValidateTail != nil && p.ValidateTail(output) {
+		return nil
+	}
 	return fmt.Errorf("%q output appears truncated: expected end marker %v not found", p.BackupCommand, p.EndMarkers)
 }
 
@@ -256,13 +261,14 @@ func (p *Profile) Safety() RollbackSafety { return p.safety }
 func (p *Profile) ProbeCommand() string { return p.probe }
 
 var (
-	reIOSPrompt        = regexp.MustCompile(`^[\w.\-/:~()]+[#>]\s*$`)
-	reIOSUserPrompt    = regexp.MustCompile(`^[\w.\-/:~()]+>\s*$`)
-	reJunosPrompt      = regexp.MustCompile(`^[\w.\-]+@[\w.\-:]+[>#%]\s*$`)
-	reHuaweiPrompt     = regexp.MustCompile(`^[<\[][~*\w.\-/:]+[>\]]\s*$`)
-	reFortiPrompt      = regexp.MustCompile(`^\S+(?: \([^()]+\))? ?[#$]\s*$`)
-	reVyOSPrompt       = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:(?::\S*)?[$#]|#)\s*$`)
-	reCheckPointPrompt = regexp.MustCompile(`^[\w.\-]+>\s*$`)
+	reIOSPrompt         = regexp.MustCompile(`^[\w.\-/:~()]+[#>]\s*$`)
+	reIOSUserPrompt     = regexp.MustCompile(`^[\w.\-/:~()]+>\s*$`)
+	reJunosPrompt       = regexp.MustCompile(`^[\w.\-]+@[\w.\-:]+[>#%]\s*$`)
+	reJunosPromptPrefix = regexp.MustCompile(`(?i)^\s*(\{(?:master|backup|primary|secondary|linecard|node\d+)(?::[^\}]+)?\}|\[edit(?:\s+[^\]]*)?\])\s*$`)
+	reHuaweiPrompt      = regexp.MustCompile(`^[<\[][~*\w.\-/:]+[>\]]\s*$`)
+	reFortiPrompt       = regexp.MustCompile(`^\S+(?: \([^()]+\))* ?[#$]\s*$`)
+	reVyOSPrompt        = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:(?::\S*)?[$#]|#)\s*$`)
+	reCheckPointPrompt  = regexp.MustCompile(`^[\w.\-]+>\s*$`)
 
 	rePaloAltoPrompt = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:>|#)\s*$`)
 	rePfSensePrompt  = regexp.MustCompile(`^(?:\[[\w.\-]+@[\w.\-]+\][^#$]*[#$]\s*$|Enter an option:\s*$)`)
@@ -270,9 +276,9 @@ var (
 	reSophosMenu     = regexp.MustCompile(`(?i)^Select Menu Number \[[0-9\-]+\]:\s*$`)
 	reRouterOSPrompt = regexp.MustCompile(`^\[[^@\s]+@[^\]\s]+\](?:\s+[^>#]+)*\s*[>#]\s*$`)
 
-	rePagerMore   = regexp.MustCompile(`--\s*More\s*--`)
-	rePagerHuawei = regexp.MustCompile(`----\s*More\s*----`)
-	rePagerJunos  = regexp.MustCompile(`---\(more(?:\s+\d+%)?\)---`)
+	rePagerMore   = regexp.MustCompile(`(?i)--\s*More\s*--`)
+	rePagerHuawei = regexp.MustCompile(`(?i)----\s*More\s*----`)
+	rePagerJunos  = regexp.MustCompile(`(?i)---\(more(?:\s+\d+%)?\)---`)
 
 	reCiscoErr      = regexp.MustCompile(`(?i)^\s*%\s*(?:invalid|incomplete|ambiguous|unrecognized|unknown|bad\s|authorization failed|access denied)`)
 	reAristaErr     = regexp.MustCompile(`(?i)^\s*%\s*(?:invalid|incomplete|ambiguous|unrecognized|unknown|unavailable|error|bad\s|authorization failed|access denied)`)
@@ -296,6 +302,41 @@ var reASAErr = regexp.MustCompile(`(?i)^\s*error:`)
 // rePagerSB is the SF/SG/CBS pager ("More: <space>, Quit: q or CTRL+Z, One
 // line: <return>"); the IOS "--More--" form does not match it.
 var rePagerSB = regexp.MustCompile(`(?i)more:\s*<space>`)
+
+// reCiscoSBBlock matches lines that open a sub-configuration block (e.g. interfaces,
+// VLAN database, lines) which must be closed with an "exit" command.
+var reCiscoSBBlock = regexp.MustCompile(`(?i)^\s*(interface|vlan\s+database|line|router|policy-map|class-map)\b`)
+
+// reCiscoSBTerminator matches an "exit" or "end" command line.
+var reCiscoSBTerminator = regexp.MustCompile(`(?i)^\s*(exit|end)\s*$`)
+
+// validateCiscoSBTail verifies that for Cisco Small Business switches, if global configuration
+// commands (such as "banner login", "ip default-gateway", "snmp-server") follow the final
+// interface block's "exit", no subsequent sub-configuration block was left unclosed.
+func validateCiscoSBTail(output string) bool {
+	lines := strings.Split(output, "\n")
+	lastTerm := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimRight(lines[i], "\r \t")
+		if reCiscoSBTerminator.MatchString(line) {
+			lastTerm = i
+			break
+		}
+	}
+	if lastTerm < 0 {
+		return false
+	}
+	for i := lastTerm + 1; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" || line == "!" {
+			continue
+		}
+		if reCiscoSBBlock.MatchString(line) {
+			return false
+		}
+	}
+	return true
+}
 
 // reASASave is the ASA's "System config has been modified. Save? [Y]es/[N]o:",
 // which the generic "[y/n]" / "[yes/no]" patterns do not match.
@@ -527,8 +568,14 @@ func ciscoLike(name, display string, errRe *regexp.Regexp) *Profile {
 }
 
 // newCisco is classic IOS: the only on-box deadman is a timed reload.
+// It also accommodates Cisco Small Business (SF/SG/CBS) and ASA when generic
+// "cisco" is specified in the inventory.
 func newCisco() *Profile {
 	p := ciscoLike(Cisco, "Cisco IOS/IOS-XE", reCiscoErr)
+	p.DisablePaging = []string{"terminal length 0", "terminal datadump", "terminal pager 0"}
+	p.Pagers = append(p.Pagers, rePagerSB)
+	p.EndMarkers = []string{"\nend", "\r\nend", "\nexit", "\r\nexit", "\n: end", ": end\n"}
+	p.ValidateTail = validateCiscoSBTail
 	p.safety = RollbackRebootOnly
 	// "reload in" first offers to save the running configuration (answered
 	// "yes" by the generic confirms), which stores the pre-change state that
@@ -586,6 +633,7 @@ func newCiscoSB() *Profile {
 	// proves nothing: it only terminates the backup when it is the last line.
 	// The backup is also the only rollback source here (no on-box deadman).
 	p.EndAnchored = true
+	p.ValidateTail = validateCiscoSBTail
 	// Saving asks "Overwrite file [startup-config].... (Y/N)[N] ?" instead of
 	// IOS's "Destination filename [startup-config]?", and the default is N, so
 	// an unanswered prompt would leave the change unsaved. A new slice is built
@@ -669,6 +717,7 @@ func newJunos() *Profile {
 		Name:          Junos,
 		Display:       "Juniper Junos",
 		Prompt:        reJunosPrompt,
+		PromptPrefix:  reJunosPromptPrefix,
 		DisablePaging: []string{"set cli screen-length 0"},
 		Pagers:        []*regexp.Regexp{rePagerJunos},
 		Confirms:      genericConfirms,
@@ -742,10 +791,11 @@ func newFortinet() *Profile {
 		Name:          Fortinet,
 		Display:       "Fortinet FortiOS",
 		Prompt:        reFortiPrompt,
+		DisablePaging: []string{"config system console", "set output standard", "end"},
 		Pagers:        []*regexp.Regexp{rePagerMore},
 		Confirms:      genericConfirms,
 		ErrorPatterns: []*regexp.Regexp{reFortiErr},
-		BackupCommand: "show full-configuration",
+		BackupCommand: "show",
 		probe:         "get system status",
 		apply:         []Step{{Kind: StepBody}},
 		applyCleanup:  []Step{{Kind: StepExit, Line: "abort", IgnoreError: true}},
@@ -805,6 +855,7 @@ func newRuijie() *Profile {
 
 func newAruba() *Profile {
 	p := ciscoLike(Aruba, "Aruba AOS-CX/AOS-S", reCiscoErr)
+	p.DisablePaging = []string{"no page", "terminal length 0"}
 	p.EndMarkers = nil
 	return p
 }
