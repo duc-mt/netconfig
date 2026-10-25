@@ -225,7 +225,7 @@ func TestBackupOverRealSSH(t *testing.T) {
 	defer in.Close()
 	var out, errb strings.Builder
 	code := dispatch([]string{
-		"backup", "-inventory", inv, "-env-file", env,
+		"backup", "-inventory", inv, "-env-file", env, "-redact",
 		"-backup-dir", filepath.Join(dir, "backups"), "-log-dir", filepath.Join(dir, "logs"),
 		"-known-hosts", filepath.Join(dir, "known_hosts"), "-host-key-policy", "accept-new",
 		"-memory=false", "-jump=false", "-tcp-mss", "0", "-dial-jitter", "0", "-no-color",

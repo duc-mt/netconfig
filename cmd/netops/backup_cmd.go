@@ -35,11 +35,14 @@ Usage:
   netops backup [flags]                       back up the devices in the inventory
   netops backup show [flags] [node-name]      view or locate the newest saved backup
                                                  (see: netops backup show -h)
+  netops backup redact [flags] <file-or-dir>  mask secrets in saved backup files or directories
+                                                 (see: netops backup redact -h)
 
 Each device's configuration is saved as <backup-dir>/<run>/<platform>/<host>.<ext>.
 A device whose configuration is unchanged since its last backup is not written
-again (volatile lines such as clock stamps are ignored when comparing), and
-secrets are masked in the saved files unless -redact=false.
+again (volatile lines such as clock stamps are ignored when comparing). By default,
+configurations are saved unredacted so they can be restored. Pass -redact to mask
+passwords and secrets with <REDACTED>.
 
 Credentials come from -env-file or the environment (NETOPS_USERNAME and
 NETOPS_PASSWORD, or per credential group).
@@ -110,7 +113,7 @@ func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {
 	fs.StringVar(&o.backupDir, "out", "backups", "alias for -backup-dir")
 	fs.IntVar(&o.retentionCount, "retention-count", 10, "maximum number of recent backups to keep per device (0 to disable)")
 	fs.IntVar(&o.retentionDays, "retention-days", 0, "prune backups older than N days per device (0 to disable)")
-	fs.BoolVar(&o.redact, "redact", true, "mask passwords, pre-shared keys, and SNMP communities in saved files")
+	fs.BoolVar(&o.redact, "redact", false, "mask passwords, pre-shared keys, and SNMP communities in saved files")
 	fs.BoolVar(&o.force, "force", false, "save a new backup file even if the configuration is identical to the previous backup")
 	fs.BoolVar(&o.force, "save-unchanged", false, "alias for -force")
 	fs.BoolVar(&o.ignoreVolatile, "ignore-volatile", true, "ignore volatile lines (clock stamps, \"last changed\" comments, ...) when detecting changes; saved files are never modified")
@@ -142,10 +145,15 @@ func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {
 
 // runBackup is "netconfig backup".
 func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
-	// "backup show" is a subcommand of backup. Only the first argument selects
-	// it, so a flag value that happens to be "show" (-limit show) does not.
-	if len(args) > 0 && args[0] == "show" {
-		return runBackupShow(args[1:], stdin, stdout, stderr)
+	// "backup show" and "backup redact" are subcommands of backup. Only the first argument
+	// selects them, so a flag value that happens to match (-limit show) does not.
+	if len(args) > 0 {
+		switch args[0] {
+		case "show":
+			return runBackupShow(args[1:], stdin, stdout, stderr)
+		case "redact":
+			return runBackupRedact(args[1:], stdin, stdout, stderr)
+		}
 	}
 
 	var o backupOpts

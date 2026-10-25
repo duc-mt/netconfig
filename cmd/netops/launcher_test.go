@@ -71,6 +71,8 @@ func TestLauncherRoutesSubcommandsWithoutAppendingCommands(t *testing.T) {
 		{"backup show", []string{"backup", "show", "-l"}, []string{"backup", "show", "-l"}},
 		{"backup show node", []string{"backup", "show", "-d", "core-sw1"}, []string{"backup", "show", "-d", "core-sw1"}},
 		{"backup show help", []string{"backup", "show", "--help"}, []string{"backup", "show", "--help"}},
+		{"backup redact help", []string{"backup", "redact", "--help"}, []string{"backup", "redact", "--help"}},
+		{"backup redact file", []string{"backup", "redact", "sw1.cfg"}, []string{"backup", "redact", "sw1.cfg"}},
 
 		// the config subcommand defaults to commands.txt
 		{"config without flags", []string{"config"}, []string{"config", "-commands", "commands.txt"}},

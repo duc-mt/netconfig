@@ -171,15 +171,15 @@ func TestBackupCommandEndToEnd(t *testing.T) {
 		t.Errorf("a failed device left a file: %s", files)
 	}
 
-	// the secret was masked on disk
+	// by default (-redact=false), secrets are preserved for restore
 	var sw1 string
 	for _, f := range e.savedFiles() {
 		if strings.HasSuffix(f, "/cisco_ios/sw1.cfg") {
 			sw1 = e.read("backups", filepath.FromSlash(f))
 		}
 	}
-	if strings.Contains(sw1, "XyZ123hashvalue") || !strings.Contains(sw1, "<REDACTED>") {
-		t.Errorf("enable secret not masked in the saved file:\n%s", sw1)
+	if !strings.Contains(sw1, "XyZ123hashvalue") {
+		t.Errorf("expected secret preserved in the saved file for restore:\n%s", sw1)
 	}
 
 	// the run summary and the result table
@@ -343,13 +343,35 @@ func TestBackupCommandMissingCredentialsFailTheDeviceNotTheRun(t *testing.T) {
 	}
 }
 
+func TestBackupCommandWithRedactFlag(t *testing.T) {
+	e := newBackupEnv(t, threeDevices)
+	e.tr.output["sw1"] = iosBackup
+	e.tr.output["r1"] = "set system host-name r1\nset interfaces ge-0/0/0 description uplink"
+	e.tr.authFail["locked"] = true
+
+	code, _, _ := e.run("-redact")
+	if code != task.ExitPartial {
+		t.Fatalf("exit %d, want %d", code, task.ExitPartial)
+	}
+
+	var sw1 string
+	for _, f := range e.savedFiles() {
+		if strings.HasSuffix(f, "/cisco_ios/sw1.cfg") {
+			sw1 = e.read("backups", filepath.FromSlash(f))
+		}
+	}
+	if strings.Contains(sw1, "XyZ123hashvalue") || !strings.Contains(sw1, "<REDACTED>") {
+		t.Errorf("enable secret not masked when -redact is set:\n%s", sw1)
+	}
+}
+
 func TestBackupCommandRetentionDefaultsToTen(t *testing.T) {
 	var o backupOpts
 	fs := newBackupFlagSet(&o, &bytes.Buffer{})
 	if err := fs.Parse(nil); err != nil {
 		t.Fatal(err)
 	}
-	if o.retentionCount != 10 || o.retentionDays != 0 || !o.redact || o.concurrency != 10 || o.backupDir != "backups" {
+	if o.retentionCount != 10 || o.retentionDays != 0 || o.redact || o.concurrency != 10 || o.backupDir != "backups" {
 		t.Errorf("defaults: %+v", o)
 	}
 	if o.meshFallback {

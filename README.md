@@ -443,17 +443,20 @@ line on Small Business, whose `exit` also closes every block). A truncated captu
 * **Retention** keeps the newest `-retention-count` backups per device (default **10**; 0 disables) and,
   with `-retention-days N`, deletes those older than N days. Only `backup-*` run directories are touched.
 
-### Secrets are masked on disk
+### Restorable by default, with optional redaction
 
-With `-redact` (default on) passwords, password and enable hashes, pre-shared keys, SNMP communities,
-RADIUS/TACACS keys and similar are replaced by `<REDACTED>` before anything is written. It understands
-the multi-token forms of each platform (`enable password level 15 encrypted <hash>`, `username x
-password encrypted <hash>`, ASA `ikev1 pre-shared-key` / `failover key` / `snmp-server host ... community`).
+By default, configurations are saved unredacted (`-redact=false`) so they can be natively restored or imported
+into devices during disaster recovery. Because backup directories are excluded from Git and created with restricted
+permissions (`0700` directories, `0600` files), raw hashes and secrets are safely retained for recovery.
 
-* **Limitation:** because secrets are stored masked, *rotating* a password produces no diff. Creating,
+If you wish to mask secrets directly at backup time, pass `-redact` (or `-redact=true`). Passwords, password and
+enable hashes, pre-shared keys, SNMP communities, RADIUS/TACACS keys and similar are replaced by `<REDACTED>`
+before anything is written. It understands the multi-token forms of each platform (`enable password level 15 encrypted <hash>`,
+`username x password encrypted <hash>`, ASA `ikev1 pre-shared-key` / `failover key` / `snmp-server host ... community`).
+
+* **Limitation when redacting:** because secrets are stored masked, *rotating* a password produces no diff. Creating,
   deleting or re-parameterising a user or community is still detected.
-* Masking is pattern based. It is a safety net, not a vault: keep the backup directory access-controlled,
-  and use `-redact=false` only where you need restorable configurations and trust the storage.
+* To redact existing backups before sharing, transferring, or archiving, use the **`backup redact`** subcommand.
 
 ### Risk classification
 
@@ -518,7 +521,7 @@ or a command the device refused. A device whose credentials are missing is not c
 | `-limit` | all | hostname globs (comma-separated) or `@group` |
 | `-backup-dir` (`-out`) | `backups` | where run directories are created |
 | `-retention-count` / `-retention-days` | `10` / `0` | how many / how old to keep (0 = no limit) |
-| `-redact` | on | mask secrets in saved files |
+| `-redact` | off | mask secrets in saved files (off by default for restorable backups) |
 | `-force` (`-save-unchanged`) | off | save even if unchanged |
 | `-ignore-volatile`, `-volatile-patterns` | on, none | semantic diff |
 | `-golden-dir`, `-compliance-rules` | none | drift checking |
@@ -547,6 +550,40 @@ or a command the device refused. A device whose credentials are missing is not c
 It honours `-backup-dir` and works for every platform's extension. When several devices match and there
 is no terminal to ask on, it lists them and exits `1`. Only the *first* argument after `backup` selects
 `show`, so a flag value such as `-limit show` is still a device filter.
+
+### Sanitizing & exporting backups: `backup redact`
+
+`redact` is a subcommand of `backup` used to mask passwords, pre-shared keys, hashes, and SNMP community
+strings in an existing backup file or directory before sharing or external transfer:
+
+```sh
+# Redact a single configuration to stdout (or pipe to a file / clipboard):
+./run backup redact backups/latest/cisco_ios/sw1.cfg > sw1.clean.cfg
+
+# Redact a single file to a specific output file:
+./run backup redact -o sw1.clean.cfg backups/latest/cisco_ios/sw1.cfg
+
+# Package a redacted single file directly into a .zip archive:
+./run backup redact -o sw1-sanitized.zip backups/latest/cisco_ios/sw1.cfg
+
+# Redact an entire backup run directory into a new directory:
+./run backup redact -o backups/sanitized/ backups/backup-2026-10-25-1600
+
+# Redact a directory with default output path (<dir>-redacted):
+./run backup redact backups/backup-2026-10-25-1600
+
+# Package an entire redacted backup directory directly into a .zip archive:
+./run backup redact -o backup-export.zip backups/backup-2026-10-25-1600
+
+# Overwrite files in-place with redacted content:
+./run backup redact -i backups/staging/sw1.cfg
+```
+
+Flags:
+* **`-o, -output <path>`**: destination file, directory, or `.zip` archive.
+* **`-zip`**: package output as a `.zip` archive (also inferred automatically if `-o` ends in `.zip`).
+* **`-i, -in-place`**: overwrite files in-place with redacted content.
+* **`-v, -verbose`**: display detailed progress and summary counts.
 
 ### Restoring from Backup & Disaster Recovery
 

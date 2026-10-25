@@ -61,11 +61,12 @@ Usage:
   netops <subcommand> [flags]
 
 Subcommands:
-  config       apply configuration commands to network devices (netops config -h)
-  backup       archive device configurations, detect changes (netops backup -h)
-  backup show  view, diff or locate saved backups (netops backup show -h)
-  init         generate sample inventory.csv, commands.txt, and .env templates
-  version      display version information
+  config         apply configuration commands to network devices (netops config -h)
+  backup         archive device configurations, detect changes (netops backup -h)
+  backup show    view, diff or locate saved backups (netops backup show -h)
+  backup redact  mask secrets in saved backup files or directories (netops backup redact -h)
+  init           generate sample inventory.csv, commands.txt, and .env templates
+  version        display version information
 
 Run 'netops <subcommand> -h' for flags and usage of a specific subcommand.
 `
