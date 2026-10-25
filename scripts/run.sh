@@ -10,7 +10,7 @@
 # Usage:         ./run.sh [options] [arguments]
 # Notes:         Automated bash utility script
 # ==============================================================================
-# Universal launcher for netconfig: auto-detects OS & architecture and executes the appropriate binary.
+# Universal launcher for netops: auto-detects OS & architecture and executes the appropriate binary.
 
 OS=""
 ARCH=""

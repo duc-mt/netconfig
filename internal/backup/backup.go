@@ -11,7 +11,7 @@
 // command, write the result to disk, and report what happened -- without ever
 // letting one device's failure stop the others.
 //
-// Connecting is delegated to a task.Transport (netconfig's SSH engine), so
+// Connecting is delegated to a task.Transport (netops's SSH engine), so
 // jump hosts, host-key policy, legacy algorithms, learned routes and the
 // vendor-specific login/paging/enable handling are the same as for a
 // configuration run.

@@ -92,7 +92,7 @@ func Classify(device, stage string, err error) *Error {
 		return New(CategoryTimeout, device, stage, err)
 	}
 
-	// Typed errors (netconfig's SSH engine) say what went wrong themselves,
+	// Typed errors (netops's SSH engine) say what went wrong themselves,
 	// which is more reliable than matching words in their text.
 	if stage != "validate" {
 		var k interface{ ErrorKind() string }

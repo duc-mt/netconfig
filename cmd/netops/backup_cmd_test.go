@@ -502,7 +502,7 @@ func TestBackupShowIsSelectedByTheFirstArgumentOnly(t *testing.T) {
 	}
 }
 
-// "netconfig show-backup" no longer exists. Without a hint it would be taken
+// "netops show-backup" no longer exists. Without a hint it would be taken
 // for a commands file called show-backup and fail with a confusing message.
 func TestOldShowBackupFormSaysWhatToUseInstead(t *testing.T) {
 	in := openDevNull(t)

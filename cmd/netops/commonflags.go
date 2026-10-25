@@ -12,7 +12,7 @@ import (
 	"netops/internal/memory"
 )
 
-// commonFlags are the flags that mean the same thing wherever netconfig
+// commonFlags are the flags that mean the same thing wherever netops
 // connects to devices: which devices, how many at once, timeouts, credentials,
 // host-key policy, jump hosts, route memory and the log. They are declared once
 // here so the commands cannot drift apart in names, defaults or wording (they

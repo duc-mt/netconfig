@@ -1,4 +1,4 @@
-// Package ui implements terminal user interface components for netconfig,
+// Package ui implements terminal user interface components for netops,
 // including a live multi-line ANSI terminal progress dashboard with zero external dependencies.
 package ui
 

@@ -59,7 +59,7 @@ var newBackupTransport = func(hostKey sshclient.HostKeyCallback, legacy bool, po
 	return sshTransport{hostKey: hostKey, legacy: legacy, pool: pool, autoFallback: autoFallback, tcpMSS: tcpMSS}
 }
 
-// backupOpts holds the command line of "netconfig backup": the flags every
+// backupOpts holds the command line of "netops backup": the flags every
 // connecting command shares, plus those specific to backups.
 type backupOpts struct {
 	commonFlags
@@ -143,7 +143,7 @@ func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {
 	return fs
 }
 
-// runBackup is "netconfig backup".
+// runBackup is "netops backup".
 func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	// "backup show" and "backup redact" are subcommands of backup. Only the first argument
 	// selects them, so a flag value that happens to match (-limit show) does not.

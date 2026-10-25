@@ -1,4 +1,4 @@
-# Post-change health checks for -verify-file (netconfig -verify-file verify.txt ...).
+# Post-change health checks for -verify-file (netops -verify-file verify.txt ...).
 # The same blocks may be embedded in a commands file or template as comments that
 # start with "!@" or "#@"; those lines are never sent to a device.
 #

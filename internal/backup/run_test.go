@@ -24,7 +24,7 @@ import (
 	"netops/internal/vendor"
 )
 
-// kindErr is a typed failure like netconfig's sshclient.Error.
+// kindErr is a typed failure like netops's sshclient.Error.
 type kindErr struct{ kind, msg string }
 
 func (e *kindErr) Error() string     { return e.msg }
@@ -432,7 +432,7 @@ func TestRunAllReportsEachFailureWithoutStoppingTheOthers(t *testing.T) {
 		device("badauth", "10.0.0.2", "cisco"),
 		device("ghost", "10.0.0.3", "cisco"), // the transport does not know it: unreachable
 		device("cut", "10.0.0.4", "cisco"),
-		device("baddev", "10.0.0.5", "nosuchvendor"), // not a netconfig vendor
+		device("baddev", "10.0.0.5", "nosuchvendor"), // not a netops vendor
 	}
 	res := RunAll(context.Background(), devs, cfg)
 

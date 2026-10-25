@@ -11,7 +11,7 @@ import (
 
 // archiveSpec describes how one platform's backups are stored on disk.
 //
-// netconfig names its vendors differently from the standalone netbackup tool
+// netops names its vendors differently from the standalone netbackup tool
 // ("cisco" / "junos" / "fortinet" versus "cisco_ios" / "juniper_junos" /
 // "fortigate"). Backups keep netbackup's directory names and file extensions
 // so that an existing backup tree, its retention rules and the "diff against

@@ -24,7 +24,7 @@ const (
 	maxLoggedDrifts = 10
 )
 
-// Console renders a backup run for people. It writes through netconfig's
+// Console renders a backup run for people. It writes through netops's
 // logger, so every line also reaches the log file, plain and with registered
 // secrets masked.
 type Console struct {

@@ -8,7 +8,7 @@
 // Usage:         go run main.go [options]
 // Notes:         Go package implementation
 // ==============================================================================
-// Command netconfig applies configuration commands to many network devices
+// Command netops applies configuration commands to many network devices
 // over SSH, concurrently, with a dry-run mode, an explicit confirmation step,
 // optional pre-change backups and a full audit log. It is a single static
 // binary with no runtime dependencies, intended for air-gapped management
@@ -294,7 +294,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "Route memory cleared (%s).\n", cf.memoryFile)
 		return task.ExitOK
 	}
-	// Accept optional single positional argument as commands file (e.g. netconfig commands.txt)
+	// Accept optional single positional argument as commands file (e.g. netops commands.txt)
 	if *cmdsPath == "" && *tmplPath == "" {
 		if fs.NArg() == 1 {
 			*cmdsPath = fs.Arg(0)

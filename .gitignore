@@ -10,19 +10,14 @@ known_hosts
 Thumbs.db
 
 # Root builds and test coverage
-/netconfig*
 /netops*
 # a "go build" run inside cmd/netops leaves its binary there
 /cmd/netops/netops
 /cmd/netops/netops.exe
 /cmd/netops/*.test
-/cmd/netconfig/netconfig
-/cmd/netconfig/netconfig.exe
-/cmd/netconfig/*.test
 coverage.out
 *.out
 
 # Persistent route memory
-.netconfig_memory*
 .netops_memory*
 

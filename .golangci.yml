@@ -25,7 +25,7 @@ linters:
 
 linters-settings:
   goimports:
-    local-prefixes: netconfig
+    local-prefixes: netops
   revive:
     rules:
       - name: exported

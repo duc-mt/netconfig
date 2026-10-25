@@ -1,6 +1,6 @@
 // ==============================================================================
 // Package memory implements persistent route memory and auto-discovery caching
-// for netconfig so that devices requiring jump host fallback are remembered
+// for netops so that devices requiring jump host fallback are remembered
 // across invocations without requiring manual modifications to inventory.csv.
 // Author:        Mai Tan Duc <ducmai.network@gmail.com>
 // Created:       2026-10-17

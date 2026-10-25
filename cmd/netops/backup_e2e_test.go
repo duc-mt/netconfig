@@ -1,6 +1,6 @@
 // ==============================================================================
 // File name:     backup_e2e_test.go
-// Description:   "netconfig backup" against scripted devices over real SSH.
+// Description:   "netops backup" against scripted devices over real SSH.
 // License:       MIT
 // ==============================================================================
 package main

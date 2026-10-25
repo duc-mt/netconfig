@@ -487,7 +487,7 @@ func (l *linter) ssh(c cmdInfo) {
 	case portCmd && port > 0:
 		if port != l.port() {
 			l.add(c, RiskCritical, KindLockout, "ssh-port-changed", fmt.Sprintf(
-				"moves SSH to port %d while this session uses %d; new sessions (including netconfig's own rollback and verification sessions) will fail",
+				"moves SSH to port %d while this session uses %d; new sessions (including netops's own rollback and verification sessions) will fail",
 				port, l.port()))
 		}
 	case c.neg && reSSHRoot.MatchString(body):

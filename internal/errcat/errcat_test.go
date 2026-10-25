@@ -66,14 +66,14 @@ func TestClassify(t *testing.T) {
 	}
 }
 
-// kindError mimics netconfig's sshclient.Error: a typed failure whose kind is
+// kindError mimics netops's sshclient.Error: a typed failure whose kind is
 // available through ErrorKind() without importing the SSH package.
 type kindError struct{ kind, msg string }
 
 func (e *kindError) Error() string     { return e.msg }
 func (e *kindError) ErrorKind() string { return e.kind }
 
-// Errors from netconfig's SSH engine say what went wrong in ErrorKind(); that
+// Errors from netops's SSH engine say what went wrong in ErrorKind(); that
 // is more reliable than matching words in the message, which can be anything
 // (a prompt that never came, a host key policy, ...).
 func TestClassifyUsesErrorKind(t *testing.T) {

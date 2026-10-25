@@ -171,7 +171,7 @@ func (l *Logger) Block(level Level, host, prefix, text string) {
 }
 
 // DiffBlock is Block for unified-diff-style text (a vendor's own "show |
-// compare" / session-diff output, or netconfig's own before/after
+// compare" / session-diff output, or netops's own before/after
 // configuration diff): each line is prefixed like Block, and on a colour
 // console a line starting with "+" is shown in green and one starting
 // with "-" in red -- an added or removed configuration line stands out

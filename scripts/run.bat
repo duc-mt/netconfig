@@ -1,7 +1,7 @@
 @echo off
 rem ==============================================================================
 rem Script Name:   run.bat
-rem Description:   Universal launcher for NetConfig on Windows (amd64 binary).
+rem Description:   Universal launcher for NetOps on Windows (amd64 binary).
 rem Author:        Mai Tan Duc <ducmai.network@gmail.com>
 rem Created:       2026-10-10
 rem Version:       1.0.0

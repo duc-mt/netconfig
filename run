@@ -1,7 +1,7 @@
 #!/bin/sh
 # ==============================================================================
 # Script Name:   run
-# Description:   Universal cross-platform launcher for netconfig.
+# Description:   Universal cross-platform launcher for netops.
 # Usage:         ./run [options] [arguments]
 # ==============================================================================
 set -e

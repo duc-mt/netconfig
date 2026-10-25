@@ -39,7 +39,7 @@ func TestBackupsKeepNetbackupsDirectoriesAndExtensions(t *testing.T) {
 		}
 		seen[p.Name] = true
 	}
-	// every netconfig vendor is covered by that table: none falls back to a
+	// every netops vendor is covered by that table: none falls back to a
 	// generated directory name by accident
 	for _, name := range vendor.Names() {
 		if !seen[name] {
@@ -87,7 +87,7 @@ func TestArchiveResolvesMultipleCommandsForSophos(t *testing.T) {
 }
 
 // Existing netbackup inventories keep working: every vendor spelling netbackup
-// accepted still resolves, except the two platforms netconfig does not have.
+// accepted still resolves, except the two platforms netops does not have.
 func TestNetbackupVendorSpellingsStillResolve(t *testing.T) {
 	spellings := map[string]string{
 		"cisco_ios": "cisco", "ios": "cisco", "cisco_ios_xe": "cisco", "ios_xe": "cisco", "iosxe": "cisco",

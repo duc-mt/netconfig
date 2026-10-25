@@ -59,7 +59,7 @@ jobs:
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
-          name: netconfig-coverage
+          name: netops-coverage
           path: coverage.out
 
   build:
@@ -83,15 +83,15 @@ jobs:
       - name: Generate Checksums
         run: |
           cd bin
-          sha256sum netconfig-* > checksums.txt 2>/dev/null || shasum -a 256 netconfig-* > checksums.txt
+          sha256sum netops-* > checksums.txt 2>/dev/null || shasum -a 256 netops-* > checksums.txt
           cat checksums.txt
 
       - name: Upload pre-built binaries
         uses: actions/upload-artifact@v4
         with:
-          name: netconfig-binaries
+          name: netops-binaries
           path: |
-            bin/netconfig-*
+            bin/netops-*
             bin/checksums.txt
 
   release:
@@ -118,7 +118,7 @@ jobs:
       - name: Generate Checksums
         run: |
           cd bin
-          sha256sum netconfig-* > checksums.txt 2>/dev/null || shasum -a 256 netconfig-* > checksums.txt
+          sha256sum netops-* > checksums.txt 2>/dev/null || shasum -a 256 netops-* > checksums.txt
 
       - name: Determine Release Info
         id: release_info
@@ -143,7 +143,7 @@ jobs:
           name: ${{ steps.release_info.outputs.release_name }}
           body_path: release_body.md
           files: |
-            bin/netconfig-*
+            bin/netops-*
             bin/checksums.txt
           generate_release_notes: ${{ steps.release_info.outputs.generate_notes }}
           make_latest: "true"
