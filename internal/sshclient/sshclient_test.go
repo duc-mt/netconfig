@@ -19,6 +19,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -81,6 +82,7 @@ func TestCleanTerminal(t *testing.T) {
 		{"loading\r        \rdone\r\n", "done\n"},
 		{"--More--\b\b\b\b\b\b\b\b        \b\b\b\b\b\b\b\bline2\r\n", "line2\n"},
 		{"Router#", "Router#"},
+		{"\x1b[24;1Hno page\x1b[1M\x1b[1L\x1b[2K\x1b[24;1HDCTTN# ", "no page\nDCTTN# "},
 	}
 	for _, c := range cases {
 		if got := cleanTerminal(c.in); got != c.want {
@@ -105,6 +107,29 @@ func TestLastLineAndStripEcho(t *testing.T) {
 	// No echo present: nothing is removed.
 	if got := stripEcho("plain output", "show clock"); got != "plain output" {
 		t.Errorf("stripEcho = %q", got)
+	}
+}
+
+func TestStripPromptPrefix(t *testing.T) {
+	re := regexp.MustCompile(`(?i)^\s*(\{(?:master|backup|primary|secondary|linecard|node\d+)(?::[^\}]+)?\}|\[edit(?:\s+[^\]]*)?\])\s*$`)
+	body := "set system host-name r1\n{master:0}"
+	if got := stripPromptPrefix(body, re); got != "set system host-name r1" {
+		t.Errorf("stripPromptPrefix = %q, want %q", got, "set system host-name r1")
+	}
+
+	bodyCRLF := "set system host-name r1\r\n{backup:1}\r"
+	if got := stripPromptPrefix(bodyCRLF, re); got != "set system host-name r1" {
+		t.Errorf("stripPromptPrefix = %q, want %q", got, "set system host-name r1")
+	}
+
+	bodyMulti := "set system host-name r1\n{master:0}\n[edit]"
+	if got := stripPromptPrefix(bodyMulti, re); got != "set system host-name r1" {
+		t.Errorf("stripPromptPrefix = %q, want %q", got, "set system host-name r1")
+	}
+
+	bodyNormal := "set system host-name r1\nset interfaces ge-0/0/0"
+	if got := stripPromptPrefix(bodyNormal, re); got != bodyNormal {
+		t.Errorf("stripPromptPrefix = %q, want %q", got, bodyNormal)
 	}
 }
 
@@ -177,6 +202,8 @@ func TestBackupValidatesAsReturnedBySend(t *testing.T) {
 			"show running-config\r\n: Saved\r\n:\r\nASA Version 9.16(4)\r\n!\r\nhostname asa1\r\ninterface GigabitEthernet0/0\r\n nameif outside\r\n: end\r\nasa1#"},
 		{"small business", "cisco_sb",
 			"show running-config\r\nconfig-file-header\r\nswitch1a2b3c\r\nCLI v1.0\r\n@\r\n!\r\nvlan database\r\nvlan 10\r\nexit\r\ninterface gigabitethernet1\r\n description uplink\r\nexit\r\nswitch1a2b3c#"},
+		{"junos virtual chassis", "junos",
+			"show running-config\r\nset system host-name core-mx1\r\nset interfaces ge-0/0/0 unit 0 family inet address 10.0.0.1/24\r\n{master:0}\r\nadmin@core-mx1> "},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -477,6 +504,21 @@ func TestHostKeyPolicies(t *testing.T) {
 	}
 	if err := insecure("anything:22", other, keyB); err != nil {
 		t.Errorf("insecure policy rejected a key: %v", err)
+	}
+
+	// Jump host direct-tcpip tunnel zero-address test: multiple jump-routed devices
+	// presenting remote=0.0.0.0:0 must not collide in the in-memory session cache.
+	zeroRemote := &net.TCPAddr{IP: net.IPv4zero, Port: 0}
+	tunPath := filepath.Join(t.TempDir(), "known_hosts_tunnel")
+	tunAccept, err := NewHostKeyCallback(tunPath, PolicyAcceptNew)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tunAccept("10.10.1.1:22", zeroRemote, keyA); err != nil {
+		t.Fatalf("first jump target enroll failed: %v", err)
+	}
+	if err := tunAccept("10.10.2.2:22", zeroRemote, keyB); err != nil {
+		t.Fatalf("second jump target with different key must not collide on zero remote addr: %v", err)
 	}
 }
 

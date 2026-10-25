@@ -119,6 +119,22 @@ func ExpandHome(path string) string {
 	return path
 }
 
+func isValidRemoteAddr(remote net.Addr) bool {
+	if remote == nil {
+		return false
+	}
+	s := remote.String()
+	if s == "" || s == "0.0.0.0:0" || s == "[::]:0" {
+		return false
+	}
+	if tcp, ok := remote.(*net.TCPAddr); ok {
+		if tcp.IP == nil || tcp.IP.IsUnspecified() || tcp.Port == 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // NewHostKeyCallback builds the callback for policy using the OpenSSH-format
 // known_hosts file at path (with system-wide known_hosts consulted as read-only fallbacks
 // when path points to the standard user known_hosts file).
@@ -187,7 +203,17 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 	accepted := make(map[string]ssh.PublicKey)
 
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-		err := check(hostname, remote, key)
+		effectiveRemote := remote
+		if !isValidRemoteAddr(effectiveRemote) {
+			if host, port, err := net.SplitHostPort(hostname); err == nil {
+				var p int
+				_, _ = fmt.Sscanf(port, "%d", &p)
+				effectiveRemote = &net.TCPAddr{IP: net.ParseIP(host), Port: p}
+			} else {
+				effectiveRemote = nil
+			}
+		}
+		err := check(hostname, effectiveRemote, key)
 		if err == nil {
 			return nil
 		}
@@ -201,7 +227,7 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 				defer mu.Unlock()
 
 				// Re-check inside the lock in case another goroutine already updated it
-				if isHostKeyRecorded(path, hostname, remote, key) {
+				if isHostKeyRecorded(path, hostname, effectiveRemote, key) {
 					return nil
 				}
 
@@ -242,7 +268,7 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 				Err:    err,
 			}
 		}
-		if remote != nil {
+		if isValidRemoteAddr(remote) {
 			if prevKey, ok := accepted[remote.String()]; ok {
 				if string(prevKey.Marshal()) == string(key.Marshal()) {
 					return nil
@@ -263,14 +289,14 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 			}
 		}
 
-		if !isHostKeyRecorded(path, hostname, remote, key) {
+		if !isHostKeyRecorded(path, hostname, effectiveRemote, key) {
 			if aerr := appendKnownHost(path, hostname, key); aerr != nil {
 				return &HostKeyError{Host: hostname, Reason: "could not record new host key: " + aerr.Error(), Err: aerr}
 			}
 			reloadChecker()
 		}
 		accepted[hostname] = key
-		if remote != nil {
+		if isValidRemoteAddr(remote) {
 			accepted[remote.String()] = key
 		}
 		return nil
@@ -350,11 +376,13 @@ func isHostKeyRecorded(path string, hostname string, remote net.Addr, key ssh.Pu
 	if err != nil {
 		return false
 	}
-	if remote == nil {
+	if !isValidRemoteAddr(remote) {
 		if host, port, err := net.SplitHostPort(hostname); err == nil {
 			var p int
 			_, _ = fmt.Sscanf(port, "%d", &p)
 			remote = &net.TCPAddr{IP: net.ParseIP(host), Port: p}
+		} else {
+			remote = nil
 		}
 	}
 	return cb(hostname, remote, key) == nil
