@@ -245,7 +245,7 @@ func (p *Profile) ValidateBackup(output string) error {
 }
 
 func hasConfigMarkers(out string) bool {
-	markers := []string{"version ", "!", "#", "system", "interface", "config ", "set "}
+	markers := []string{"version ", "!", "#", "system", "interface", "config ", "set ", "<pfsense", "<?xml", "<config"}
 	for _, m := range markers {
 		if strings.Contains(out, "\n"+m) || strings.HasPrefix(out, m) {
 			return true
@@ -271,7 +271,7 @@ var (
 	reCheckPointPrompt  = regexp.MustCompile(`^[\w.\-]+>\s*$`)
 
 	rePaloAltoPrompt = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:>|#)\s*$`)
-	rePfSensePrompt  = regexp.MustCompile(`^(?:\[[\w.\-]+@[\w.\-]+\][^#$]*[#$]\s*$|Enter an option:\s*$)`)
+	rePfSensePrompt  = regexp.MustCompile(`^(?:(?:\[[^\]]+\])*\[[\w.\-]+@[\w.\-]+\][^:#$%]*[:#$%]\s*$|Enter an option:\s*$)`)
 	reSophosPrompt   = regexp.MustCompile(`^(?:[a-zA-Z0-9.\-]+_)?console>\s*$`)
 	reSophosMenu     = regexp.MustCompile(`(?i)^Select Menu Number \[[0-9\-]+\]:\s*$`)
 	reRouterOSPrompt = regexp.MustCompile(`^\[[^@\s]+@[^\]\s]+\](?:\s+[^>#]+)*\s*[>#]\s*$`)
@@ -289,7 +289,7 @@ var (
 	reCheckPointErr = regexp.MustCompile(`(?i)^\s*(?:CLISH|syntax error|unknown command|error:)`)
 	rePaloAltoErr   = regexp.MustCompile(`(?i)^\s*(?:Invalid syntax\.|Unknown command:|Server error)`)
 	rePfSenseMenu   = regexp.MustCompile(`^Enter an option:\s*$`)
-	rePfSenseErr    = regexp.MustCompile(`(?i)^\s*(?:[/\w.\-]+:\s*(?:not found|command not found|Permission denied|syntax error)|usage:)`)
+	rePfSenseErr    = regexp.MustCompile(`(?i)^\s*(?:(?:[/\w.\-]+:\s*)*(?:not found|command not found|Permission denied|syntax error)|usage:)`)
 	reSophosErr     = regexp.MustCompile(`(?i)^\s*(?:% Error:|Unknown parameter|Syntax Error)`)
 	reRouterOSErr   = regexp.MustCompile(`(?i)^\s*(?:bad command name|syntax error|failure:|script error:|no such item|interrupted)`)
 )

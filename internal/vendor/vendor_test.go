@@ -293,6 +293,11 @@ func TestPrompts(t *testing.T) {
 		{"mikrotik", "[admin@MikroTik] /ip route> ", true},
 		{"mikrotik", "[admin@MikroTik] # ", true},
 		{"mikrotik", "syntax error (line 1 column 5)", false},
+		{"pfsense", "Enter an option: ", true},
+		{"pfsense", "[admin@pfsense]# ", true},
+		{"pfsense", "[2.8.1-RELEASE][duc.mt@pfSense-automation-gw.cmctelecom.vn]/home/duc.mt: ", true},
+		{"pfsense", "[2.7.2-RELEASE][admin@pfsense.home.arpa]/root: ", true},
+		{"pfsense", "invalid option", false},
 	}
 	for _, c := range cases {
 		if got := mustLookup(t, c.vendor).Prompt.MatchString(c.line); got != c.want {
