@@ -97,7 +97,7 @@ var backupFlagGroups = []flagGroup{
 }
 
 // newBackupFlagSet declares the flags. The names follow the task's
-// specification; netbackup's own spellings (-out, -md-report, -save-unchanged,
+// specification; legacy flag spellings (-out, -md-report, -save-unchanged,
 // -known-hosts-policy, -show-diff, ...) stay accepted so existing scripts keep
 // working.
 func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {

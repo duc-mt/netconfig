@@ -1,6 +1,6 @@
 // ==============================================================================
 // File name:     archive_test.go
-// Description:   Tests that backups stay compatible with netbackup's layout.
+// Description:   Tests archive layout, directory naming, and file extensions.
 // License:       MIT
 // ==============================================================================
 package backup
@@ -12,10 +12,8 @@ import (
 	"netops/internal/vendor"
 )
 
-// netbackupLayout is where netbackup saved each platform: its own platform key
-// as the directory, and the file extension. Existing backup trees depend on it
-// (retention and "diff against the previous backup" look in these places).
-var netbackupLayout = []struct{ key, ext string }{
+// standardArchiveLayout defines where each platform is saved: directory and file extension.
+var standardArchiveLayout = []struct{ key, ext string }{
 	{"cisco_ios", ".cfg"}, {"cisco_sb", ".cfg"}, {"cisco_asa", ".cfg"},
 	{"huawei_vrp", ".cfg"}, {"juniper_junos", ".set"}, {"fortigate", ".conf"},
 	{"arista", ".cfg"}, {"vyos", ".config"}, {"ruijie", ".cfg"}, {"aruba", ".cfg"},
@@ -23,27 +21,26 @@ var netbackupLayout = []struct{ key, ext string }{
 	{"mikrotik", ".rsc"},
 }
 
-func TestBackupsKeepNetbackupsDirectoriesAndExtensions(t *testing.T) {
+func TestBackupsKeepArchiveDirectoriesAndExtensions(t *testing.T) {
 	seen := map[string]bool{}
-	for _, want := range netbackupLayout {
-		// netbackup's key is a valid vendor name in an inventory...
+	for _, want := range standardArchiveLayout {
+		// Vendor key is valid in inventory...
 		p, ok := vendor.Lookup(want.key)
 		if !ok {
-			t.Errorf("netbackup platform %q no longer resolves to a vendor", want.key)
+			t.Errorf("platform %q does not resolve to a vendor", want.key)
 			continue
 		}
-		// ...and its backups land where they always did
+		// ...and its backups land in the expected archive directory
 		spec := archiveFor(p)
 		if spec.Dir != want.key || spec.Ext != want.ext {
 			t.Errorf("%s: archived as %s/*%s, want %s/*%s", want.key, spec.Dir, spec.Ext, want.key, want.ext)
 		}
 		seen[p.Name] = true
 	}
-	// every netops vendor is covered by that table: none falls back to a
-	// generated directory name by accident
+	// every netops vendor is covered by that table
 	for _, name := range vendor.Names() {
 		if !seen[name] {
-			t.Errorf("vendor %q has no netbackup-compatible layout entry in this test", name)
+			t.Errorf("vendor %q has no layout entry in this test", name)
 		}
 	}
 }
@@ -86,9 +83,8 @@ func TestArchiveResolvesMultipleCommandsForSophos(t *testing.T) {
 	}
 }
 
-// Existing netbackup inventories keep working: every vendor spelling netbackup
-// accepted still resolves, except the two platforms netops does not have.
-func TestNetbackupVendorSpellingsStillResolve(t *testing.T) {
+// Standard vendor aliases and spellings still resolve properly.
+func TestVendorAliasesStillResolve(t *testing.T) {
 	spellings := map[string]string{
 		"cisco_ios": "cisco", "ios": "cisco", "cisco_ios_xe": "cisco", "ios_xe": "cisco", "iosxe": "cisco",
 		"cisco_sb": "cisco_sb", "cisco_sf": "cisco_sb", "cisco_sg": "cisco_sb", "ciscosb": "cisco_sb",

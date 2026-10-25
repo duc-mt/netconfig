@@ -11,11 +11,9 @@ import (
 
 // archiveSpec describes how one platform's backups are stored on disk.
 //
-// netops names its vendors differently from the standalone netbackup tool
-// ("cisco" / "junos" / "fortinet" versus "cisco_ios" / "juniper_junos" /
-// "fortigate"). Backups keep netbackup's directory names and file extensions
-// so that an existing backup tree, its retention rules and the "diff against
-// the previous backup" check carry straight over to the merged binary.
+// Backups organize configurations into per-vendor directories and extensions
+// so that a backup tree, its retention rules, and the "diff against
+// the previous backup" check remain consistent and cleanly structured.
 type archiveSpec struct {
 	Dir      string   // directory under <backup-dir>/<run>/
 	Ext      string   // file extension, including the dot
@@ -39,7 +37,7 @@ var archiveSpecs = map[string]archiveSpec{
 	vendor.PfSense:    {Dir: "pfsense", Ext: ".xml"},
 	vendor.VyOS:       {Dir: "vyos", Ext: ".config"},
 	vendor.MikroTik:   {Dir: "mikrotik", Ext: ".rsc"},
-	// netbackup archives Junos as "set" commands (one statement per line),
+	// Junos is archived as "set" commands (one statement per line),
 	// which diff far better than the curly-brace form.
 	vendor.Junos: {Dir: "juniper_junos", Ext: ".set", Command: "show configuration | display set"},
 }

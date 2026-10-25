@@ -121,7 +121,7 @@ func TestPlainAndCollisionNamesBothCount(t *testing.T) {
 	}
 }
 
-// Backups kept under the netbackup directory name and under the profile's own
+// Backups kept under the archive directory name and under the profile's own
 // name are both found; the newest wins whichever directory it is in.
 func TestFindSpansBothPlatformDirectoryNames(t *testing.T) {
 	root := t.TempDir()

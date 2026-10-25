@@ -190,7 +190,7 @@ func WriteCSV(path string, info RunInfo, records []AuditRecord) ([]string, error
 		return nil, fmt.Errorf("creating CSV report dir: %w", err)
 	}
 
-	tmpFile, err := os.CreateTemp(dir, ".netbackup-csv-*")
+	tmpFile, err := os.CreateTemp(dir, ".netops-csv-*")
 	if err != nil {
 		return nil, fmt.Errorf("creating temp CSV file: %w", err)
 	}

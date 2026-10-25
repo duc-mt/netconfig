@@ -1,6 +1,6 @@
 // ==============================================================================
-// Package backup implements the "backup" subcommand's engine, merged from the
-// standalone netbackup tool.
+// Package backup implements the "backup" subcommand engine for configuration
+// archiving, change detection, and disaster recovery.
 // Author:        Mai Tan Duc <ducmai.network@gmail.com>
 // Created:       2026-10-10
 // Version:       1.0.0
@@ -816,7 +816,7 @@ func sanitize(name string) string {
 }
 
 // vendorCandidates lists the directory names under a run directory in which a
-// device's backups may live: the netbackup-compatible archive directory, and
+// device's backups may live: the standard archive directory, and
 // the profile's own name (for trees written under that name).
 func vendorCandidates(dev inventory.Device) []string {
 	p, ok := vendor.Lookup(dev.Vendor)

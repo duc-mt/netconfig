@@ -3,7 +3,7 @@
 // logging package writes to disk -- that log is for grepping and
 // machine parsing, this table is for a human glancing at a terminal.
 //
-// Like the rest of netbackup, this package adds no third-party
+// Like the rest of netops, this package adds no third-party
 // dependency: it reuses golang.org/x/term (already vendored for SSH host
 // key handling) only to detect whether stdout is a real terminal, and
 // draws the table itself with box-drawing characters. That keeps the
@@ -13,7 +13,7 @@
 // Nothing here panics. A result that can't be formatted (e.g. a
 // corrupt negative duration) degrades to a placeholder cell and a
 // warning on stderr instead of aborting the table, matching the rest of
-// netbackup's "one bad entry never stops the run" philosophy. The
+// netops's "one bad entry never stops the run" philosophy. The
 // top-level PrintSummaryTable additionally recovers from anything
 // unforeseen in rendering itself, so a bug here can never crash the
 // main goroutine after a backup run has already done its work.

@@ -227,7 +227,7 @@ func TestFetchConfigUsesTheArchiveCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	if want := "show configuration | display set"; tr.sent[0] != want {
-		t.Errorf("sent %q, want %q (netbackup archives Junos as set commands)", tr.sent[0], want)
+		t.Errorf("sent %q, want %q (Junos is archived as set commands)", tr.sent[0], want)
 	}
 }
 
@@ -330,7 +330,7 @@ func TestFetchConfigDryRunOpensASessionButSendsNothing(t *testing.T) {
 	}
 }
 
-func TestRunAllSavesEachPlatformInNetbackupLayout(t *testing.T) {
+func TestRunAllSavesEachPlatformInStandardLayout(t *testing.T) {
 	tr := newFakeTransport()
 	tr.add("sw1", &fakeDevice{output: iosConfig})
 	tr.add("r1", &fakeDevice{output: junosConfig})
@@ -338,7 +338,7 @@ func TestRunAllSavesEachPlatformInNetbackupLayout(t *testing.T) {
 	cfg := testConfig(t, tr)
 
 	devs := []inventory.Device{
-		device("sw1", "10.0.0.1", "cisco_ios"), // netbackup's name for the profile
+		device("sw1", "10.0.0.1", "cisco_ios"), // vendor alias
 		device("r1", "10.0.0.2", "junos"),
 		device("fw1", "10.0.0.3", "fortigate"),
 	}

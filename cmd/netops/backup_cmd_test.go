@@ -160,7 +160,7 @@ func TestBackupCommandEndToEnd(t *testing.T) {
 		t.Fatalf("exit %d, want %d (one device failed)\nstderr:\n%s", code, task.ExitPartial, stderr)
 	}
 
-	// netbackup-compatible layout, one file per platform
+	// standard backup layout, one file per platform
 	files := strings.Join(e.savedFiles(), "\n")
 	for _, want := range []string{"/cisco_ios/sw1.cfg", "/juniper_junos/r1.set"} {
 		if !strings.Contains(files, want) {
@@ -283,7 +283,7 @@ func TestBackupCommandDryRun(t *testing.T) {
 	}
 }
 
-func TestBackupCommandAcceptsNetbackupFlagSpellings(t *testing.T) {
+func TestBackupCommandAcceptsAlternativeFlagSpellings(t *testing.T) {
 	e := newBackupEnv(t, "hostname,address,port,vendor,credential_group\nsw1,10.0.0.1,22,cisco,\n")
 	e.tr.output["sw1"] = iosBackup
 	// -out replaces -backup-dir, -md-report replaces -md-changelog

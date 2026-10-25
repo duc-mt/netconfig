@@ -5,8 +5,7 @@ single static binary. Built for air-gapped management networks: no runtime
 dependencies, no network access other than SSH to the devices.
 
 The same binary also archives configurations and watches them for change and drift:
-[`netops backup`](#backup-change-detection-and-drift-netops-backup) and
-`netops backup show` (formerly the standalone `netbackup` tool).
+[`netops backup`](#backup-change-detection-and-drift-netops-backup) and `netops backup show`.
 
 Supported platforms: Cisco IOS/IOS-XE, Cisco Small Business (SF/SG/CBS), Cisco ASA, Juniper Junos, Huawei VRP, Fortinet FortiOS, Arista EOS, VyOS, Ruijie RGOS, Aruba AOS-CX/AOS-S, Check Point Gaia, Palo Alto PAN-OS, pfSense, Sophos.
 
@@ -418,9 +417,9 @@ backups/
 > Each command output is clearly demarcated with `=== <command> ===` section banners.
 > To obtain a native 1-click importable backup, use WebAdmin (*Backup & Firmware > Backup & Restore* for `.backup` binary archives, or *Import Export* for `Entities.xml` packages) or the Sophos Central / XML API over HTTPS.
 
-The directory names are the ones the standalone netbackup used, so an existing backup tree, its
-retention and its "diff against the previous backup" carry straight over. Backups and diffs are
-written `0600` in `0700` directories, atomically (a crash never leaves a half-written file).
+Backups and diffs are organized cleanly by platform directory and written `0600` in
+`0700` directories, atomically (a crash never leaves a half-written file). Retention policies
+and semantic diffs against previous backups are computed automatically.
 
 A backup is only saved if it passes the platform's validation: no error from the device, and the
 platform's end-of-configuration marker present (`: end` on an ASA; `exit` or `end` as the **last**
@@ -625,32 +624,20 @@ If pasting full configuration backups into a live switch (e.g., using SecureCRT,
 3. **Prefer Out-of-Band (OOB) / Console Access:**
    * For bare-metal disaster recovery or whole-configuration restores, connect via direct serial console or dedicated out-of-band management network whenever possible to eliminate the risk of mid-paste session drops.
 
-### Migrating from the standalone `netbackup`
-
-`netbackup <flags>` becomes `netops backup <flags>`, and browsing backups uses
-`netops backup show` / `./run backup show` (there is no `netops show-backup` command). Existing
-inventories, `.env` files, golden baselines and backup trees keep working:
-
-* **Flags**: netbackup's spellings stay accepted: `-out`, `-md-report`, `-save-unchanged`,
-  `-known-hosts-policy`, `-update-known-hosts`, `-replace-host-keys`, `-insecure-ignore-host-key`,
-  `-show-diff`.
-* **Environment**: `NETBACKUP_<X>` is read as `NETOPS_<X>` (an explicit `NETOPS_` name wins), with a
-  warning to rename it.
-* **Vendor names**: every vendor spelling netbackup accepted (`cisco_ios`, `juniper_junos`, `fortigate`,
-  `checkpoint_gaia`, `huawei_vrp`, ...) still resolves; backups keep landing in the same directories.
-
-What differs, deliberately:
-
-* `-retention-count` defaults to **10** (netbackup: 0, keep everything).
-* `-mesh-fallback` is **opt-in**; netbackup always tunnelled through neighbouring devices when a direct
-  connection failed, which routes credentials through other devices.
-* `-verbose` logs the connection and login steps (as in a configuration run); in netbackup it aliased `-diff`.
-* `-log-format json` is rejected with a pointer to `-json-report`. `-init`, `-show-memory` and
-  `-clear-memory` stay on the top-level command (`netops -init`).
-* Authentication failures, host-key mismatches and refused commands are **no longer retried** by `-retries`.
-* **MikroTik RouterOS and the `generic` platform are not supported** (netops has no profile for them);
-  such devices fail with `unsupported vendor` and a `mikrotik.golden` file is reported as an error.
-* If a commands file is literally named `backup`, pass it as `-commands backup`.
+### Backup Subcommand Design & Compatibility
+ 
+Taking backups uses `netops backup <flags>`, and browsing backups uses
+`netops backup show` / `./run backup show`.
+ 
+* **Flags**: Common alternative flag spellings are supported for convenience: `-out` (alias for `-backup-dir`),
+  `-md-report` (alias for `-md-changelog`), `-save-unchanged` (alias for `-force`),
+  `-known-hosts-policy` (alias for `-host-key-policy`), and `-show-diff` (alias for `-diff`).
+* **Vendor names**: All common vendor spellings and aliases (`cisco_ios`, `juniper_junos`, `fortigate`,
+  `checkpoint_gaia`, `huawei_vrp`, `mikrotik`, etc.) resolve seamlessly.
+* **Safety & Security**:
+  * `-retention-count` defaults to **10** backups per device.
+  * `-mesh-fallback` is **opt-in** to avoid unneeded hops over neighboring management interfaces.
+  * Authentication failures, host-key mismatches, and refused commands are **never retried** by `-retries` to avoid account lockouts.
 
 ## Inventory
 

@@ -16,7 +16,8 @@ import (
 const (
 	// changelogMarker separates the file header from the run sections. New
 	// runs are inserted right after it, so the newest run is on top.
-	changelogMarker = "<!-- netbackup:changelog -->"
+	changelogMarker       = "<!-- netops:changelog -->"
+	legacyChangelogMarker = "<!-- netbackup:changelog -->"
 
 	changelogHeader = "# Network Configuration Changelog\n\n" + changelogMarker + "\n\n"
 )
@@ -219,16 +220,22 @@ func mdDrift(r BackupResult) string {
 }
 
 // composeChangelog merges a new run section into an existing changelog
-// file. A file created by netbackup carries a marker line and new runs are
+// file. A file created by netops carries a marker line and new runs are
 // inserted right below it (newest first). A non-empty file without the
 // marker is never overwritten: the section is appended instead.
 func composeChangelog(existing, section string) string {
 	if strings.TrimSpace(existing) == "" {
 		return changelogHeader + section
 	}
-	if idx := strings.Index(existing, changelogMarker); idx >= 0 {
-		head := existing[:idx+len(changelogMarker)]
-		tail := strings.TrimLeft(existing[idx+len(changelogMarker):], "\r\n")
+	marker := changelogMarker
+	idx := strings.Index(existing, marker)
+	if idx < 0 {
+		marker = legacyChangelogMarker
+		idx = strings.Index(existing, marker)
+	}
+	if idx >= 0 {
+		head := existing[:idx+len(marker)]
+		tail := strings.TrimLeft(existing[idx+len(marker):], "\r\n")
 		out := head + "\n\n" + section
 		if tail != "" {
 			out += "\n---\n\n" + tail

@@ -129,7 +129,7 @@ func writeFileAtomic(path string, data []byte) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating report dir: %w", err)
 	}
-	tmp, err := os.CreateTemp(dir, ".netbackup-report-*")
+	tmp, err := os.CreateTemp(dir, ".netops-report-*")
 	if err != nil {
 		return fmt.Errorf("creating temp report file: %w", err)
 	}

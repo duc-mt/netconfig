@@ -53,8 +53,8 @@ func sampleTree(t *testing.T) string {
 }
 
 func TestListNodesIsExtensionAgnostic(t *testing.T) {
-	// netbackup's show-backup.sh only looked for *.config (VyOS), so every other
-	// platform was invisible to it.
+	// Verify that show looks for all supported extensions across all vendors,
+	// rather than only single platform extensions.
 	got, err := ListNodes(sampleTree(t))
 	if err != nil {
 		t.Fatal(err)
