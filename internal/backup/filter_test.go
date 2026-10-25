@@ -84,9 +84,9 @@ func TestVolatileFilterOtherVendors(t *testing.T) {
 			want:   "sysname r1",
 		},
 		{
-			name:   "junos last changed and last commit",
+			name:   "junos last changed, last commit and chassis prompt",
 			vendor: "junos",
-			config: "## Last changed: 2026-10-12 12:00:00 UTC\n## Last commit: 2026-10-12 12:00:00 UTC by admin\nset system host-name r1",
+			config: "## Last changed: 2026-10-12 12:00:00 UTC\n## Last commit: 2026-10-12 12:00:00 UTC by admin\nset system host-name r1\n{master:0}",
 			want:   "set system host-name r1",
 		},
 		{

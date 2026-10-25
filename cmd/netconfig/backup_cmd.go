@@ -70,6 +70,7 @@ type backupOpts struct {
 	retentionDays          int
 	redact, force, dryRun  bool
 	diff, ignoreVolatile   bool
+	keepBanners            bool
 	resultTable            bool
 	insecureHostKey        bool
 	verbose                bool
@@ -85,7 +86,7 @@ type backupOpts struct {
 // "Other flags").
 var backupFlagGroups = []flagGroup{
 	{"Devices", []string{"inventory", "limit", "concurrency", "dry-run"}},
-	{"Backups", []string{"backup-dir", "retention-count", "retention-days", "redact", "force", "ignore-volatile", "volatile-patterns", "diff"}},
+	{"Backups", []string{"backup-dir", "retention-count", "retention-days", "redact", "force", "ignore-volatile", "volatile-patterns", "diff", "keep-banners"}},
 	{"Reports and compliance", []string{"golden-dir", "compliance-rules", "result-table", "html-report", "md-changelog", "json-report", "csv-report"}},
 	{"Connection", []string{"connect-timeout", "command-timeout", "retries", "retry-delay", "dial-jitter", "env-file", "key-file", "host-key-policy", "update-known-hosts", "known-hosts", "insecure-ignore-host-key", "legacy-algorithms", "tcp-mss"}},
 	{"Jump hosts and routing", []string{"jump", "jump-host", "jump-user", "jump-password", "jump-key-file", "mesh-fallback", "memory", "memory-file"}},
@@ -116,6 +117,7 @@ func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {
 	fs.StringVar(&o.volatilePatterns, "volatile-patterns", "", "optional file with extra volatile-line regular expressions, one per line (# starts a comment)")
 	fs.BoolVar(&o.diff, "diff", true, "display a colorized diff against the previous backup when the configuration changes")
 	fs.BoolVar(&o.diff, "show-diff", true, "alias for -diff")
+	fs.BoolVar(&o.keepBanners, "keep-banners", false, "preserve leading terminal banners (e.g. 'Building configuration...') in saved backups")
 	fs.StringVar(&o.goldenDir, "golden-dir", "", "directory of <vendor>.golden baseline files (plus optional common.golden); enables golden-config drift checks")
 	fs.StringVar(&o.complianceRules, "compliance-rules", "", "single compliance rules file with optional [vendor] sections; can be combined with -golden-dir")
 	fs.StringVar(&o.htmlReport, "html-report", "", "write a standalone HTML run report to this path ({run}, {timestamp} and {date} are expanded)")
@@ -330,23 +332,24 @@ func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 			}
 			return task.Target{Cred: creds[dev.Group], JumpCred: jumps[deviceKey(dev)], TCPMSS: o.tcpMSS}, nil
 		},
-		Logf:           func(host, format string, args ...any) { log.Tracef(host, format, args...) },
-		OutputDir:      o.backupDir,
-		RunName:        backup.DefaultRunName(time.Now()),
-		Concurrency:    o.concurrency,
-		Redact:         o.redact,
-		RetentionCount: o.retentionCount,
-		RetentionDays:  o.retentionDays,
-		SaveUnchanged:  o.force,
-		Retries:        o.retries,
-		RetryDelay:     o.retryDelay,
-		DialJitter:     o.dialJitter,
-		ConnectTimeout: o.connectTimeout,
-		CommandTimeout: o.commandTimeout,
-		DryRun:         o.dryRun,
-		ShowDiff:       o.diff,
-		IgnoreVolatile: o.ignoreVolatile,
-		OnProgress:     console.Progress,
+		Logf:                func(host, format string, args ...any) { log.Tracef(host, format, args...) },
+		OutputDir:           o.backupDir,
+		RunName:             backup.DefaultRunName(time.Now()),
+		Concurrency:         o.concurrency,
+		Redact:              o.redact,
+		RetentionCount:      o.retentionCount,
+		RetentionDays:       o.retentionDays,
+		SaveUnchanged:       o.force,
+		Retries:             o.retries,
+		RetryDelay:          o.retryDelay,
+		DialJitter:          o.dialJitter,
+		ConnectTimeout:      o.connectTimeout,
+		CommandTimeout:      o.commandTimeout,
+		DryRun:              o.dryRun,
+		ShowDiff:            o.diff,
+		IgnoreVolatile:      o.ignoreVolatile,
+		KeepTerminalBanners: o.keepBanners,
+		OnProgress:          console.Progress,
 	}
 	configureSemanticDiff(log, &cfg, o)
 	configureCompliance(log, &cfg, o)

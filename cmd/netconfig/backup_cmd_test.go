@@ -550,3 +550,55 @@ func TestBackupHelpPointsToShow(t *testing.T) {
 		t.Errorf("the top-level help must list the new form only:\n%s", errb.String())
 	}
 }
+
+func TestBackupTerminalBannersCleanedCLI(t *testing.T) {
+	e := newBackupEnv(t, "sw1,10.0.0.1,22,ruijie,default\n")
+	rawRuijie := strings.Join([]string{
+		"Building configuration...",
+		"Current configuration: 7675 bytes",
+		"",
+		"version CS83_RGOS 12.6(3)B0703, Release(12161105)",
+		"hostname sw1",
+		"!",
+		"end",
+	}, "\n")
+	e.tr.output["sw1"] = rawRuijie
+
+	// Run 1: Default behavior automatically cleans terminal banner lines
+	code, stdout, stderr := e.run()
+	if code != 0 {
+		t.Fatalf("run failed: %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	var sw1Content string
+	for _, f := range e.savedFiles() {
+		if strings.HasSuffix(f, "/ruijie/sw1.cfg") {
+			sw1Content = e.read("backups", filepath.FromSlash(f))
+		}
+	}
+	wantClean := strings.Join([]string{
+		"version CS83_RGOS 12.6(3)B0703, Release(12161105)",
+		"hostname sw1",
+		"!",
+		"end",
+	}, "\n")
+	if sw1Content != wantClean {
+		t.Errorf("default backup output mismatch:\n got: %q\nwant: %q", sw1Content, wantClean)
+	}
+
+	// Run 2: With -keep-banners flag, preserves banner lines
+	e2 := newBackupEnv(t, "sw1,10.0.0.1,22,ruijie,default\n")
+	e2.tr.output["sw1"] = rawRuijie
+	code, stdout, stderr = e2.run("-keep-banners")
+	if code != 0 {
+		t.Fatalf("run with -keep-banners failed: %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	var sw1Kept string
+	for _, f := range e2.savedFiles() {
+		if strings.HasSuffix(f, "/ruijie/sw1.cfg") {
+			sw1Kept = e2.read("backups", filepath.FromSlash(f))
+		}
+	}
+	if sw1Kept != rawRuijie {
+		t.Errorf("backup with -keep-banners mismatch:\n got: %q\nwant: %q", sw1Kept, rawRuijie)
+	}
+}

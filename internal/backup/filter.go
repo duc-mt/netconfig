@@ -66,6 +66,7 @@ var builtinVolatileSpecs = []volatileSpec{
 	// Juniper Junos.
 	{"junos-last-changed", []string{"junos"}, `(?i)^\s*##\s*last changed\s*:`},
 	{"junos-last-commit", []string{"junos"}, `(?i)^\s*##\s*last commit\s*:`},
+	{"junos-chassis-prompt", []string{"junos"}, `(?i)^\s*\{(?:master|backup|primary|secondary|linecard|node\d+)(?::[^\}]+)?\}\s*$`},
 
 	// VyOS (both the /* */ and the // flavours of the version trailer).
 	{"vyos-c-comment-trailer", []string{"vyos"}, `(?i)^\s*/\*\s*(warning: do not remove|=== vyatta-config-version|release version)`},

@@ -94,6 +94,11 @@ type Config struct {
 	// Baseline holds the golden-config rules every device is checked
 	// against. Nil disables compliance checking.
 	Baseline *compliance.Baseline
+
+	// KeepTerminalBanners disables stripping of leading terminal progress banners
+	// (such as "Building configuration..." and "Current configuration: ...")
+	// for platforms that emit them. Default is false (banners are automatically stripped).
+	KeepTerminalBanners bool
 }
 
 func (c Config) connectTimeout() time.Duration {
@@ -349,6 +354,22 @@ func runOne(ctx context.Context, dev inventory.Device, cfg Config) (result Resul
 		return result
 	}
 
+	// Auto-detect specific Cisco family from the captured configuration text
+	// when generic "cisco" is configured in inventory.
+	if profile.Name == vendor.Cisco {
+		if strings.HasPrefix(output, "config-file-header") || strings.Contains(output, "\nconfig-file-header") {
+			if sbProf, ok := vendor.Lookup(vendor.CiscoSB); ok {
+				profile = sbProf
+				dev.Vendor = vendor.CiscoSB
+			}
+		} else if strings.Contains(output, "ASA Version") || strings.HasPrefix(output, ": Saved") {
+			if asaProf, ok := vendor.Lookup(vendor.CiscoASA); ok {
+				profile = asaProf
+				dev.Vendor = vendor.CiscoASA
+			}
+		}
+	}
+
 	return processConfig(dev, profile, output, cfg, result)
 }
 
@@ -363,6 +384,12 @@ func runOne(ctx context.Context, dev inventory.Device, cfg Config) (result Resul
 // Result.Warnings and the backup carries on, because a problem in an extra
 // feature must never cost the operator the backup itself.
 func processConfig(dev inventory.Device, profile *vendor.Profile, output string, cfg Config, result Result) Result {
+	if !cfg.KeepTerminalBanners {
+		output = CleanTerminalBanners(output)
+	}
+	if profile.Name == vendor.CheckPoint {
+		output = SanitizeCheckPointConfig(output)
+	}
 	spec := archiveFor(profile)
 	if cfg.Redact {
 		output = redact.Config(output)

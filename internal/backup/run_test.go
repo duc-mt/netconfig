@@ -336,6 +336,35 @@ func TestRunAllSavesEachPlatformInNetbackupLayout(t *testing.T) {
 	}
 }
 
+func TestRunAllAutoDetectsCiscoVariants(t *testing.T) {
+	tr := newFakeTransport()
+	tr.add("sw-ios", &fakeDevice{output: iosConfig})
+	tr.add("sw-sb", &fakeDevice{output: "config-file-header\nunit-type-control-start\nunit-type unit 1\nunit-type-control-end\ninterface gigabitethernet1\nexit\n"})
+	tr.add("fw-asa", &fakeDevice{output: "ASA Version 9.8(4)\ninterface Management0/0\n: end\n"})
+	cfg := testConfig(t, tr)
+
+	devs := []inventory.Device{
+		device("sw-ios", "10.0.0.1", "cisco"),
+		device("sw-sb", "10.0.0.2", "cisco"),
+		device("fw-asa", "10.0.0.3", "cisco"),
+	}
+	results := RunAll(context.Background(), devs, cfg)
+	for _, r := range results {
+		if !r.Success || r.Err != nil {
+			t.Fatalf("%s failed: %v", r.Device.Hostname, r.Err)
+		}
+	}
+	for _, want := range []string{
+		"backup-test/cisco_ios/sw-ios.cfg",
+		"backup-test/cisco_sb/sw-sb.cfg",
+		"backup-test/cisco_asa/fw-asa.cfg",
+	} {
+		if _, err := os.Stat(filepath.Join(cfg.OutputDir, want)); err != nil {
+			t.Errorf("expected %s: %v", want, err)
+		}
+	}
+}
+
 func TestRunAllSecondRunDetectsUnchangedAndChanged(t *testing.T) {
 	tr := newFakeTransport()
 	tr.add("sw1", &fakeDevice{output: iosConfig})

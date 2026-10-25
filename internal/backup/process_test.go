@@ -349,3 +349,91 @@ func TestAssessRiskSafe(t *testing.T) {
 		t.Errorf("assessRiskSafe: level=%s warn=%q, want CRITICAL and no warning", a.Level, warn)
 	}
 }
+
+func TestProcessConfigStripsTerminalBannersByDefault(t *testing.T) {
+	dir := t.TempDir()
+	dev, profile := testDevice(t, "ruijie", "sw-ruijie")
+	raw := strings.Join([]string{
+		"Building configuration...",
+		"Current configuration: 7675 bytes",
+		"",
+		"version CS83_RGOS 12.6(3)B0703, Release(12161105)",
+		"hostname DCTTN_TTN_NET_Pro_5F-SW.02-CAM_189.88_U44",
+		"!",
+	}, "\n")
+	wantClean := strings.Join([]string{
+		"version CS83_RGOS 12.6(3)B0703, Release(12161105)",
+		"hostname DCTTN_TTN_NET_Pro_5F-SW.02-CAM_189.88_U44",
+		"!",
+	}, "\n")
+
+	cfg := Config{OutputDir: dir, RunName: "run1"}
+	res := processConfig(dev, profile, raw, cfg, Result{Device: dev})
+	if !res.Success {
+		t.Fatalf("processConfig failed: %v", res.Err)
+	}
+	saved, err := os.ReadFile(res.OutputPath)
+	if err != nil {
+		t.Fatalf("reading saved file: %v", err)
+	}
+	if string(saved) != wantClean {
+		t.Errorf("saved file content mismatch:\n got: %q\nwant: %q", string(saved), wantClean)
+	}
+}
+
+func TestProcessConfigKeepTerminalBanners(t *testing.T) {
+	dir := t.TempDir()
+	dev, profile := testDevice(t, "cisco", "sw-cisco")
+	raw := strings.Join([]string{
+		"Building configuration...",
+		"",
+		"Current configuration : 5123 bytes",
+		"!",
+		"version 15.2",
+		"hostname sw1",
+	}, "\n")
+
+	cfg := Config{OutputDir: dir, RunName: "run1", KeepTerminalBanners: true}
+	res := processConfig(dev, profile, raw, cfg, Result{Device: dev})
+	if !res.Success {
+		t.Fatalf("processConfig failed: %v", res.Err)
+	}
+	saved, err := os.ReadFile(res.OutputPath)
+	if err != nil {
+		t.Fatalf("reading saved file: %v", err)
+	}
+	if string(saved) != raw {
+		t.Errorf("saved file when KeepTerminalBanners=true mismatch:\n got: %q\nwant: %q", string(saved), raw)
+	}
+}
+
+func TestProcessConfigCheckPointSanitization(t *testing.T) {
+	dir := t.TempDir()
+	dev, profile := testDevice(t, "checkpoint", "cp-gw")
+	raw := strings.Join([]string{
+		`set hostname "cp-gw"`,
+		`set threat-prevention zero-phishing user-check ask-subject "Are you sure?" ask-body "Line 1`,
+		"",
+		`Line 2" ask-activity-text "Ignore"`,
+	}, "\n")
+
+	wantClean := strings.Join([]string{
+		"# Enable continue on failure so harmless conflicts or duplicate objects do not halt restore",
+		"set clienv on-failure continue",
+		`set hostname "cp-gw"`,
+		`set threat-prevention zero-phishing user-check ask-subject "Are you sure?" ask-body "Line 1 Line 2" ask-activity-text "Ignore"`,
+	}, "\n")
+
+	cfg := Config{OutputDir: dir, RunName: "run1"}
+	res := processConfig(dev, profile, raw, cfg, Result{Device: dev})
+	if !res.Success {
+		t.Fatalf("processConfig failed: %v", res.Err)
+	}
+	saved, err := os.ReadFile(res.OutputPath)
+	if err != nil {
+		t.Fatalf("reading saved file: %v", err)
+	}
+	if string(saved) != wantClean {
+		t.Errorf("saved file for checkpoint mismatch:\n got: %q\nwant: %q", string(saved), wantClean)
+	}
+}
