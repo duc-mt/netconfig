@@ -124,9 +124,9 @@ func TestBackupHelpDocumentsEveryFlagInItsSection(t *testing.T) {
 			t.Errorf("section %q is missing:\n%s", section, help)
 		}
 	}
-	for _, alias := range []string{"also -out", "also -md-report", "also -save-unchanged", "also -known-hosts-policy"} {
-		if !strings.Contains(help, alias) {
-			t.Errorf("alias note %q is missing", alias)
+	for _, alias := range []string{"also -out", "also -md-report", "also -save-unchanged", "also -known-hosts-policy", "also -force"} {
+		if strings.Contains(help, alias) {
+			t.Errorf("unexpected legacy alias note %q found in backup help", alias)
 		}
 	}
 }
@@ -136,7 +136,7 @@ func TestBackupHelpDocumentsEveryFlagInItsSection(t *testing.T) {
 func TestSharedFlagsAreTheSameInEveryCommand(t *testing.T) {
 	shared := []string{
 		"inventory", "limit", "concurrency", "connect-timeout", "command-timeout", "env-file", "key-file",
-		"log-dir", "no-color", "known-hosts", "host-key-policy", "update-known-hosts", "replace-host-keys",
+		"log-dir", "no-color", "known-hosts", "host-key-policy", "update-known-hosts",
 		"legacy-algorithms", "tcp-mss", "jump", "jump-host", "jump-user", "jump-password", "jump-key-file",
 		"mesh-fallback", "memory", "memory-file",
 	}

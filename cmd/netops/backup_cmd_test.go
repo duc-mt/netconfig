@@ -283,15 +283,14 @@ func TestBackupCommandDryRun(t *testing.T) {
 	}
 }
 
-func TestBackupCommandAcceptsAlternativeFlagSpellings(t *testing.T) {
+func TestBackupCommandCanonicalFlags(t *testing.T) {
 	e := newBackupEnv(t, "hostname,address,port,vendor,credential_group\nsw1,10.0.0.1,22,cisco,\n")
 	e.tr.output["sw1"] = iosBackup
-	// -out replaces -backup-dir, -md-report replaces -md-changelog
 	args := []string{
-		"backup", "-inventory", e.args[2], "-env-file", e.args[4], "-out", e.path("other"),
+		"backup", "-inventory", e.args[2], "-env-file", e.args[4], "-backup-dir", e.path("other"),
 		"-log-dir", e.path("logs"), "-known-hosts", e.path("known_hosts"), "-memory=false", "-jump=false",
-		"-dial-jitter", "0", "-md-report", e.path("log.md"), "-save-unchanged", "-diff=false",
-		"-known-hosts-policy", "accept-new", "-update-known-hosts=false", "-no-color",
+		"-dial-jitter", "0", "-md-changelog", e.path("log.md"), "-save-unchanged", "-diff=false",
+		"-host-key-policy", "accept-new", "-update-known-hosts=false", "-no-color",
 	}
 	in, _ := os.Open(os.DevNull)
 	defer in.Close()
@@ -300,18 +299,20 @@ func TestBackupCommandAcceptsAlternativeFlagSpellings(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, errb.String())
 	}
 	if _, err := os.Stat(e.path("other")); err != nil {
-		t.Errorf("-out was not honoured: %v", err)
+		t.Errorf("-backup-dir was not honoured: %v", err)
 	}
 	if _, err := os.Stat(e.path("log.md")); err != nil {
-		t.Errorf("-md-report was not honoured: %v", err)
+		t.Errorf("-md-changelog was not honoured: %v", err)
 	}
 }
 
-func TestBackupCommandRejectsRemovedShowDiffFlag(t *testing.T) {
+func TestBackupCommandRejectsRemovedLegacyFlags(t *testing.T) {
 	e := newBackupEnv(t, "hostname,address,port,vendor,credential_group\nsw1,10.0.0.1,22,cisco,\n")
-	code, _, stderr := e.run("-show-diff=false")
-	if code != task.ExitFatal || !strings.Contains(stderr, "flag provided but not defined: -show-diff") {
-		t.Fatalf("expected unknown flag error for -show-diff, got code=%d stderr:\n%s", code, stderr)
+	for _, flag := range []string{"-show-diff=false", "-force", "-out=other", "-known-hosts-policy=accept-new", "-md-report=log.md"} {
+		code, _, stderr := e.run(flag)
+		if code != task.ExitFatal || !strings.Contains(stderr, "flag provided but not defined:") {
+			t.Fatalf("expected unknown flag error for %q, got code=%d stderr:\n%s", flag, code, stderr)
+		}
 	}
 }
 
@@ -431,7 +432,7 @@ func TestBackupCommandHelp(t *testing.T) {
 		if code != task.ExitOK {
 			t.Errorf("%s: exit %d", flagName, code)
 		}
-		for _, want := range []string{"netops backup", "-backup-dir", "-retention-count", "-golden-dir", "-html-report", "-md-changelog", "-limit", "-force", "cisco_asa", "mikrotik"} {
+		for _, want := range []string{"netops backup", "-backup-dir", "-retention-count", "-golden-dir", "-html-report", "-md-changelog", "-limit", "-save-unchanged", "cisco_asa", "mikrotik"} {
 			if !strings.Contains(errb.String(), want) {
 				t.Errorf("%s: help is missing %q", flagName, want)
 			}

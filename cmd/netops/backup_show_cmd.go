@@ -54,7 +54,6 @@ func runBackupShow(args []string, stdin *os.File, stdout, stderr io.Writer) int 
 		printFlagGroups(stderr, fs, backupShowFlagGroups)
 	}
 	fs.StringVar(&dir, "backup-dir", "backups", "directory holding the backups")
-	fs.StringVar(&dir, "out", "backups", "alias for -backup-dir")
 	fs.BoolVar(&diff, "d", false, "show the latest diff instead of the full configuration")
 	fs.BoolVar(&diff, "diff", false, "alias for -d")
 	fs.BoolVar(&pathOnly, "p", false, "only print the file's path; do not open a pager")

@@ -103,11 +103,17 @@ func TestShowBackupPrintsThePathOfTheNewestFile(t *testing.T) {
 	}
 }
 
-func TestShowBackupAcceptsFlagsAfterTheNodeAndTheOutAlias(t *testing.T) {
+func TestShowBackupAcceptsFlagsAfterTheNode(t *testing.T) {
 	root := backupTree(t)
-	code, out, _ := backupShow(t, "core-sw1", "-p", "-out", root)
+	code, out, _ := backupShow(t, "core-sw1", "-p", "-backup-dir", root)
 	if code != 0 || !strings.HasSuffix(strings.TrimSpace(out), "core-sw1.cfg") {
 		t.Errorf("exit %d, out %q", code, out)
+	}
+
+	// -out alias is no longer accepted
+	code, _, stderr := backupShow(t, "core-sw1", "-out", root)
+	if code == 0 || !strings.Contains(stderr, "flag provided but not defined: -out") {
+		t.Errorf("expected unknown flag error for -out, got code=%d stderr:\n%s", code, stderr)
 	}
 }
 

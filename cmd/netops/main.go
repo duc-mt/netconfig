@@ -355,7 +355,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	if *preDiff && *opMode {
 		return fatal("-pre-diff inspects configuration changes and cannot be used with -op")
 	}
-	if cf.updateKnownHosts || cf.replaceHostKeys {
+	if cf.updateKnownHosts {
 		cf.hostKeyPolicy = "update"
 	}
 	policy, err := sshclient.ParsePolicy(cf.hostKeyPolicy)

@@ -33,7 +33,6 @@ type commonFlags struct {
 	knownHosts       string
 	hostKeyPolicy    string
 	updateKnownHosts bool
-	replaceHostKeys  bool
 	legacyAlgorithms bool
 	tcpMSS           int
 
@@ -65,7 +64,6 @@ func (c *commonFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&c.knownHosts, "known-hosts", "", "OpenSSH-format known_hosts file for host key checks (defaults to ~/.ssh/known_hosts or %USERPROFILE%\\.ssh\\known_hosts)")
 	fs.StringVar(&c.hostKeyPolicy, "host-key-policy", "update", "policy for host keys: 'strict' (reject unknown/changed), 'accept-new' (learn new), or 'update' (learn new and replace changed keys)")
 	fs.BoolVar(&c.updateKnownHosts, "update-known-hosts", false, "automatically remove mismatched existing keys and learn new keys in known_hosts (alias for -host-key-policy update)")
-	fs.BoolVar(&c.replaceHostKeys, "replace-host-keys", false, "alias for -update-known-hosts")
 	fs.BoolVar(&c.legacyAlgorithms, "legacy-algorithms", true, "allow negotiation of legacy SSH algorithms (3des-cbc, diffie-hellman-group1-sha1, ssh-dss) as fallback for older network gear")
 	fs.IntVar(&c.tcpMSS, "tcp-mss", 1360, "TCP Maximum Segment Size for outgoing SSH sockets (0=OS default, >0=clamp MSS to avoid PMTU issues)")
 

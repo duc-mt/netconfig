@@ -71,7 +71,7 @@ type backupOpts struct {
 	retryDelay, dialJitter time.Duration
 	retentionCount         int
 	retentionDays          int
-	redact, force, dryRun  bool
+	redact, saveUnchanged, dryRun bool
 	diff, ignoreVolatile   bool
 	keepBanners            bool
 	resultTable            bool
@@ -89,17 +89,14 @@ type backupOpts struct {
 // "Other flags").
 var backupFlagGroups = []flagGroup{
 	{"Devices", []string{"inventory", "limit", "concurrency", "dry-run"}},
-	{"Backups", []string{"backup-dir", "retention-count", "retention-days", "redact", "force", "ignore-volatile", "volatile-patterns", "diff", "keep-banners"}},
+	{"Backups", []string{"backup-dir", "retention-count", "retention-days", "redact", "save-unchanged", "ignore-volatile", "volatile-patterns", "diff", "keep-banners"}},
 	{"Reports and compliance", []string{"golden-dir", "compliance-rules", "result-table", "html-report", "md-changelog", "json-report", "csv-report"}},
 	{"Connection", []string{"connect-timeout", "command-timeout", "retries", "retry-delay", "dial-jitter", "env-file", "key-file", "host-key-policy", "update-known-hosts", "known-hosts", "insecure-ignore-host-key", "legacy-algorithms", "tcp-mss"}},
 	{"Jump hosts and routing", []string{"jump", "jump-host", "jump-user", "jump-password", "jump-key-file", "mesh-fallback", "memory", "memory-file"}},
 	{"Logging", []string{"log-dir", "log-format", "no-color", "verbose"}},
 }
 
-// newBackupFlagSet declares the flags. The names follow the task's
-// specification; legacy flag spellings (-out, -md-report, -save-unchanged,
-// -known-hosts-policy, ...) stay accepted so existing scripts keep
-// working.
+// newBackupFlagSet declares the flags for netops backup.
 func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {
 	fs := flag.NewFlagSet("netops backup", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -110,12 +107,10 @@ func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {
 	o.register(fs)
 
 	fs.StringVar(&o.backupDir, "backup-dir", "backups", "directory to write backup files into")
-	fs.StringVar(&o.backupDir, "out", "backups", "alias for -backup-dir")
 	fs.IntVar(&o.retentionCount, "retention-count", 10, "maximum number of recent backups to keep per device (0 to disable)")
 	fs.IntVar(&o.retentionDays, "retention-days", 0, "prune backups older than N days per device (0 to disable)")
 	fs.BoolVar(&o.redact, "redact", false, "mask passwords, pre-shared keys, and SNMP communities in saved files")
-	fs.BoolVar(&o.force, "force", false, "save a new backup file even if the configuration is identical to the previous backup")
-	fs.BoolVar(&o.force, "save-unchanged", false, "alias for -force")
+	fs.BoolVar(&o.saveUnchanged, "save-unchanged", false, "save a new backup file even if the configuration is identical to the previous backup")
 	fs.BoolVar(&o.ignoreVolatile, "ignore-volatile", true, "ignore volatile lines (clock stamps, \"last changed\" comments, ...) when detecting changes; saved files are never modified")
 	fs.StringVar(&o.volatilePatterns, "volatile-patterns", "", "optional file with extra volatile-line regular expressions, one per line (# starts a comment)")
 	fs.BoolVar(&o.diff, "diff", true, "display a colorized diff against the previous backup when the configuration changes")
@@ -124,7 +119,6 @@ func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {
 	fs.StringVar(&o.complianceRules, "compliance-rules", "", "single compliance rules file with optional [vendor] sections; can be combined with -golden-dir")
 	fs.StringVar(&o.htmlReport, "html-report", "", "write a standalone HTML run report to this path ({run}, {timestamp} and {date} are expanded)")
 	fs.StringVar(&o.mdReport, "md-changelog", "", "write/update a Markdown changelog at this path, newest run first ({run}, {timestamp} and {date} are expanded)")
-	fs.StringVar(&o.mdReport, "md-report", "", "alias for -md-changelog")
 	fs.StringVar(&o.jsonReport, "json-report", "", "write a machine-readable JSON run report to this path ({run}, {timestamp} and {date} are expanded)")
 	fs.StringVar(&o.csvReport, "csv-report", "", "write a machine-readable CSV run report to this path ({run}, {timestamp} and {date} are expanded)")
 	fs.BoolVar(&o.resultTable, "result-table", true, "print a per-device result table to stdout after the run")
@@ -134,7 +128,6 @@ func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {
 	fs.DurationVar(&o.retryDelay, "retry-delay", 2*time.Second, "delay between retries per device")
 	fs.DurationVar(&o.dialJitter, "dial-jitter", 100*time.Millisecond, "random delay up to this value before each connection (0 to disable)")
 
-	fs.StringVar(&o.hostKeyPolicy, "known-hosts-policy", "update", "alias for -host-key-policy")
 	fs.BoolVar(&o.insecureHostKey, "insecure-ignore-host-key", false, "DANGEROUS: skip host key verification entirely (exposes connections to MITM)")
 
 	fs.StringVar(&o.logFormat, "log-format", "text", "log format: only 'text' is supported (use -json-report for machine-readable results)")
@@ -183,7 +176,7 @@ func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	if o.logFormat != "text" {
 		return fatal("-log-format %q is not supported (only 'text'); use -json-report for machine-readable results", o.logFormat)
 	}
-	if o.updateKnownHosts || o.replaceHostKeys {
+	if o.updateKnownHosts {
 		o.hostKeyPolicy = "update"
 	}
 	if o.insecureHostKey {
@@ -341,7 +334,7 @@ func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		Redact:              o.redact,
 		RetentionCount:      o.retentionCount,
 		RetentionDays:       o.retentionDays,
-		SaveUnchanged:       o.force,
+		SaveUnchanged:       o.saveUnchanged,
 		Retries:             o.retries,
 		RetryDelay:          o.retryDelay,
 		DialJitter:          o.dialJitter,

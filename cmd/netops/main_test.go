@@ -309,10 +309,10 @@ func TestUpdateKnownHostsFlags(t *testing.T) {
 		t.Fatalf("exit = %d, want ExitPartial\n%s", code, out)
 	}
 
-	// Test -replace-host-keys flag accepts without error
+	// Test -replace-host-keys flag is no longer accepted
 	code, out = runCLI(t, append(base, "-replace-host-keys", "-yes")...)
-	if code != task.ExitPartial {
-		t.Fatalf("exit = %d, want ExitPartial\n%s", code, out)
+	if code != task.ExitFatal || !strings.Contains(out, "flag provided but not defined: -replace-host-keys") {
+		t.Fatalf("expected unknown flag error for -replace-host-keys, got code=%d output:\n%s", code, out)
 	}
 
 	// Test -host-key-policy update

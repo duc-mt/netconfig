@@ -518,18 +518,18 @@ or a command the device refused. A device whose credentials are missing is not c
 |---|---|---|
 | `-inventory` | `inventory.csv` | device list |
 | `-limit` | all | hostname globs (comma-separated) or `@group` |
-| `-backup-dir` (`-out`) | `backups` | where run directories are created |
+| `-backup-dir` | `backups` | where run directories are created |
 | `-retention-count` / `-retention-days` | `10` / `0` | how many / how old to keep (0 = no limit) |
 | `-redact` | off | mask secrets in saved files (off by default for restorable backups) |
-| `-force` (`-save-unchanged`) | off | save even if unchanged |
+| `-save-unchanged` | off | save even if unchanged |
 | `-ignore-volatile`, `-volatile-patterns` | on, none | semantic diff |
 | `-golden-dir`, `-compliance-rules` | none | drift checking |
-| `-html-report`, `-md-changelog` (`-md-report`), `-json-report`, `-csv-report` | none | reports |
+| `-html-report`, `-md-changelog`, `-json-report`, `-csv-report` | none | reports |
 | `-concurrency` | `10` | devices in parallel (one session per address at a time) |
 | `-retries`, `-retry-delay`, `-dial-jitter` | `0`, `2s`, `100ms` | resilience |
 | `-connect-timeout`, `-command-timeout` | `10s`, `30s` | the backup command itself gets 3x |
 | `-dry-run` | off | connect, log in and set up paging; no command, no files |
-| `-host-key-policy` (`-known-hosts-policy`), `-known-hosts`, `-legacy-algorithms` | `update`, `~/.ssh/known_hosts`, on | as for a configuration run |
+| `-host-key-policy`, `-known-hosts`, `-legacy-algorithms` | `update`, `~/.ssh/known_hosts`, on | as for a configuration run |
 | `-jump`, `-jump-host`, `-mesh-fallback`, `-memory` | on, none, off, on | routing; `-mesh-fallback` is opt-in |
 
 ### Viewing backups: `backup show`
@@ -629,9 +629,7 @@ If pasting full configuration backups into a live switch (e.g., using SecureCRT,
 Taking backups uses `netops backup <flags>`, and browsing backups uses
 `netops backup show` / `./run backup show`.
  
-* **Flags**: Common alternative flag spellings are supported for convenience: `-out` (alias for `-backup-dir`),
-  `-md-report` (alias for `-md-changelog`), `-save-unchanged` (alias for `-force`),
-  and `-known-hosts-policy` (alias for `-host-key-policy`).
+* **Flags**: Flags follow canonical naming: `-backup-dir`, `-md-changelog`, `-save-unchanged`, and `-host-key-policy`.
 * **Vendor names**: All common vendor spellings and aliases (`cisco_ios`, `juniper_junos`, `fortigate`,
   `checkpoint_gaia`, `huawei_vrp`, `mikrotik`, etc.) resolve seamlessly.
 * **Safety & Security**:
@@ -742,7 +740,7 @@ Default `-host-key-policy update`: hosts are verified against standard OpenSSH `
   - **Linux / macOS**: Reads `~/.ssh/known_hosts` (and `/etc/ssh/ssh_known_hosts` / `/etc/ssh/ssh_known_hosts2` if present).
   - **Windows**: Reads `%USERPROFILE%\.ssh\known_hosts` (and `%ProgramData%\ssh\ssh_known_hosts` if present).
   - Supports tilde (`~`) expansion in `-known-hosts` if custom paths are provided.
-- **Auto-Replace Changed Host Keys (`-host-key-policy update` / `-update-known-hosts` / `-replace-host-keys`)**:
+- **Auto-Replace Changed Host Keys (`-host-key-policy update` / `-update-known-hosts`)**:
   Default behavior. Automatically removes mismatched/stale existing keys and learns the new device key in `known_hosts` atomically, eliminating the need to manually run `ssh-keygen -R <host>`.
 - **First contact enrollment**: Run with `-host-key-policy accept-new` to enroll devices on first contact only (trust-on-first-use; securely appends only to the user's `~/.ssh/known_hosts` / `%USERPROFILE%\.ssh\known_hosts`, preventing duplicates; a *changed* key is rejected).
 - **Strict enforcement**: Run with `-host-key-policy strict` to reject unknown hosts and changed host keys with `HOSTKEY_FAILED`.
