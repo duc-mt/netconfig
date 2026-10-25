@@ -55,16 +55,27 @@ var sampleCommands []byte
 // version is overridden at build time: -ldflags "-X main.version=1.2.3".
 var version = "dev"
 
-const usageText = `netconfig - apply configuration commands to many network devices over SSH
+const rootUsageText = `netconfig - multi-vendor network device automation over SSH
 
 Usage:
-  netconfig -commands commands.txt [flags]
-  netconfig -template config.tmpl -var ntp=10.0.0.1 [flags]
-  netconfig -op -commands <(echo "show ip ospf route") [flags]
+  netconfig <subcommand> [flags]
 
 Subcommands:
-  netconfig backup [flags]                  archive device configurations, detect changes (netconfig backup -h)
-  netconfig backup show [flags] [node]      view, diff or locate saved backups (netconfig backup show -h)
+  config       apply configuration commands to network devices (netconfig config -h)
+  backup       archive device configurations, detect changes (netconfig backup -h)
+  backup show  view, diff or locate saved backups (netconfig backup show -h)
+  init         generate sample inventory.csv, commands.txt, and .env templates
+  version      display version information
+
+Run 'netconfig <subcommand> -h' for flags and usage of a specific subcommand.
+`
+
+const configUsageText = `netconfig config - apply configuration commands to many network devices over SSH
+
+Usage:
+  netconfig config -commands commands.txt [flags]
+  netconfig config -template config.tmpl -var ntp=10.0.0.1 [flags]
+  netconfig config -op -commands <(echo "show ip ospf route") [flags]
 
 Supported vendors: %s
 
@@ -82,6 +93,8 @@ at the confirmation prompt), 2 some devices failed or were skipped.
 Flags:
 `
 
+const usageText = configUsageText
+
 type stringList []string
 
 func (s *stringList) String() string { return strings.Join(*s, ",") }
@@ -95,27 +108,87 @@ func main() {
 	os.Exit(dispatch(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
-// dispatch routes the first argument to a subcommand ("backup", which has its
-// own subcommand "show"). Anything else is the classic configuration runner, so
-// "netconfig -commands commands.txt" and "netconfig commands.txt" behave
-// exactly as before. (A commands file that is literally named "backup" must now
-// be given as -commands.)
-func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
-	if len(args) > 0 {
-		switch args[0] {
-		case "backup":
-			return runBackup(args[1:], stdin, stdout, stderr)
-		case "show-backup":
-			// retired spelling: without this it would be read as a commands file
-			fmt.Fprintln(stderr, "netconfig: 'show-backup' is now 'netconfig backup show' (same flags)")
-			return task.ExitFatal
-		}
+func printRootUsage(w io.Writer) {
+	fmt.Fprint(w, rootUsageText)
+}
+
+func runInit(stdout, stderr io.Writer) int {
+	fatal := func(format string, a ...any) int {
+		fmt.Fprintf(stderr, "netconfig: "+format+"\n", a...)
+		return task.ExitFatal
 	}
-	return run(args, stdin, stdout, stderr)
+	created := 0
+	if _, err := os.Stat("inventory.csv"); os.IsNotExist(err) {
+		if err := os.WriteFile("inventory.csv", sampleInventory, 0600); err != nil {
+			return fatal("creating inventory.csv: %v", err)
+		}
+		fmt.Fprintln(stdout, "[+] Created sample inventory.csv")
+		created++
+	} else {
+		fmt.Fprintln(stdout, "[.] inventory.csv already exists, skipping")
+	}
+
+	if _, err := os.Stat(".env"); os.IsNotExist(err) {
+		if err := os.WriteFile(".env", sampleEnv, 0600); err != nil {
+			return fatal("creating .env: %v", err)
+		}
+		fmt.Fprintln(stdout, "[+] Created sample .env template")
+		created++
+	} else {
+		fmt.Fprintln(stdout, "[.] .env already exists, skipping")
+	}
+
+	if _, err := os.Stat("commands.txt"); os.IsNotExist(err) {
+		if err := os.WriteFile("commands.txt", sampleCommands, 0600); err != nil {
+			return fatal("creating commands.txt: %v", err)
+		}
+		fmt.Fprintln(stdout, "[+] Created sample commands.txt")
+		created++
+	} else {
+		fmt.Fprintln(stdout, "[.] commands.txt already exists, skipping")
+	}
+
+	if created > 0 {
+		fmt.Fprintln(stdout, "\nSample configuration created! Edit inventory.csv, .env, and commands.txt to match your environment.")
+	}
+	return task.ExitOK
+}
+
+// dispatch routes arguments to subcommands ("config", "backup", "init", "version").
+// Invoking netconfig without a subcommand or with an invalid subcommand is fatal.
+func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "netconfig: missing subcommand")
+		fmt.Fprintln(stderr)
+		printRootUsage(stderr)
+		return task.ExitFatal
+	}
+	switch args[0] {
+	case "config":
+		return run(args[1:], stdin, stdout, stderr)
+	case "backup":
+		return runBackup(args[1:], stdin, stdout, stderr)
+	case "init", "-init":
+		return runInit(stdout, stderr)
+	case "version", "-version", "--version":
+		fmt.Fprintln(stdout, "netconfig", version)
+		return task.ExitOK
+	case "-h", "--help", "help":
+		printRootUsage(stderr)
+		return task.ExitOK
+	case "show-backup":
+		// retired spelling: without this it would be read as an unknown subcommand
+		fmt.Fprintln(stderr, "netconfig: 'show-backup' is now 'netconfig backup show' (same flags)")
+		return task.ExitFatal
+	default:
+		fmt.Fprintf(stderr, "netconfig: unknown subcommand %q\n\n", args[0])
+		printRootUsage(stderr)
+		return task.ExitFatal
+	}
 }
 
 func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("netconfig", flag.ContinueOnError)
+	fs := flag.NewFlagSet("netconfig config", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	cf := &commonFlags{}
 	cf.register(fs)
@@ -190,41 +263,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return task.ExitOK
 	}
 	if *initConfig {
-		created := 0
-		if _, err := os.Stat("inventory.csv"); os.IsNotExist(err) {
-			if err := os.WriteFile("inventory.csv", sampleInventory, 0600); err != nil {
-				return fatal("creating inventory.csv: %v", err)
-			}
-			fmt.Fprintln(stdout, "[+] Created sample inventory.csv")
-			created++
-		} else {
-			fmt.Fprintln(stdout, "[.] inventory.csv already exists, skipping")
-		}
-
-		if _, err := os.Stat(".env"); os.IsNotExist(err) {
-			if err := os.WriteFile(".env", sampleEnv, 0600); err != nil {
-				return fatal("creating .env: %v", err)
-			}
-			fmt.Fprintln(stdout, "[+] Created sample .env template")
-			created++
-		} else {
-			fmt.Fprintln(stdout, "[.] .env already exists, skipping")
-		}
-
-		if _, err := os.Stat("commands.txt"); os.IsNotExist(err) {
-			if err := os.WriteFile("commands.txt", sampleCommands, 0600); err != nil {
-				return fatal("creating commands.txt: %v", err)
-			}
-			fmt.Fprintln(stdout, "[+] Created sample commands.txt")
-			created++
-		} else {
-			fmt.Fprintln(stdout, "[.] commands.txt already exists, skipping")
-		}
-
-		if created > 0 {
-			fmt.Fprintln(stdout, "\nSample configuration created! Edit inventory.csv, .env, and commands.txt to match your environment.")
-		}
-		return task.ExitOK
+		return runInit(stdout, stderr)
 	}
 	if *showMemory {
 		mem, err := memory.Load(cf.memoryFile)

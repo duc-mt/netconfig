@@ -440,19 +440,26 @@ func TestDispatchRoutesSubcommandsAndKeepsTheClassicRunner(t *testing.T) {
 		t.Errorf("backup show: exit %d, out %q, err %q", code, out.String(), errb.String())
 	}
 
-	// anything else is the configuration runner: -version proves it ran
+	// top-level -version flag
 	out.Reset()
 	errb.Reset()
 	if code := dispatch([]string{"-version"}, in, &out, &errb); code != 0 || !strings.HasPrefix(out.String(), "netconfig ") {
-		t.Errorf("classic runner: exit %d, out %q", code, out.String())
+		t.Errorf("version flag: exit %d, out %q", code, out.String())
 	}
 
-	// a commands file given positionally still works as before (not a subcommand)
+	// config runner with positional commands file
 	out.Reset()
 	errb.Reset()
-	code := dispatch([]string{"-inventory", filepath.Join(t.TempDir(), "missing.csv"), "commands.txt"}, in, &out, &errb)
+	code := dispatch([]string{"config", "-inventory", filepath.Join(t.TempDir(), "missing.csv"), "commands.txt"}, in, &out, &errb)
 	if code != task.ExitFatal {
-		t.Errorf("classic runner with a missing inventory: exit %d", code)
+		t.Errorf("config runner with a missing inventory: exit %d", code)
+	}
+
+	// strict subcommand: running without subcommand fails
+	out.Reset()
+	errb.Reset()
+	if code := dispatch([]string{"-inventory", "missing.csv"}, in, &out, &errb); code != task.ExitFatal || !strings.Contains(errb.String(), "unknown subcommand") {
+		t.Errorf("missing subcommand must fail: exit %d, err %q", code, errb.String())
 	}
 }
 

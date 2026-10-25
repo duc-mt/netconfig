@@ -77,28 +77,23 @@ else
     fi
 fi
 
-# A subcommand (backup, and "backup show" under it) as the first argument is
-# passed through untouched. Otherwise this is the classic configuration runner,
-# which falls back to commands.txt unless told where its commands come from.
-HAS_CMD=0
+# A subcommand is strictly required. For the "config" subcommand, default to
+# -commands commands.txt unless explicit commands/template or help flags are given.
 case "$1" in
-    backup)
-        HAS_CMD=1
-        ;;
-    *)
+    config)
+        HAS_CMDS_FLAG=0
         for arg in "$@"; do
             case "$arg" in
                 -commands|-commands=*|-template|-template=*|-h|--help|-version)
-                    HAS_CMD=1
+                    HAS_CMDS_FLAG=1
                     ;;
             esac
         done
+        if [ "$HAS_CMDS_FLAG" -eq 0 ]; then
+            set -- "$@" -commands commands.txt
+        fi
         ;;
 esac
-
-if [ "$HAS_CMD" -eq 0 ]; then
-    set -- "$@" -commands commands.txt
-fi
 
 exec "$BINARY" "$@"
 

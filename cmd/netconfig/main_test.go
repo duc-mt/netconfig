@@ -321,3 +321,55 @@ func TestUpdateKnownHostsFlags(t *testing.T) {
 		t.Fatalf("exit = %d, want ExitPartial\n%s", code, out)
 	}
 }
+
+func TestStrictSubcommandDispatch(t *testing.T) {
+	in, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer in.Close()
+
+	runDispatch := func(args ...string) (int, string, string) {
+		var out, errb bytes.Buffer
+		code := dispatch(args, in, &out, &errb)
+		return code, out.String(), errb.String()
+	}
+
+	// 1. Missing subcommand
+	code, _, stderr := runDispatch()
+	if code != task.ExitFatal || !strings.Contains(stderr, "missing subcommand") {
+		t.Fatalf("empty args must exit fatal with missing subcommand, got code=%d:\n%s", code, stderr)
+	}
+	if !strings.Contains(stderr, "config") || !strings.Contains(stderr, "backup") {
+		t.Fatalf("missing subcommand output must list available subcommands:\n%s", stderr)
+	}
+
+	// 2. Unknown subcommand
+	code, _, stderr = runDispatch("invalid-subcmd")
+	if code != task.ExitFatal || !strings.Contains(stderr, `unknown subcommand "invalid-subcmd"`) {
+		t.Fatalf("unknown subcmd must exit fatal, got code=%d:\n%s", code, stderr)
+	}
+
+	// 3. Flags passed at root without subcommand
+	code, _, stderr = runDispatch("-dry-run")
+	if code != task.ExitFatal || !strings.Contains(stderr, `unknown subcommand "-dry-run"`) {
+		t.Fatalf("flags without subcmd must exit fatal, got code=%d:\n%s", code, stderr)
+	}
+
+	// 4. Top-level help
+	code, _, stderr = runDispatch("-h")
+	if code != task.ExitOK || !strings.Contains(stderr, "Subcommands:") {
+		t.Fatalf("-h must exit OK with root usage, got code=%d:\n%s", code, stderr)
+	}
+
+	code, _, stderr = runDispatch("help")
+	if code != task.ExitOK || !strings.Contains(stderr, "Subcommands:") {
+		t.Fatalf("help must exit OK with root usage, got code=%d:\n%s", code, stderr)
+	}
+
+	// 5. Config subcommand help
+	code, _, stderr = runDispatch("config", "-h")
+	if code != task.ExitOK || !strings.Contains(stderr, "netconfig config - apply configuration") {
+		t.Fatalf("config -h must exit OK with config usage, got code=%d:\n%s", code, stderr)
+	}
+}

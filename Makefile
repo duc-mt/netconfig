@@ -72,4 +72,4 @@ init:
 	@echo "Initialization complete! Edit .env, inventory.csv, and commands.txt to match your environment."
 
 run: build
-	./bin/$(BINARY) commands.txt
+	./bin/$(BINARY) config commands.txt

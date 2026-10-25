@@ -71,22 +71,27 @@ func TestLauncherRoutesSubcommandsWithoutAppendingCommands(t *testing.T) {
 		{"backup show", []string{"backup", "show", "-l"}, []string{"backup", "show", "-l"}},
 		{"backup show node", []string{"backup", "show", "-d", "core-sw1"}, []string{"backup", "show", "-d", "core-sw1"}},
 		{"backup show help", []string{"backup", "show", "--help"}, []string{"backup", "show", "--help"}},
-		// the retired spelling is not a subcommand any more: the binary answers it
-		// with a rename hint (see TestOldShowBackupFormSaysWhatToUseInstead)
-		{"old show-backup", []string{"show-backup", "-l"}, []string{"show-backup", "-l", "-commands", "commands.txt"}},
 
-		// the classic runner still defaults to commands.txt
-		{"no arguments", nil, []string{"-commands", "commands.txt"}},
-		{"flags only", []string{"-limit", "core-*", "-dry-run"}, []string{"-limit", "core-*", "-dry-run", "-commands", "commands.txt"}},
-		{"explicit commands", []string{"-commands", "my.txt"}, []string{"-commands", "my.txt"}},
-		{"explicit commands=", []string{"-commands=my.txt", "-yes"}, []string{"-commands=my.txt", "-yes"}},
-		{"template", []string{"-template", "t.tmpl", "-var", "a=b"}, []string{"-template", "t.tmpl", "-var", "a=b"}},
+		// the config subcommand defaults to commands.txt
+		{"config without flags", []string{"config"}, []string{"config", "-commands", "commands.txt"}},
+		{"config flags only", []string{"config", "-limit", "core-*", "-dry-run"}, []string{"config", "-limit", "core-*", "-dry-run", "-commands", "commands.txt"}},
+		{"config explicit commands", []string{"config", "-commands", "my.txt"}, []string{"config", "-commands", "my.txt"}},
+		{"config explicit commands=", []string{"config", "-commands=my.txt", "-yes"}, []string{"config", "-commands=my.txt", "-yes"}},
+		{"config template", []string{"config", "-template", "t.tmpl", "-var", "a=b"}, []string{"config", "-template", "t.tmpl", "-var", "a=b"}},
+		{"config help", []string{"config", "-h"}, []string{"config", "-h"}},
+
+		// retired spelling is passed through to binary for rename hint
+		{"old show-backup", []string{"show-backup", "-l"}, []string{"show-backup", "-l"}},
+
+		// strict subcommand enforcement: arguments without subcommand pass straight through to binary
+		{"no arguments", nil, nil},
+		{"flags only without subcommand", []string{"-limit", "core-*", "-dry-run"}, []string{"-limit", "core-*", "-dry-run"}},
 		{"help", []string{"-h"}, []string{"-h"}},
 		{"version", []string{"-version"}, []string{"-version"}},
 
 		// only the FIRST argument selects a subcommand
-		{"a flag value that looks like a subcommand", []string{"-limit", "backup"}, []string{"-limit", "backup", "-commands", "commands.txt"}},
-		{"subcommand name later", []string{"-inventory", "x.csv", "backup"}, []string{"-inventory", "x.csv", "backup", "-commands", "commands.txt"}},
+		{"a flag value that looks like a subcommand", []string{"-limit", "config"}, []string{"-limit", "config"}},
+		{"subcommand name later", []string{"-inventory", "x.csv", "config"}, []string{"-inventory", "x.csv", "config"}},
 	}
 	for _, tt := range tests {
 		if got := launch(t, root, filepath.Join("scripts", "run.sh"), tt.args...); strings.Join(got, "\x00") != strings.Join(tt.want, "\x00") {
