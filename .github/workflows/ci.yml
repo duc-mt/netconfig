@@ -136,19 +136,6 @@ jobs:
             git log -1 --format="### 🚀 Latest Automated Build (%cd)%n%n- **Commit**: [\`%h\`](https://github.com/${GITHUB_REPOSITORY}/commit/%H)%n- **Message**: %s%n%n[View commit history](https://github.com/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME})" --date=short > release_body.md
           fi
 
-      - name: Clean legacy release assets
-        run: |
-          tag="${{ steps.release_info.outputs.tag_name }}"
-          assets=$(gh release view "$tag" --json assets -q '.assets[] | select(.name | startswith("netconfig")) | .name' 2>/dev/null || true)
-          for asset in $assets; do
-            if [ -n "$asset" ]; then
-              echo "Removing legacy asset: $asset from release $tag"
-              gh release delete-asset "$tag" "$asset" -y || true
-            fi
-          done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
