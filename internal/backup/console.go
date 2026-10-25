@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"netconfig/internal/errcat"
-	"netconfig/internal/logging"
+	"netops/internal/errcat"
+	"netops/internal/logging"
 )
 
 const (

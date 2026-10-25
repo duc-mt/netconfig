@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"netconfig/internal/inventory"
-	"netconfig/internal/logging"
-	"netconfig/internal/vendor"
+	"netops/internal/inventory"
+	"netops/internal/logging"
+	"netops/internal/vendor"
 )
 
 // lintAs lints commands for a device at 10.0.0.1:22 that logs in as "svc".

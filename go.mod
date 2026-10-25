@@ -1,4 +1,4 @@
-module netconfig
+module netops
 
 go 1.26.0
 

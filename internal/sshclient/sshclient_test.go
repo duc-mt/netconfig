@@ -29,7 +29,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 
-	"netconfig/internal/vendor"
+	"netops/internal/vendor"
 )
 
 // ---- SafeBuffer ------------------------------------------------------------

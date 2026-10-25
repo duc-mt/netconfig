@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// launcherTree copies the real launcher scripts next to a stub "netconfig"
+// launcherTree copies the real launcher scripts next to a stub "netops"
 // binary that prints one argument per line, so what the launcher passes on can
 // be checked without building anything.
 func launcherTree(t *testing.T) string {
@@ -42,7 +42,7 @@ func launcherTree(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "bin", "netconfig"), []byte(stub), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "bin", "netops"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return root

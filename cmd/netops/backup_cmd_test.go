@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
-	"netconfig/internal/credentials"
-	"netconfig/internal/inventory"
-	"netconfig/internal/sshclient"
-	"netconfig/internal/task"
+	"netops/internal/credentials"
+	"netops/internal/inventory"
+	"netops/internal/sshclient"
+	"netops/internal/task"
 )
 
 const iosBackup = "version 15.2\n!\nhostname sw1\ninterface Gi0/1\n description uplink\n!\nenable secret 5 $1$abcd$XyZ123hashvalue\nend"
@@ -79,7 +79,7 @@ func newBackupEnv(t *testing.T, inventory string) *backupEnv {
 		return p
 	}
 	inv := write("inventory.csv", inventory)
-	env := write(".env", "NETCONFIG_USERNAME=admin\nNETCONFIG_PASSWORD=s3cr3t-pw\n")
+	env := write(".env", "NETOPS_USERNAME=admin\nNETOPS_PASSWORD=s3cr3t-pw\n")
 	tr := &cliTransport{
 		output:   map[string]string{},
 		authFail: map[string]bool{},
@@ -307,38 +307,18 @@ func TestBackupCommandAcceptsNetbackupFlagSpellings(t *testing.T) {
 	}
 }
 
-func TestBackupCommandReadsNetbackupEnvironmentNames(t *testing.T) {
+func TestBackupCommandReadsNetopsEnvironment(t *testing.T) {
 	e := newBackupEnv(t, "hostname,address,port,vendor,credential_group\nsw1,10.0.0.1,22,cisco,\n")
 	e.tr.output["sw1"] = iosBackup
-	// an existing netbackup .env: NETBACKUP_* only
-	if err := os.WriteFile(e.args[4], []byte("NETBACKUP_USERNAME=legacy-user\nNETBACKUP_PASSWORD=legacy-pw\n"), 0o600); err != nil {
+	if err := os.WriteFile(e.args[4], []byte("NETOPS_USERNAME=ops-user\nNETOPS_PASSWORD=ops-pw\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	code, _, stderr := e.run()
 	if code != task.ExitOK {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}
-	if tgt := e.tr.targets["sw1"]; tgt.Cred.Username != "legacy-user" || tgt.Cred.Password != "legacy-pw" {
-		t.Errorf("NETBACKUP_* credentials were not used: %+v", tgt.Cred)
-	}
-	if !strings.Contains(stderr, "rename them to NETCONFIG_*") {
-		t.Errorf("no deprecation warning:\n%s", stderr)
-	}
-	if strings.Contains(stderr, "legacy-pw") || strings.Contains(e.logText(), "legacy-pw") {
-		t.Error("a legacy password leaked")
-	}
-}
-
-func TestBackupCommandNetconfigNamesWinOverNetbackupOnes(t *testing.T) {
-	e := newBackupEnv(t, "hostname,address,port,vendor,credential_group\nsw1,10.0.0.1,22,cisco,\n")
-	e.tr.output["sw1"] = iosBackup
-	body := "NETBACKUP_USERNAME=old\nNETBACKUP_PASSWORD=old-pw\nNETCONFIG_USERNAME=new\nNETCONFIG_PASSWORD=new-pw\n"
-	if err := os.WriteFile(e.args[4], []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	e.run()
-	if tgt := e.tr.targets["sw1"]; tgt.Cred.Username != "new" || tgt.Cred.Password != "new-pw" {
-		t.Errorf("credentials = %+v, want the NETCONFIG_* ones", tgt.Cred)
+	if tgt := e.tr.targets["sw1"]; tgt.Cred.Username != "ops-user" || tgt.Cred.Password != "ops-pw" {
+		t.Errorf("NETOPS_* credentials were not used: %+v", tgt.Cred)
 	}
 }
 
@@ -407,7 +387,7 @@ func TestBackupCommandRejectsBadInput(t *testing.T) {
 
 	missing := newBackupEnv(t, "")
 	missing.args[2] = missing.path("nope.csv")
-	if code, _, stderr := missing.run(); code != task.ExitFatal || !strings.Contains(stderr, "netconfig -init") {
+	if code, _, stderr := missing.run(); code != task.ExitFatal || !strings.Contains(stderr, "netops init") {
 		t.Errorf("missing inventory: exit %d\n%s", code, stderr)
 	}
 }
@@ -421,7 +401,7 @@ func TestBackupCommandHelp(t *testing.T) {
 		if code != task.ExitOK {
 			t.Errorf("%s: exit %d", flagName, code)
 		}
-		for _, want := range []string{"netconfig backup", "-backup-dir", "-retention-count", "-golden-dir", "-html-report", "-md-changelog", "-limit", "-force", "cisco_asa", "mikrotik"} {
+		for _, want := range []string{"netops backup", "-backup-dir", "-retention-count", "-golden-dir", "-html-report", "-md-changelog", "-limit", "-force", "cisco_asa", "mikrotik"} {
 			if !strings.Contains(errb.String(), want) {
 				t.Errorf("%s: help is missing %q", flagName, want)
 			}
@@ -443,7 +423,7 @@ func TestDispatchRoutesSubcommandsAndKeepsTheClassicRunner(t *testing.T) {
 	// top-level -version flag
 	out.Reset()
 	errb.Reset()
-	if code := dispatch([]string{"-version"}, in, &out, &errb); code != 0 || !strings.HasPrefix(out.String(), "netconfig ") {
+	if code := dispatch([]string{"-version"}, in, &out, &errb); code != 0 || !strings.HasPrefix(out.String(), "netops ") {
 		t.Errorf("version flag: exit %d, out %q", code, out.String())
 	}
 
@@ -460,32 +440,6 @@ func TestDispatchRoutesSubcommandsAndKeepsTheClassicRunner(t *testing.T) {
 	errb.Reset()
 	if code := dispatch([]string{"-inventory", "missing.csv"}, in, &out, &errb); code != task.ExitFatal || !strings.Contains(errb.String(), "unknown subcommand") {
 		t.Errorf("missing subcommand must fail: exit %d, err %q", code, errb.String())
-	}
-}
-
-func TestLegacyEnvHelpers(t *testing.T) {
-	in := map[string]string{"NETBACKUP_USERNAME": "u", "NETBACKUP_DC1_PASSWORD": "p", "NETCONFIG_USERNAME": "explicit", "OTHER": "x"}
-	got, migrated := migrateLegacyEnv(in)
-	if got["NETCONFIG_USERNAME"] != "explicit" || got["NETCONFIG_DC1_PASSWORD"] != "p" || got["OTHER"] != "x" {
-		t.Errorf("migrated values: %v", got)
-	}
-	if len(migrated) != 1 || migrated[0] != "NETBACKUP_DC1_PASSWORD" {
-		t.Errorf("only entries that were actually copied are reported: %v", migrated)
-	}
-	if _, ok := in["NETCONFIG_DC1_PASSWORD"]; ok {
-		t.Error("the input map must not be modified")
-	}
-
-	env := map[string]string{"NETBACKUP_PASSWORD": "legacy", "NETCONFIG_USERNAME": "new"}
-	lookup, used := legacyLookupEnv(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
-	if v, ok := lookup("NETCONFIG_USERNAME"); !ok || v != "new" || used() {
-		t.Errorf("a set NETCONFIG_ variable must be used without a fallback: %q %v %v", v, ok, used())
-	}
-	if v, ok := lookup("NETCONFIG_PASSWORD"); !ok || v != "legacy" || !used() {
-		t.Errorf("fallback to NETBACKUP_: %q %v %v", v, ok, used())
-	}
-	if _, ok := lookup("HOME"); ok {
-		t.Error("only NETCONFIG_ names fall back")
 	}
 }
 
@@ -521,7 +475,7 @@ func TestBackupShowIsSelectedByTheFirstArgumentOnly(t *testing.T) {
 	in := openDevNull(t)
 	defer in.Close()
 	var out, errb bytes.Buffer
-	if code := dispatch([]string{"backup", "show", "-h"}, in, &out, &errb); code != 0 || !strings.Contains(errb.String(), "netconfig backup show") {
+	if code := dispatch([]string{"backup", "show", "-h"}, in, &out, &errb); code != 0 || !strings.Contains(errb.String(), "netops backup show") {
 		t.Errorf("backup show -h: exit %d\n%s", code, errb.String())
 	}
 }
@@ -534,7 +488,7 @@ func TestOldShowBackupFormSaysWhatToUseInstead(t *testing.T) {
 	for _, args := range [][]string{{"show-backup", "-l"}, {"show-backup", "core-sw1", "-commands", "commands.txt"}} {
 		var out, errb bytes.Buffer
 		code := dispatch(args, in, &out, &errb)
-		if code != task.ExitFatal || !strings.Contains(errb.String(), "netconfig backup show") || strings.Contains(errb.String(), "commands file") {
+		if code != task.ExitFatal || !strings.Contains(errb.String(), "netops backup show") || strings.Contains(errb.String(), "commands file") {
 			t.Errorf("%v: exit %d\n%s", args, code, errb.String())
 		}
 		if out.Len() != 0 {
@@ -549,13 +503,13 @@ func TestBackupHelpPointsToShow(t *testing.T) {
 	defer in.Close()
 	var out, errb bytes.Buffer
 	dispatch([]string{"backup", "-h"}, in, &out, &errb)
-	if !strings.Contains(errb.String(), "netconfig backup show [flags] [node-name]") {
+	if !strings.Contains(errb.String(), "netops backup show [flags] [node-name]") {
 		t.Errorf("backup -h does not mention the show subcommand:\n%s", errb.String())
 	}
 	out.Reset()
 	errb.Reset()
 	dispatch([]string{"-h"}, in, &out, &errb)
-	if !strings.Contains(errb.String(), "netconfig backup show") || strings.Contains(errb.String(), "netconfig show-backup") {
+	if !strings.Contains(errb.String(), "netops backup show") || strings.Contains(errb.String(), "netops show-backup") {
 		t.Errorf("the top-level help must list the new form only:\n%s", errb.String())
 	}
 }
@@ -615,8 +569,8 @@ func TestBackupTerminalBannersCleanedCLI(t *testing.T) {
 func TestJumpForResolution(t *testing.T) {
 	r := &credentials.Resolver{
 		DotEnv: map[string]string{
-			"NETCONFIG_JUMP_HOST":          "env-bastion:22",
-			"NETCONFIG_JUMP_BASTION2_HOST": "bastion2:2222",
+			"NETOPS_JUMP_HOST":          "env-bastion:22",
+			"NETOPS_JUMP_BASTION2_HOST": "bastion2:2222",
 		},
 	}
 	globalDef := credentials.JumpCredentials{Host: "env-bastion:22"}

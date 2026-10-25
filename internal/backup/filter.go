@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	"netconfig/internal/vendor"
+	"netops/internal/vendor"
 )
 
 // Vendor families the built-in volatile rules are scoped to. Keys are the

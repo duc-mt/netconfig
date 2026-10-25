@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"netconfig/internal/inventory"
-	"netconfig/internal/vendor"
+	"netops/internal/inventory"
+	"netops/internal/vendor"
 )
 
 // MatchKind is how a verification condition inspects command output.

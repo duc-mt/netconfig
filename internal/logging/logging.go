@@ -61,7 +61,7 @@ func (l Level) String() string {
 // Options configures New.
 type Options struct {
 	Dir     string    // log directory; "" disables the file
-	Prefix  string    // file name prefix, default "netconfig"
+	Prefix  string    // file name prefix, default "netops"
 	Console io.Writer // usually os.Stderr; nil disables console output
 	Color   bool      // ANSI colours on the console
 	Verbose bool      // also show TRACE on the console
@@ -94,7 +94,7 @@ func New(o Options) (*Logger, error) {
 		}
 		prefix := o.Prefix
 		if prefix == "" {
-			prefix = "netconfig"
+			prefix = "netops"
 		}
 		name := fmt.Sprintf("%s-%s.log", prefix, l.now().Format("20060102-150405"))
 		l.path = filepath.Join(o.Dir, name)

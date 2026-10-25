@@ -18,10 +18,10 @@ import (
 	"testing"
 	"time"
 
-	"netconfig/internal/errcat"
-	"netconfig/internal/inventory"
-	"netconfig/internal/task"
-	"netconfig/internal/vendor"
+	"netops/internal/errcat"
+	"netops/internal/inventory"
+	"netops/internal/task"
+	"netops/internal/vendor"
 )
 
 // kindErr is a typed failure like netconfig's sshclient.Error.

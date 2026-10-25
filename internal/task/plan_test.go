@@ -6,8 +6,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"netconfig/internal/inventory"
-	"netconfig/internal/vendor"
+	"netops/internal/inventory"
+	"netops/internal/vendor"
 )
 
 func planJob(t *testing.T, vendorName, host string, cmds ...string) Job {
@@ -96,7 +96,7 @@ func TestRenderPlan(t *testing.T) {
 	out := RenderPlan(BuildPlanRows(jobs, reports), PlanRenderOptions{CommitConfirm: 5})
 
 	for _, want := range []string{
-		"netconfig change plan",
+		"netops change plan",
 		"HOST", "VENDOR", "CMDS", "RISK", "IMPACT", "ROLLBACK",
 		"r1", "junos", "LOW", "SAFE",
 		"sw1", "CRITICAL", "REBOOT ONLY",

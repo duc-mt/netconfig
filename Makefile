@@ -1,4 +1,4 @@
-BINARY  := netconfig
+BINARY  := netops
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
@@ -6,7 +6,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 
 # Single static binary, no cgo, dependencies taken from ./vendor (works offline).
 build:
-	CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags '$(LDFLAGS)' -o bin/$(BINARY) ./cmd/netconfig
+	CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags '$(LDFLAGS)' -o bin/$(BINARY) ./cmd/netops
 
 test:
 	CGO_ENABLED=0 go test -mod=vendor ./...
@@ -46,7 +46,7 @@ cross:
 		os=$${t%/*}; arch=$${t#*/}; ext=""; [ $$os = windows ] && ext=".exe"; \
 		echo "building $$os/$$arch"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -mod=vendor -trimpath -ldflags '$(LDFLAGS)' \
-			-o bin/$(BINARY)-$$os-$$arch$$ext ./cmd/netconfig || exit 1; \
+			-o bin/$(BINARY)-$$os-$$arch$$ext ./cmd/netops || exit 1; \
 	done
 
 clean:

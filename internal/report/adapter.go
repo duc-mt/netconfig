@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"netconfig/internal/backup"
-	"netconfig/internal/errcat"
+	"netops/internal/backup"
+	"netops/internal/errcat"
 )
 
 // FromResults adapts backup.RunAll's output into the shape

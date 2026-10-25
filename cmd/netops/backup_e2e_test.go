@@ -20,7 +20,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"netconfig/internal/task"
+	"netops/internal/task"
 )
 
 // scriptedDevice is a CLI over a real SSH server: it echoes what it is sent,
@@ -215,8 +215,8 @@ func TestBackupOverRealSSH(t *testing.T) {
 		"asa1,127.0.0.1,"+strconv.Itoa(asaPort)+",cisco_asa,\n"+
 		"sb1,127.0.0.1,"+strconv.Itoa(sbPort)+",sg350,\n"+
 		"locked,127.0.0.1,"+strconv.Itoa(lockedPort)+",cisco,wrongpw\n")
-	env := write(".env", "NETCONFIG_USERNAME=admin\nNETCONFIG_PASSWORD=s3cr3t-pw\n"+
-		"NETCONFIG_WRONGPW_USERNAME=admin\nNETCONFIG_WRONGPW_PASSWORD=not-the-password\n")
+	env := write(".env", "NETOPS_USERNAME=admin\nNETOPS_PASSWORD=s3cr3t-pw\n"+
+		"NETOPS_WRONGPW_USERNAME=admin\nNETOPS_WRONGPW_PASSWORD=not-the-password\n")
 
 	in, err := os.Open(os.DevNull)
 	if err != nil {

@@ -12,12 +12,12 @@
 //
 // Sources, in priority order:
 //
-//  1. the .env file          (NETCONFIG_<GROUP>_USERNAME, NETCONFIG_USERNAME, ...)
+//  1. the .env file          (NETOPS_<GROUP>_USERNAME, NETOPS_USERNAME, ...)
 //  2. process environment    (same names)
 //  3. an interactive, non-echoing terminal prompt
 //
-// Within a source, a group-specific key (NETCONFIG_DC1_PASSWORD) overrides the
-// global key (NETCONFIG_PASSWORD), and that specificity rule is applied across
+// Within a source, a group-specific key (NETOPS_DC1_PASSWORD) overrides the
+// global key (NETOPS_PASSWORD), and that specificity rule is applied across
 // sources: a per-site override in the environment beats a global default in
 // .env. Empty values count as unset. Passwords are never accepted as
 // command-line flags and never appear in String()/%v/%#v output.
@@ -90,7 +90,7 @@ type Resolver struct {
 }
 
 // EnvKey builds the variable name for a group and field, e.g.
-// EnvKey("dc-1", "PASSWORD") == "NETCONFIG_DC_1_PASSWORD".
+// EnvKey("dc-1", "PASSWORD") == "NETOPS_DC_1_PASSWORD".
 func EnvKey(group, field string) string {
 	if group == "" {
 		return globalKey(field)
@@ -103,10 +103,10 @@ func EnvKey(group, field string) string {
 			b.WriteByte('_')
 		}
 	}
-	return "NETCONFIG_" + b.String() + "_" + field
+	return "NETOPS_" + b.String() + "_" + field
 }
 
-func globalKey(field string) string { return "NETCONFIG_" + field }
+func globalKey(field string) string { return "NETOPS_" + field }
 
 func (r *Resolver) lookup(group, field string) (string, bool) {
 	for _, key := range []string{EnvKey(group, field), globalKey(field)} {
@@ -181,7 +181,7 @@ func (r *Resolver) resolveLocked(group string) (Credential, error) {
 }
 
 // JumpDefaults returns the global bastion / jump host connection details
-// loaded from NETCONFIG_JUMP_HOST / NETCONFIG_JUMP_USERNAME / NETCONFIG_JUMP_PASSWORD / NETCONFIG_JUMP_KEY_FILE
+// loaded from NETOPS_JUMP_HOST / NETOPS_JUMP_USERNAME / NETOPS_JUMP_PASSWORD / NETOPS_JUMP_KEY_FILE
 // (or their .env equivalents).
 func (r *Resolver) JumpDefaults() JumpCredentials {
 	host, _ := r.lookupJump("", "HOST")
@@ -204,8 +204,8 @@ func IsDirect(name string) bool {
 }
 
 // ForJumpHost resolves credentials for a named jump host.
-// It checks NETCONFIG_JUMP_<NAME>_HOST / USERNAME / PASSWORD / KEY_FILE first,
-// falling back to the global NETCONFIG_JUMP_* variables, and finally
+// It checks NETOPS_JUMP_<NAME>_HOST / USERNAME / PASSWORD / KEY_FILE first,
+// falling back to the global NETOPS_JUMP_* variables, and finally
 // to the global device username/keyfile if jump credentials are unset.
 // If name explicitly indicates a direct connection (IsDirect), it returns an
 // empty JumpCredentials{} with Host == "".
@@ -253,9 +253,9 @@ func (r *Resolver) ForJumpHost(name string) JumpCredentials {
 func (r *Resolver) lookupJump(cleanName, field string) (string, bool) {
 	var keys []string
 	if cleanName != "" {
-		keys = append(keys, "NETCONFIG_JUMP_"+cleanName+"_"+field)
+		keys = append(keys, "NETOPS_JUMP_"+cleanName+"_"+field)
 	}
-	keys = append(keys, "NETCONFIG_JUMP_"+field)
+	keys = append(keys, "NETOPS_JUMP_"+field)
 
 	for _, key := range keys {
 		if r.Overrides != nil {

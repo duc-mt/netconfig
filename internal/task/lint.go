@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"netconfig/internal/logging"
+	"netops/internal/logging"
 )
 
 // RiskLevel ranks how much damage a command (or a whole job) can do.

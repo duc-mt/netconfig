@@ -31,16 +31,16 @@ esac
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-BINARY="$ROOT_DIR/bin/netconfig"
-[ "$OS" = "windows" ] && BINARY="$ROOT_DIR/bin/netconfig.exe"
+BINARY="$ROOT_DIR/bin/netops"
+[ "$OS" = "windows" ] && BINARY="$ROOT_DIR/bin/netops.exe"
 
-ARCH_BINARY="$ROOT_DIR/bin/netconfig-${OS}-${ARCH}"
+ARCH_BINARY="$ROOT_DIR/bin/netops-${OS}-${ARCH}"
 [ "$OS" = "windows" ] && ARCH_BINARY="${ARCH_BINARY}.exe"
 
-ROOT_BIN="$ROOT_DIR/netconfig"
-[ "$OS" = "windows" ] && ROOT_BIN="$ROOT_DIR/netconfig.exe"
+ROOT_BIN="$ROOT_DIR/netops"
+[ "$OS" = "windows" ] && ROOT_BIN="$ROOT_DIR/netops.exe"
 
-ROOT_ARCH_BIN="$ROOT_DIR/netconfig-${OS}-${ARCH}"
+ROOT_ARCH_BIN="$ROOT_DIR/netops-${OS}-${ARCH}"
 [ "$OS" = "windows" ] && ROOT_ARCH_BIN="${ROOT_ARCH_BIN}.exe"
 
 if [ -f "$BINARY" ]; then
@@ -67,13 +67,13 @@ else
 
     if command -v make >/dev/null 2>&1; then
         (cd "$ROOT_DIR" && make build)
-        BINARY="$ROOT_DIR/bin/netconfig"
+        BINARY="$ROOT_DIR/bin/netops"
     else
         echo "make is unavailable, building directly with go..."
         VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
         LDFLAGS="-s -w -X main.version=$VERSION"
-        (cd "$ROOT_DIR" && CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags "$LDFLAGS" -o bin/netconfig ./cmd/netconfig)
-        BINARY="$ROOT_DIR/bin/netconfig"
+        (cd "$ROOT_DIR" && CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags "$LDFLAGS" -o bin/netops ./cmd/netops)
+        BINARY="$ROOT_DIR/bin/netops"
     fi
 fi
 

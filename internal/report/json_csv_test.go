@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"netconfig/internal/backup"
-	"netconfig/internal/errcat"
-	"netconfig/internal/inventory"
+	"netops/internal/backup"
+	"netops/internal/errcat"
+	"netops/internal/inventory"
 )
 
 func TestJSONAndCSVReports(t *testing.T) {

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"netconfig/internal/inventory"
-	"netconfig/internal/vendor"
+	"netops/internal/inventory"
+	"netops/internal/vendor"
 )
 
 // historyFile writes one backup of a device in a run and dates it so that

@@ -6,7 +6,7 @@
 package backup
 
 import (
-	"netconfig/internal/vendor"
+	"netops/internal/vendor"
 )
 
 // archiveSpec describes how one platform's backups are stored on disk.

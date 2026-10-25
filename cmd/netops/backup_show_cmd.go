@@ -16,14 +16,14 @@ import (
 	"strconv"
 	"strings"
 
-	"netconfig/internal/backup"
-	"netconfig/internal/credentials"
-	"netconfig/internal/task"
+	"netops/internal/backup"
+	"netops/internal/credentials"
+	"netops/internal/task"
 )
 
 const backupShowUsageText = `Usage:
-  netconfig backup show [flags] <node-name>
-  netconfig backup show -l
+  netops backup show [flags] <node-name>
+  netops backup show -l
 
 View or locate the newest saved configuration of a device. <node-name> may be
 part of a name (case-insensitive); if several devices match, you are asked to
@@ -31,23 +31,23 @@ choose. The file is shown with $PAGER (or less) on a terminal and printed
 as-is otherwise.
 
 Examples:
-  netconfig backup show core-sw1
-  netconfig backup show gw-01            (asks which one if several match)
-  netconfig backup show -d core-sw1      (the latest diff instead)
-  netconfig backup show -p core-sw1      (only print the file's path)
-  netconfig backup show -l               (list every device with a backup)
+  netops backup show core-sw1
+  netops backup show gw-01            (asks which one if several match)
+  netops backup show -d core-sw1      (the latest diff instead)
+  netops backup show -p core-sw1      (only print the file's path)
+  netops backup show -l               (list every device with a backup)
 `
 
 // backupShowFlagGroups is the help layout of "backup show".
 var backupShowFlagGroups = []flagGroup{{"Flags", []string{"l", "d", "p", "backup-dir"}}}
 
-// runBackupShow is "netconfig backup show".
+// runBackupShow is "netops backup show".
 func runBackupShow(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var (
 		dir                  string
 		diff, pathOnly, list bool
 	)
-	fs := flag.NewFlagSet("netconfig backup show", flag.ContinueOnError)
+	fs := flag.NewFlagSet("netops backup show", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
 		fmt.Fprint(stderr, backupShowUsageText)
@@ -93,7 +93,7 @@ func runBackupShow(args []string, stdin *os.File, stdout, stderr io.Writer) int 
 	tree, err := backup.ScanTree(dir)
 	if err != nil {
 		if list {
-			return fail("netconfig backup show: %v", err)
+			return fail("netops backup show: %v", err)
 		}
 		return fail("Error: %v", err)
 	}
@@ -123,7 +123,7 @@ func runBackupShow(args []string, stdin *os.File, stdout, stderr io.Writer) int 
 	exact, matches := backup.MatchNodes(tree.Nodes(diff), query)
 	if len(matches) == 0 {
 		fmt.Fprintf(stderr, "No %s files found matching '%s' in %s.\n", kind, query, dir)
-		fmt.Fprintln(stderr, "Run 'netconfig backup show -l' to view all available devices.")
+		fmt.Fprintln(stderr, "Run 'netops backup show -l' to view all available devices.")
 		return task.ExitFatal
 	}
 
@@ -159,7 +159,7 @@ func runBackupShow(args []string, stdin *os.File, stdout, stderr io.Writer) int 
 
 	fmt.Fprintf(stdout, "==> Latest %s for '%s': %s\n", kind, selected, file)
 	if err := display(file, stdin, stdout, stderr); err != nil {
-		return fail("netconfig backup show: %v", err)
+		return fail("netops backup show: %v", err)
 	}
 	return task.ExitOK
 }
@@ -213,7 +213,7 @@ func display(path string, stdin *os.File, stdout, stderr io.Writer) error {
 			if err == nil {
 				return nil
 			}
-			fmt.Fprintf(stderr, "netconfig backup show: pager %q failed (%v); printing the file instead\n", argv[0], err)
+			fmt.Fprintf(stderr, "netops backup show: pager %q failed (%v); printing the file instead\n", argv[0], err)
 		}
 	}
 	f, err := os.Open(path)

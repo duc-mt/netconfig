@@ -213,7 +213,7 @@ func anyDiffActivity(results []Result) bool {
 func (s Summary) Render(opts RenderOptions) string {
 	var b strings.Builder
 
-	title := "netconfig run summary"
+	title := "netops run summary"
 	if opts.DryRun {
 		title += " (DRY-RUN: nothing was committed or saved)"
 	}

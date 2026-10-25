@@ -684,7 +684,7 @@ func newArista() *Profile {
 	p := ciscoLike(Arista, "Arista EOS", reAristaErr)
 	p.CandidateDiff = "show session-config diffs"
 	p.applySession = []Step{
-		{Kind: StepEnter, Line: "configure session netconfig-{token}"},
+		{Kind: StepEnter, Line: "configure session netops-{token}"},
 		{Kind: StepBody},
 		{Kind: StepInspect, Line: "show session-config diffs"},
 		{Kind: StepPersist, Line: "commit", Slow: true},
@@ -693,7 +693,7 @@ func newArista() *Profile {
 	// EOS config sessions validate every command as it is entered and can be
 	// aborted, which makes a genuine dry run possible.
 	p.dryRun = []Step{
-		{Kind: StepEnter, Line: "configure session netconfig-{token}"},
+		{Kind: StepEnter, Line: "configure session netops-{token}"},
 		{Kind: StepBody},
 		{Kind: StepInspect, Line: "show session-config diffs"},
 		{Kind: StepExit, Line: "abort"},
@@ -703,11 +703,11 @@ func newArista() *Profile {
 	// its own unless the session is re-entered and committed.
 	p.safety = RollbackSafe
 	p.confirmApply = []Step{
-		{Kind: StepEnter, Line: "configure session netconfig-{token}"},
+		{Kind: StepEnter, Line: "configure session netops-{token}"},
 		{Kind: StepBody},
 		{Kind: StepPersist, Line: "commit timer {hms}", Slow: true, Timed: true},
 		{Kind: StepVerify},
-		{Kind: StepConfirm, Line: "configure session netconfig-{token}"},
+		{Kind: StepConfirm, Line: "configure session netops-{token}"},
 		{Kind: StepConfirm, Line: "commit", Slow: true},
 		{Kind: StepPersist, Line: "write memory", Slow: true},
 	}

@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"netconfig/internal/inventory"
-	"netconfig/internal/redact"
-	"netconfig/internal/vendor"
+	"netops/internal/inventory"
+	"netops/internal/redact"
+	"netops/internal/vendor"
 )
 
 // benchConfig builds an IOS-like configuration of about n lines: interface

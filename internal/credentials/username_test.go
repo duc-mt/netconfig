@@ -3,9 +3,9 @@ package credentials
 import "testing"
 
 func TestResolverUsernameDoesNotPromptOrCache(t *testing.T) {
-	env := map[string]string{"NETCONFIG_USERNAME": "global-env", "NETCONFIG_LAB_USERNAME": "lab-env"}
+	env := map[string]string{"NETOPS_USERNAME": "global-env", "NETOPS_LAB_USERNAME": "lab-env"}
 	r := &Resolver{
-		DotEnv:    map[string]string{"NETCONFIG_CORE_USERNAME": "core-file"},
+		DotEnv:    map[string]string{"NETOPS_CORE_USERNAME": "core-file"},
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
 		Prompter:  &fakePrompter{user: "prompted", pass: "x"},
 	}
@@ -22,7 +22,7 @@ func TestResolverUsernameDoesNotPromptOrCache(t *testing.T) {
 	if p := r.Prompter.(*fakePrompter); p.userCalls != 0 || p.passCalls != 0 {
 		t.Fatalf("Username must never prompt: %+v", p)
 	}
-	delete(env, "NETCONFIG_USERNAME")
+	delete(env, "NETOPS_USERNAME")
 	if got := r.Username("other"); got != "" {
 		t.Fatalf("an unconfigured group yields \"\" (the lint then assumes the worst), got %q", got)
 	}

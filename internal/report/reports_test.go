@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"netconfig/internal/backup"
-	"netconfig/internal/compliance"
-	"netconfig/internal/inventory"
+	"netops/internal/backup"
+	"netops/internal/compliance"
+	"netops/internal/inventory"
 )
 
 var reportTime = time.Date(2026, time.October, 12, 8, 13, 22, 0, time.UTC)

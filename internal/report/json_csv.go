@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"netconfig/internal/backup"
+	"netops/internal/backup"
 )
 
 // AuditRecord is a machine-readable summary record of one device backup outcome.

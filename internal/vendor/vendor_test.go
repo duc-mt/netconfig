@@ -208,7 +208,7 @@ func TestDryRunValidatingVendors(t *testing.T) {
 	}
 
 	eos := mustLookup(t, "arista").BuildPlan(testCmds, PlanOptions{DryRun: true, Token: "ab-12!"})
-	wantEOS := []string{"configure session netconfig-ab12", "hostname lab1", "ntp server 10.0.0.9", "show session-config diffs", "abort"}
+	wantEOS := []string{"configure session netops-ab12", "hostname lab1", "ntp server 10.0.0.9", "show session-config diffs", "abort"}
 	if !eos.Validates || !slices.Equal(lines(eos.Steps), wantEOS) {
 		t.Errorf("arista dry-run = %q (validates=%v), want %q", lines(eos.Steps), eos.Validates, wantEOS)
 	}
@@ -272,7 +272,7 @@ func TestPrompts(t *testing.T) {
 		{"fortinet", "FGT60E (console) #", true},
 		{"fortinet", "FGT60E (global) (console) # ", true},
 		{"fortinet", "Command fail. Return code -3", false},
-		{"arista", "switch(config-s-netconfig-ab12)#", true},
+		{"arista", "switch(config-s-netops-ab12)#", true},
 		{"arista", "switch>", true},
 		{"vyos", "vyos@vpc-transit-node01:~$ ", true},
 		{"vyos", "vyos@vpc-transit-node01# ", true},
@@ -522,7 +522,7 @@ func TestPreDiffPlans(t *testing.T) {
 
 	arista := mustLookup(t, "arista").BuildPlan([]string{"hostname lab1"}, opts)
 	wantArista := []string{
-		"configure session netconfig-test",
+		"configure session netops-test",
 		"hostname lab1",
 		"show session-config diffs",
 		"commit",

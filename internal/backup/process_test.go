@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"netconfig/internal/compliance"
-	"netconfig/internal/inventory"
-	"netconfig/internal/vendor"
+	"netops/internal/compliance"
+	"netops/internal/inventory"
+	"netops/internal/vendor"
 )
 
 const (

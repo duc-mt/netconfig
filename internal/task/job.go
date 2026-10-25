@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"netconfig/internal/credentials"
-	"netconfig/internal/inventory"
-	"netconfig/internal/vendor"
+	"netops/internal/credentials"
+	"netops/internal/inventory"
+	"netops/internal/vendor"
 )
 
 // Process exit codes.

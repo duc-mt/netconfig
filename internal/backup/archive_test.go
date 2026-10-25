@@ -9,7 +9,7 @@ import (
 	"slices"
 	"testing"
 
-	"netconfig/internal/vendor"
+	"netops/internal/vendor"
 )
 
 // netbackupLayout is where netbackup saved each platform: its own platform key

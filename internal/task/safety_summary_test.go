@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"netconfig/internal/inventory"
+	"netops/internal/inventory"
 )
 
 func TestSummaryShowsSafetyColumnOnlyWhenRated(t *testing.T) {

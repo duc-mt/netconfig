@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"netconfig/internal/inventory"
-	"netconfig/internal/task"
-	"netconfig/internal/vendor"
+	"netops/internal/inventory"
+	"netops/internal/task"
+	"netops/internal/vendor"
 )
 
 func TestDashboardLifecycle(t *testing.T) {
@@ -40,8 +40,8 @@ func TestDashboardLifecycle(t *testing.T) {
 	d.Stop()
 
 	out := buf.String()
-	if !strings.Contains(out, "netconfig") {
-		t.Errorf("output should contain 'netconfig', got: %q", out)
+	if !strings.Contains(out, "netops") {
+		t.Errorf("output should contain 'netops', got: %q", out)
 	}
 	if !strings.Contains(out, "router1") {
 		t.Errorf("output should contain 'router1', got: %q", out)

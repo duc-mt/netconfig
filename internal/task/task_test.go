@@ -24,9 +24,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"netconfig/internal/credentials"
-	"netconfig/internal/inventory"
-	"netconfig/internal/logging"
+	"netops/internal/credentials"
+	"netops/internal/inventory"
+	"netops/internal/logging"
 )
 
 // ---- fakes ------------------------------------------------------------------

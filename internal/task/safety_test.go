@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"netconfig/internal/vendor"
+	"netops/internal/vendor"
 )
 
 // ---- helpers ----------------------------------------------------------------

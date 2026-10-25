@@ -18,8 +18,8 @@ import (
 	"strings"
 	"text/template"
 
-	"netconfig/internal/inventory"
-	"netconfig/internal/vendor"
+	"netops/internal/inventory"
+	"netops/internal/vendor"
 )
 
 // CommandSource yields the configuration commands for one device.

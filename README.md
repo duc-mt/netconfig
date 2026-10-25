@@ -1,12 +1,12 @@
-# netconfig
+# netops
 
 Apply configuration commands to many network devices over SSH, concurrently, from a
 single static binary. Built for air-gapped management networks: no runtime
 dependencies, no network access other than SSH to the devices.
 
 The same binary also archives configurations and watches them for change and drift:
-[`netconfig backup`](#backup-change-detection-and-drift-netconfig-backup) and
-`netconfig backup show` (formerly the standalone `netbackup` tool).
+[`netops backup`](#backup-change-detection-and-drift-netops-backup) and
+`netops backup show` (formerly the standalone `netbackup` tool).
 
 Supported platforms: Cisco IOS/IOS-XE, Cisco Small Business (SF/SG/CBS), Cisco ASA, Juniper Junos, Huawei VRP, Fortinet FortiOS, Arista EOS, VyOS, Ruijie RGOS, Aruba AOS-CX/AOS-S, Check Point Gaia, Palo Alto PAN-OS, pfSense, Sophos.
 
@@ -31,22 +31,22 @@ make init                 # 1. Initialize .env, inventory.csv, and commands.txt
 
 ### Option 2: Download from GitHub Releases
 All builds are automatically compiled and published to GitHub on every commit:
-1. Go to the [Releases](https://github.com/duc-mt/netconfig/releases) page on GitHub.
+1. Go to the [Releases](https://github.com/duc-mt/netops/releases) page on GitHub.
 2. Under **Latest Build**, download the single binary for your target OS (`.exe` for Windows, `linux-amd64` for Linux).
 3. Bring only this binary to any machine (online or air-gapped).
-4. Run `netconfig.exe init` (or `./netconfig-linux-amd64 init`) to generate sample `inventory.csv`, `commands.txt`, and `.env` template files instantly!
-5. Run `netconfig.exe config` (defaults to `commands.txt`, `inventory.csv`, and `.env` automatically).
+4. Run `netops.exe init` (or `./netops-linux-amd64 init`) to generate sample `inventory.csv`, `commands.txt`, and `.env` template files instantly!
+5. Run `netops.exe config` (defaults to `commands.txt`, `inventory.csv`, and `.env` automatically).
 
 ### Option 3: Standard Make / Direct Binary
 - **Initialize config:** `make init`
 - **Build (offline):** `make build` (or `make cross` for all platforms)
-- **Run direct binary:** `./bin/netconfig config`
+- **Run direct binary:** `./bin/netops config`
 
 ## Build
 
 ```sh
 make vendor     # once, on a machine with internet: go mod tidy && go mod vendor
-make build      # CGO_ENABLED=0 go build -mod=vendor -> bin/netconfig
+make build      # CGO_ENABLED=0 go build -mod=vendor -> bin/netops
 make test       # unit tests (no devices needed)
 make cross      # linux/windows/darwin binaries
 ```
@@ -61,7 +61,7 @@ once so it contains the `ssh/knownhosts` package, which this project imports.
 
 Fastest way (with the single binary, zero dependencies):
 ```sh
-netconfig -init
+netops -init
 ```
 *(Or if using the repository with Make: `make init`)*
 
@@ -87,7 +87,7 @@ Available example files in `examples/`:
 
 ### 2. Configure credentials and inventory
 
-- Edit `.env` with your SSH credentials (`NETCONFIG_USERNAME`, `NETCONFIG_PASSWORD`).
+- Edit `.env` with your SSH credentials (`NETOPS_USERNAME`, `NETOPS_PASSWORD`).
 - Edit `inventory.csv` with target device IPs and vendor platforms.
 - Edit `commands.txt` with configuration commands.
 
@@ -95,26 +95,26 @@ Available example files in `examples/`:
 
 ```sh
 # First run: test connectivity and record host keys without touching device config
-./bin/netconfig config -commands commands.txt -dry-run -host-key-policy accept-new
+./bin/netops config -commands commands.txt -dry-run -host-key-policy accept-new
 
 # Production run: push commands with automatic pre-change configuration backup
-./bin/netconfig config -commands commands.txt -backup
+./bin/netops config -commands commands.txt -backup
 
 # Operational (show) commands — no configure/commit/save triggered
-./bin/netconfig config -op -commands <(echo "show ip ospf route | match 248") -yes -host-key-policy accept-new
+./bin/netops config -op -commands <(echo "show ip ospf route | match 248") -yes -host-key-policy accept-new
 
 # Write per-device output files and a JSON run report
-./bin/netconfig config -op -commands <(echo "show version") -yes \
+./bin/netops config -op -commands <(echo "show version") -yes \
   -output-dir results/ -json-report run.json -host-key-policy accept-new
 
 # Config change with auto-rollback on failure
-./bin/netconfig config -commands commands.txt -backup -rollback-on-fail -yes
+./bin/netops config -commands commands.txt -backup -rollback-on-fail -yes
 ```
 
 Templates (rendered once per device):
 
 ```sh
-./bin/netconfig config -template examples/config.tmpl -var ntp=10.0.0.1 -var syslog=10.0.0.2 -limit '@dc1' -backup
+./bin/netops config -template examples/config.tmpl -var ntp=10.0.0.1 -var syslog=10.0.0.2 -limit '@dc1' -backup
 ```
 
 ## Features
@@ -126,7 +126,7 @@ configuration mode. No `configure`, no `commit`, no `save` is issued — the
 command runs directly in the device's operational shell.
 
 ```sh
-./bin/netconfig -op -commands <(echo "show ip ospf route | match 248") \
+./bin/netops -op -commands <(echo "show ip ospf route | match 248") \
   -yes -host-key-policy accept-new
 ```
 
@@ -140,7 +140,7 @@ Save each device's command responses to `<dir>/<hostname>.txt` for easy
 offline review, diffing, or scripting:
 
 ```sh
-./bin/netconfig -op -commands commands.txt -yes -output-dir results/
+./bin/netops -op -commands commands.txt -yes -output-dir results/
 ls results/
 # NHG-HO-GW-01.txt  NHG-TRANSIT-GW-01.txt  ...
 ```
@@ -155,7 +155,7 @@ Write a machine-readable summary of the entire run to a JSON file — useful for
 CI/CD pipelines, dashboards, or post-processing:
 
 ```sh
-./bin/netconfig config -commands commands.txt -backup -json-report run.json
+./bin/netops config -commands commands.txt -backup -json-report run.json
 cat run.json
 ```
 
@@ -166,13 +166,13 @@ and a `devices` array with `hostname`, `address`, `vendor`, `status`,
 
 ### Auto-Rollback on Failure (`-rollback-on-fail`)
 
-Requires `-backup`. When a device fails mid-configuration, netconfig
+Requires `-backup`. When a device fails mid-configuration, netops
 immediately re-opens an SSH session and re-applies the pre-change backup
 content as configuration commands, reverting the device to its known-good
 state:
 
 ```sh
-./bin/netconfig config -commands commands.txt -backup -rollback-on-fail -yes
+./bin/netops config -commands commands.txt -backup -rollback-on-fail -yes
 ```
 
 Rollback is best-effort: the original failure is still recorded in the result
@@ -204,13 +204,13 @@ kind that decides which flag releases it:
 | destructive | `no router bgp`, `delete interfaces`, `default interface`, `clear ip bgp *`, `write erase`, `reload` | level is `HIGH` or `CRITICAL` | `-allow-dangerous` |
 | impact | neighbour shutdown/removal, router-id change, VLAN removal, soft resets | never | - |
 
-`-strict-safety` is on by default. When it blocks, netconfig exits with status 1 **before any device is
+`-strict-safety` is on by default. When it blocks, netops exits with status 1 **before any device is
 contacted** and prints every finding. `-strict-safety=false` turns blocks into warnings. `-dry-run` is
 never blocked (it prints what would block a real run). Read-only commands (`show`, `display`, `get`,
 `ping`, ...) are never flagged, and `-op` runs are checked for destructive commands only.
 
 Lockout detection matches literally: `no ip address 10.0.0.1 ...` is `CRITICAL` only when `10.0.0.1`
-is the address netconfig connects to; removing some other address is `HIGH`. A lint failure on one
+is the address netops connects to; removing some other address is `HIGH`. A lint failure on one
 device (including an internal error) is logged as a warning for that device and never stops the others.
 
 > **Behaviour change:** scripts that already contained destructive commands now need
@@ -218,7 +218,7 @@ device (including an internal error) is logged as a warning for that device and 
 
 ### Commit-Confirm (`-commit-confirm`, `-allow-reboot-rollback`)
 
-`-commit-confirm MINUTES` applies the change with an **on-box deadman timer**: if netconfig cannot
+`-commit-confirm MINUTES` applies the change with an **on-box deadman timer**: if netops cannot
 verify and confirm in time (lockout, crash, lost link), the device reverts by itself. Each platform
 is classified by what it can do:
 
@@ -252,7 +252,7 @@ is rejected or looks like an error, the device is **not changed**.
 * **On `UNSAFE` platforms** the run continues without a safety net and logs:
   `Safe commit-confirm cannot be achieved: platform lacks non-reboot auto-rollback. If network isolation occurs, automated rollback will FAIL and OOB/console access will be required.`
 * While a timer is armed, backup-based rollback is skipped: the on-box timer owns the revert.
-* The window must outlast verification: netconfig refuses `-commit-confirm` values shorter than the
+* The window must outlast verification: netops refuses `-commit-confirm` values shorter than the
   worst-case retry time of the checks, and always keeps a 15 s margin before confirming.
 * The commands are data in `internal/vendor/vendor.go` (`confirmApply`). IOS-XE and VyOS syntax and
   behaviour vary by release (some VyOS releases implement `commit-confirm` with a reboot): if yours
@@ -305,7 +305,7 @@ Safely roll out configuration updates in staged waves with failure thresholds:
 ```sh
 # Run 1 canary device first; if successful, process remaining devices in batches of 5.
 # Abort immediately if cumulative failures exceed 10%.
-./bin/netconfig config -commands commands.txt -canary 1 -batch-size 5 -max-fail-percent 10 -backup
+./bin/netops config -commands commands.txt -canary 1 -batch-size 5 -max-fail-percent 10 -backup
 ```
 
 - **`-canary N`**: executes `N` devices first as a canary wave. If any canary device fails, the entire run halts immediately; all unstarted devices are marked `SKIPPED (CANARY_FAILED)`.
@@ -318,10 +318,10 @@ Inspect exact device-side candidate configuration diffs before committing change
 
 ```sh
 # Inspect candidate diff (Junos "show | compare", VyOS "compare", Arista "show session-config diffs")
-./bin/netconfig config -commands commands.txt -pre-diff
+./bin/netops config -commands commands.txt -pre-diff
 
 # Require interactive confirmation before each device's commit
-./bin/netconfig config -commands commands.txt -confirm-diff
+./bin/netops config -commands commands.txt -confirm-diff
 ```
 
 - **`-pre-diff`**: stages configuration commands and issues the vendor's native candidate diff command before persisting. The diff is displayed with colored unified diff formatting (`+` additions in green, `-` deletions in red) and stored in `run.json` (`candidate_diff`).
@@ -333,7 +333,7 @@ Extract structured data from operational `show`, `display`, and `get` commands d
 
 ```sh
 # Parse operational commands into structured JSON on stdout
-./bin/netconfig -op -commands <(echo "show ip interface brief") -format json -yes
+./bin/netops -op -commands <(echo "show ip interface brief") -format json -yes
 ```
 
 The structured output parser automatically recognizes and converts command outputs into typed JSON models:
@@ -346,10 +346,10 @@ When used with `-output-dir DIR`, parsed results are written to `<DIR>/<hostname
 
 ### Live Terminal Progress Dashboard (`-dashboard`)
 
-When running interactively on a terminal, `netconfig` renders a live, multi-line ANSI terminal progress dashboard with zero external dependencies:
+When running interactively on a terminal, `netops` renders a live, multi-line ANSI terminal progress dashboard with zero external dependencies:
 
 ```
-netconfig [Batch 1/3] [Workers: 5] [Active: 3] [Elapsed: 00:12]
+netops [Batch 1/3] [Workers: 5] [Active: 3] [Elapsed: 00:12]
 [=========>-------------------] 12/30 (40%) | 11 OK, 1 FAIL, 0 SKIP
   * core-rtr-01      (cisco)   [config]    interface GigabitEthernet0/1 (1.2s)
   * dist-sw-02       (junos)   [persist]   commit (2.4s)
@@ -361,7 +361,7 @@ netconfig [Batch 1/3] [Workers: 5] [Active: 3] [Elapsed: 00:12]
 - Interleaves cleanly with log messages and clears itself upon completion, leaving only the clean final summary table.
 - Disable via `-dashboard=false` or set `NO_COLOR=1` / run non-interactively in CI pipelines.
 
-## Backup, change detection and drift (`netconfig backup`)
+## Backup, change detection and drift (`netops backup`)
 
 ```sh
 ./run backup                                    # every device in inventory.csv
@@ -372,7 +372,7 @@ netconfig [Batch 1/3] [Workers: 5] [Active: 3] [Elapsed: 00:12]
 ./run backup -h                                 # every flag
 ```
 
-`backup` reads the same `inventory.csv`, credentials (`.env`, `NETCONFIG_*`), jump hosts, host-key
+`backup` reads the same `inventory.csv`, credentials (`.env`, `NETOPS_*`), jump hosts, host-key
 policy and route memory as a configuration run, and connects through the same engine, so login,
 `enable`, paging and per-vendor quirks behave identically. For each device it runs the platform's
 backup command, validates that the output is complete, masks secrets, compares it with the previous
@@ -409,7 +409,7 @@ backups/
 > [!NOTE]
 > **Sophos SFOS Architecture & Multi-Command Backup**:
 > Unlike Cisco, FortiOS, or Junos, Sophos SFOS does not store configuration in flat text files. Settings reside in an internal PostgreSQL database (`corporate.db`). The SFOS Device Console (`console>`) does not provide a CLI command to dump a full importable configuration (like `running-config`).
-> Therefore, `netconfig` executes a comprehensive suite of show commands under `sophos/<hostname>.cfg` for configuration drift tracking, change detection (`.diff`), and network state documentation:
+> Therefore, `netops` executes a comprehensive suite of show commands under `sophos/<hostname>.cfg` for configuration drift tracking, change detection (`.diff`), and network state documentation:
 > 1. `system diagnostics show version-info` (Firmware version, build, serial number, device ID)
 > 2. `show network interfaces` (Physical & virtual interfaces, zones, IP/netmask, MTU, speed/duplex)
 > 3. `show network static-route` (Active static routing table)
@@ -476,7 +476,7 @@ block at the end of the run. Description and remark lines never escalate. Rules 
 `cisco_ios.golden`, `asa.golden`, `sg350.golden`, `h3c.golden`, ...) plus an optional `common.golden` for
 every device; `-compliance-rules <file>` takes `[vendor]` sections instead. See `examples/golden/`.
 Cisco SB and Cisco ASA do **not** inherit the IOS rules, since their CLI differs. A baseline for a
-platform netconfig does not support (MikroTik) is reported as an error, not silently ignored.
+platform netops does not support (MikroTik) is reported as an error, not silently ignored.
 
 ```text
 # A comment ("!" and "//" also start one), on its own line.
@@ -590,14 +590,14 @@ If pasting full configuration backups into a live switch (e.g., using SecureCRT,
 
 ### Migrating from the standalone `netbackup`
 
-`netbackup <flags>` becomes `netconfig backup <flags>`, and browsing backups uses
-`netconfig backup show` / `./run backup show` (there is no `netconfig show-backup` command). Existing
+`netbackup <flags>` becomes `netops backup <flags>`, and browsing backups uses
+`netops backup show` / `./run backup show` (there is no `netops show-backup` command). Existing
 inventories, `.env` files, golden baselines and backup trees keep working:
 
 * **Flags**: netbackup's spellings stay accepted: `-out`, `-md-report`, `-save-unchanged`,
   `-known-hosts-policy`, `-update-known-hosts`, `-replace-host-keys`, `-insecure-ignore-host-key`,
   `-show-diff`.
-* **Environment**: `NETBACKUP_<X>` is read as `NETCONFIG_<X>` (an explicit `NETCONFIG_` name wins), with a
+* **Environment**: `NETBACKUP_<X>` is read as `NETOPS_<X>` (an explicit `NETOPS_` name wins), with a
   warning to rename it.
 * **Vendor names**: every vendor spelling netbackup accepted (`cisco_ios`, `juniper_junos`, `fortigate`,
   `checkpoint_gaia`, `huawei_vrp`, ...) still resolves; backups keep landing in the same directories.
@@ -609,9 +609,9 @@ What differs, deliberately:
   connection failed, which routes credentials through other devices.
 * `-verbose` logs the connection and login steps (as in a configuration run); in netbackup it aliased `-diff`.
 * `-log-format json` is rejected with a pointer to `-json-report`. `-init`, `-show-memory` and
-  `-clear-memory` stay on the top-level command (`netconfig -init`).
+  `-clear-memory` stay on the top-level command (`netops -init`).
 * Authentication failures, host-key mismatches and refused commands are **no longer retried** by `-retries`.
-* **MikroTik RouterOS and the `generic` platform are not supported** (netconfig has no profile for them);
+* **MikroTik RouterOS and the `generic` platform are not supported** (netops has no profile for them);
   such devices fail with `unsupported vendor` and a `mikrotik.golden` file is reported as an error.
 * If a commands file is literally named `backup`, pass it as `-commands backup`.
 
@@ -651,8 +651,8 @@ Per field (username, password, enable password), highest priority first:
 2. process environment variables
 3. interactive prompt on the terminal (username echoed, password not)
 
-Names: `NETCONFIG_USERNAME`, `NETCONFIG_PASSWORD`, `NETCONFIG_ENABLE_PASSWORD`, and per
-credential group `NETCONFIG_<GROUP>_USERNAME` etc. (`dc-1` becomes `DC_1`). A group-specific
+Names: `NETOPS_USERNAME`, `NETOPS_PASSWORD`, `NETOPS_ENABLE_PASSWORD`, and per
+credential group `NETOPS_<GROUP>_USERNAME` etc. (`dc-1` becomes `DC_1`). A group-specific
 variable overrides the global one, whichever source it comes from, so a per-site override
 in the environment beats a global default in `.env`. Empty values count as unset. Each group is
 prompted for at most once. If nothing resolves (and there is no terminal), the group's devices are
@@ -666,7 +666,7 @@ masked in logs and in the confirmation preview; what is *sent* to the device is 
 
 ## Safety model
 
-* **Confirmation:** before changing live devices netconfig prints the targets and commands and
+* **Confirmation:** before changing live devices netops prints the targets and commands and
   asks `[y/N]`. `-yes` / `-force` skips it. Without a terminal and without `-yes` it refuses to
   run. `-dry-run` needs no confirmation. `-plan` shows the impact matrix first (see below).
 * **Pre-flight lint, commit-confirm, verification:** see the three sections above. They are
@@ -730,14 +730,14 @@ Default `-host-key-policy update`: hosts are verified against standard OpenSSH `
 ## Logging and results
 
 Console (stderr, coloured on a terminal, `-no-color` / `NO_COLOR` to disable) and a timestamped file
-`logs/netconfig-YYYYMMDD-HHMMSS.log` (mode 0600). The file always contains the exact command traces
+`logs/netops-YYYYMMDD-HHMMSS.log` (mode 0600). The file always contains the exact command traces
 (`>>`) and device responses (`<<`) per device, tagged `[hostname]`; the console shows them with
 `-verbose`. Backup contents are written to the backup files, not to the log.
 
 End-of-run table features modern rounded borders (`╭ ╮ ╰ ╯`), colored status badges, and right-aligned metrics:
 
 ```text
-netconfig run summary (DRY-RUN: nothing was committed or saved)
+netops run summary (DRY-RUN: nothing was committed or saved)
 ╭────────────────────┬──────────────────┬────────┬─────────────┬─────────┬────────┬──────┬─────────────────────────────────────────────────────────╮
 │ HOST               │ ADDRESS          │ VENDOR │ STATUS      │ APPLIED │ REASON │ TIME │ DETAIL                                                  │
 ├────────────────────┼──────────────────┼────────┼─────────────┼─────────┼────────┼──────┼─────────────────────────────────────────────────────────┤
@@ -771,7 +771,7 @@ declined at the prompt, refused to run unattended), **2** at least one device fa
 
 ## Flags
 
-`netconfig -h` prints all of them. Defaults: `-inventory inventory.csv`, `-concurrency 5`,
+`netops -h` prints all of them. Defaults: `-inventory inventory.csv`, `-concurrency 5`,
 `-connect-timeout 10s`, `-command-timeout 30s`, `-log-dir logs`, `-backup-dir backups`,
 `-env-file .env`, `-known-hosts ""` (defaults to `~/.ssh/known_hosts` or `%USERPROFILE%\.ssh\known_hosts`), `-host-key-policy update`.
 
@@ -789,20 +789,20 @@ Key new flags:
 | `-allow-reboot-rollback` | `false` | Permit `reload in MIN` as the deadman on classic IOS and Cisco ASA |
 | `-verify-file FILE` | `""` | Post-change health checks (`!@verify` blocks in the commands file/template also count) |
 | `-plan` | `false` | Show the risk / impact / rollback-safety matrix and ask `Proceed ...? [y/N]` (combine with `-dry-run`) |
-| `-key-file` | `""` | Path to SSH private key file for device authentication (overrides `NETCONFIG_KEY_FILE`) |
+| `-key-file` | `""` | Path to SSH private key file for device authentication (overrides `NETOPS_KEY_FILE`) |
 | `-jump` | `true` | Master toggle for bastion / jump host routing (`-jump=false` to bypass) |
 | `-jump-host` | `""` | Global default bastion `host[:port]` |
-| `-jump-user` | `""` | SSH username for global bastion (overrides `NETCONFIG_JUMP_USERNAME`) |
-| `-jump-password` | `""` | SSH password for global bastion (overrides `NETCONFIG_JUMP_PASSWORD`) |
-| `-jump-key-file` | `""` | SSH private key file for global bastion (overrides `NETCONFIG_JUMP_KEY_FILE`) |
+| `-jump-user` | `""` | SSH username for global bastion (overrides `NETOPS_JUMP_USERNAME`) |
+| `-jump-password` | `""` | SSH password for global bastion (overrides `NETOPS_JUMP_PASSWORD`) |
+| `-jump-key-file` | `""` | SSH private key file for global bastion (overrides `NETOPS_JUMP_KEY_FILE`) |
 | `-mesh-fallback` | `false` | Attempt SSH jump tunneling through neighboring inventory devices if direct connection fails |
 
 ### Jump Host / Bastion Proxy (`-jump`, `-jump-host`)
 
 Route SSH connections through an SSH jump host (bastion) using direct-tcpip tunneling (equivalent to OpenSSH `ProxyJump` / `-J`). Supports a hybrid configuration:
 
-- **Global Bastion:** Pass via `-jump-host mgmt-gw:22` or configure `NETCONFIG_JUMP_HOST`, `NETCONFIG_JUMP_USERNAME`, `NETCONFIG_JUMP_PASSWORD` in `.env`.
-- **Per-Device Bastion & Direct Override:** Add an optional 6th column `jump_host` in `inventory.csv` (`hostname,address,port,vendor,credential_group,jump_host`). Specific named bastions resolve credentials via `NETCONFIG_JUMP_<NAME>_HOST`, `_USERNAME`, `_PASSWORD`. Set to `direct`, `none`, or `-` to bypass the global bastion and connect directly (e.g. for devices reached over WireGuard or local LAN). Leaving it blank inherits the global bastion if configured, or connects directly if none is set.
+- **Global Bastion:** Pass via `-jump-host mgmt-gw:22` or configure `NETOPS_JUMP_HOST`, `NETOPS_JUMP_USERNAME`, `NETOPS_JUMP_PASSWORD` in `.env`.
+- **Per-Device Bastion & Direct Override:** Add an optional 6th column `jump_host` in `inventory.csv` (`hostname,address,port,vendor,credential_group,jump_host`). Specific named bastions resolve credentials via `NETOPS_JUMP_<NAME>_HOST`, `_USERNAME`, `_PASSWORD`. Set to `direct`, `none`, or `-` to bypass the global bastion and connect directly (e.g. for devices reached over WireGuard or local LAN). Leaving it blank inherits the global bastion if configured, or connects directly if none is set.
 - **Master Kill-Switch:** Disable all jump routing on demand with `-jump=false`.
 - **Zero Configuration Impact:** When no jump host is configured, all devices connect directly with zero overhead or prompt.
 
@@ -810,7 +810,7 @@ Route SSH connections through an SSH jump host (bastion) using direct-tcpip tunn
 ## Layout
 
 ```
-cmd/netconfig            flags, confirmation prompt, wiring, exit codes
+cmd/netops            flags, confirmation prompt, wiring, exit codes
 internal/inventory       CSV parsing and filtering
 internal/credentials     .env parsing, 3-tier resolution, terminal prompter
 internal/vendor          per-vendor prompts, pagers, confirmations, errors, config-mode plans

@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"netconfig/internal/compliance"
-	"netconfig/internal/errcat"
-	"netconfig/internal/inventory"
-	"netconfig/internal/logging"
+	"netops/internal/compliance"
+	"netops/internal/errcat"
+	"netops/internal/inventory"
+	"netops/internal/logging"
 )
 
 // newConsole returns a Console writing plain text to a captured console and to

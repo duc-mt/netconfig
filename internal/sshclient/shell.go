@@ -21,7 +21,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"netconfig/internal/vendor"
+	"netops/internal/vendor"
 )
 
 const (
@@ -270,7 +270,7 @@ func (s *Shell) login(ctx context.Context, cfg Config) error {
 			return err
 		}
 		if prof.UserPrompt.MatchString(s.prompt) {
-			return &Error{Kind: KindAuth, Op: "enable", Err: errors.New("privileged mode was refused (check NETCONFIG_<GROUP>_ENABLE_PASSWORD)")}
+			return &Error{Kind: KindAuth, Op: "enable", Err: errors.New("privileged mode was refused (check NETOPS_<GROUP>_ENABLE_PASSWORD)")}
 		}
 	}
 

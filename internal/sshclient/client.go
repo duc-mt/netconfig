@@ -26,7 +26,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"netconfig/internal/vendor"
+	"netops/internal/vendor"
 )
 
 // Error kinds, exposed through (*Error).ErrorKind so callers can categorise

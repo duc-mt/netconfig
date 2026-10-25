@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"netconfig/internal/inventory"
-	"netconfig/internal/task"
-	"netconfig/internal/vendor"
+	"netops/internal/inventory"
+	"netops/internal/task"
+	"netops/internal/vendor"
 )
 
 type activeDevice struct {
@@ -237,7 +237,7 @@ func (d *Dashboard) buildLines() []string {
 	}
 
 	// Line 1: Header summary
-	lines = append(lines, fmt.Sprintf("\x1b[1mnetconfig\x1b[0m%s [Active: %d] [Elapsed: %02d:%02d]",
+	lines = append(lines, fmt.Sprintf("\x1b[1mnetops\x1b[0m%s [Active: %d] [Elapsed: %02d:%02d]",
 		batchInfo, len(d.active), int(elapsed.Minutes()), int(elapsed.Seconds())%60))
 
 	// Line 2: Progress bar

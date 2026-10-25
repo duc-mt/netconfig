@@ -25,11 +25,11 @@ import (
 	"sync"
 	"time"
 
-	"netconfig/internal/credentials"
-	"netconfig/internal/inventory"
-	"netconfig/internal/logging"
-	"netconfig/internal/parser"
-	"netconfig/internal/vendor"
+	"netops/internal/credentials"
+	"netops/internal/inventory"
+	"netops/internal/logging"
+	"netops/internal/parser"
+	"netops/internal/vendor"
 )
 
 // Target is what a Transport needs to open a session.
@@ -1124,7 +1124,7 @@ func (r *Runner) writeJSONOutput(host string, data any) error {
 // writeFileAtomic writes via a temporary file and rename so a crash never
 // leaves a truncated backup that looks valid.
 func writeFileAtomic(dst string, data []byte, perm os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".netconfig-*.tmp")
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".netops-*.tmp")
 	if err != nil {
 		return err
 	}

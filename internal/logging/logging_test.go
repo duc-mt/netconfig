@@ -40,7 +40,7 @@ func TestFileAndConsoleOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := filepath.Base(l.Path()); got != "netconfig-20261003-101500.log" {
+	if got := filepath.Base(l.Path()); got != "netops-20261003-101500.log" {
 		t.Errorf("log file name = %q", got)
 	}
 

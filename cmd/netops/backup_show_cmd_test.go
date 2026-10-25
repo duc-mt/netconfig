@@ -150,7 +150,7 @@ func TestShowBackupDiff(t *testing.T) {
 func TestShowBackupNoMatchSuggestsTheList(t *testing.T) {
 	code, _, errOut := backupShow(t, "-backup-dir", backupTree(t), "ghost")
 	if code != 1 || !strings.Contains(errOut, "No config files found matching 'ghost'") ||
-		!strings.Contains(errOut, "netconfig backup show -l") {
+		!strings.Contains(errOut, "netops backup show -l") {
 		t.Errorf("exit %d, stderr %q", code, errOut)
 	}
 }
@@ -179,7 +179,7 @@ func TestShowBackupUsageErrors(t *testing.T) {
 			t.Errorf("%s: exit %d, want 1", name, code)
 		}
 	}
-	if code, _, errOut := backupShow(t, "-h"); code != 0 || !strings.Contains(errOut, "netconfig backup show") {
+	if code, _, errOut := backupShow(t, "-h"); code != 0 || !strings.Contains(errOut, "netops backup show") {
 		t.Errorf("-h: exit %d, stderr %q", code, errOut)
 	}
 }

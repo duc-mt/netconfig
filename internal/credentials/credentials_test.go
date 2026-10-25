@@ -48,10 +48,10 @@ func mapEnv(m map[string]string) func(string) (string, bool) {
 
 func TestEnvKey(t *testing.T) {
 	cases := map[string]string{
-		"dc1":       "NETCONFIG_DC1_USERNAME",
-		"dc-1.east": "NETCONFIG_DC_1_EAST_USERNAME",
-		"Site A":    "NETCONFIG_SITE_A_USERNAME",
-		"default":   "NETCONFIG_DEFAULT_USERNAME",
+		"dc1":       "NETOPS_DC1_USERNAME",
+		"dc-1.east": "NETOPS_DC_1_EAST_USERNAME",
+		"Site A":    "NETOPS_SITE_A_USERNAME",
+		"default":   "NETOPS_DEFAULT_USERNAME",
 	}
 	for group, want := range cases {
 		if got := EnvKey(group, "USERNAME"); got != want {
@@ -62,8 +62,8 @@ func TestEnvKey(t *testing.T) {
 
 func TestDotEnvBeatsProcessEnv(t *testing.T) {
 	r := &Resolver{
-		DotEnv:    map[string]string{"NETCONFIG_USERNAME": "file-user", "NETCONFIG_PASSWORD": "file-pass"},
-		LookupEnv: mapEnv(map[string]string{"NETCONFIG_USERNAME": "env-user", "NETCONFIG_PASSWORD": "env-pass"}),
+		DotEnv:    map[string]string{"NETOPS_USERNAME": "file-user", "NETOPS_PASSWORD": "file-pass"},
+		LookupEnv: mapEnv(map[string]string{"NETOPS_USERNAME": "env-user", "NETOPS_PASSWORD": "env-pass"}),
 	}
 	c, err := r.Resolve("dc1")
 	if err != nil {
@@ -76,8 +76,8 @@ func TestDotEnvBeatsProcessEnv(t *testing.T) {
 
 func TestFallsBackToProcessEnvPerField(t *testing.T) {
 	r := &Resolver{
-		DotEnv:    map[string]string{"NETCONFIG_PASSWORD": "file-pass"},
-		LookupEnv: mapEnv(map[string]string{"NETCONFIG_USERNAME": "env-user"}),
+		DotEnv:    map[string]string{"NETOPS_PASSWORD": "file-pass"},
+		LookupEnv: mapEnv(map[string]string{"NETOPS_USERNAME": "env-user"}),
 	}
 	c, err := r.Resolve("dc1")
 	if err != nil {
@@ -91,12 +91,12 @@ func TestFallsBackToProcessEnvPerField(t *testing.T) {
 func TestGroupOverrideBeatsGlobalAcrossTiers(t *testing.T) {
 	r := &Resolver{
 		DotEnv: map[string]string{
-			"NETCONFIG_USERNAME": "global-user",
-			"NETCONFIG_PASSWORD": "global-pass",
+			"NETOPS_USERNAME": "global-user",
+			"NETOPS_PASSWORD": "global-pass",
 		},
 		LookupEnv: mapEnv(map[string]string{
-			"NETCONFIG_DC1_USERNAME": "dc1-user",
-			"NETCONFIG_DC1_PASSWORD": "dc1-pass",
+			"NETOPS_DC1_USERNAME": "dc1-user",
+			"NETOPS_DC1_PASSWORD": "dc1-pass",
 		}),
 	}
 	c1, err := r.Resolve("dc1")
@@ -112,9 +112,9 @@ func TestGroupOverrideBeatsGlobalAcrossTiers(t *testing.T) {
 func TestEnablePassword(t *testing.T) {
 	r := &Resolver{
 		LookupEnv: mapEnv(map[string]string{
-			"NETCONFIG_USERNAME":            "u",
-			"NETCONFIG_PASSWORD":            "p",
-			"NETCONFIG_DC1_ENABLE_PASSWORD": "en",
+			"NETOPS_USERNAME":            "u",
+			"NETOPS_PASSWORD":            "p",
+			"NETOPS_DC1_ENABLE_PASSWORD": "en",
 		}),
 	}
 	c, err := r.Resolve("dc1")
@@ -125,8 +125,8 @@ func TestEnablePassword(t *testing.T) {
 
 func TestEmptyValuesAreUnset(t *testing.T) {
 	r := &Resolver{
-		DotEnv:    map[string]string{"NETCONFIG_USERNAME": "", "NETCONFIG_PASSWORD": ""},
-		LookupEnv: mapEnv(map[string]string{"NETCONFIG_USERNAME": "u", "NETCONFIG_PASSWORD": "p"}),
+		DotEnv:    map[string]string{"NETOPS_USERNAME": "", "NETOPS_PASSWORD": ""},
+		LookupEnv: mapEnv(map[string]string{"NETOPS_USERNAME": "u", "NETOPS_PASSWORD": "p"}),
 	}
 	c, err := r.Resolve("g")
 	if err != nil || c.Username != "u" || c.Password != "p" {
@@ -137,7 +137,7 @@ func TestEmptyValuesAreUnset(t *testing.T) {
 func TestPromptsOnlyForMissingFields(t *testing.T) {
 	pr := &fakePrompter{user: "typed-user", pass: "typed-pass"}
 	r := &Resolver{
-		LookupEnv: mapEnv(map[string]string{"NETCONFIG_DC1_USERNAME": "env-user"}),
+		LookupEnv: mapEnv(map[string]string{"NETOPS_DC1_USERNAME": "env-user"}),
 		Prompter:  pr,
 	}
 	c, err := r.Resolve("dc1")
@@ -189,7 +189,7 @@ func TestNotFoundWithoutPrompter(t *testing.T) {
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
-	if !strings.Contains(err.Error(), "NETCONFIG_DC9_USERNAME") {
+	if !strings.Contains(err.Error(), "NETOPS_DC9_USERNAME") {
 		t.Errorf("error should name the variable to set: %v", err)
 	}
 }
@@ -225,12 +225,12 @@ func TestParseDotEnv(t *testing.T) {
 	src := strings.Join([]string{
 		"# comment",
 		"",
-		"NETCONFIG_USERNAME=admin",
-		"export NETCONFIG_PASSWORD=pass#word   # trailing comment",
-		`NETCONFIG_DC1_PASSWORD="quoted \"pw\" # kept"`,
-		`NETCONFIG_DC2_PASSWORD='single $quoted \n'`,
-		"NETCONFIG_DC3_USERNAME = spaced",
-		"NETCONFIG_EMPTY=",
+		"NETOPS_USERNAME=admin",
+		"export NETOPS_PASSWORD=pass#word   # trailing comment",
+		`NETOPS_DC1_PASSWORD="quoted \"pw\" # kept"`,
+		`NETOPS_DC2_PASSWORD='single $quoted \n'`,
+		"NETOPS_DC3_USERNAME = spaced",
+		"NETOPS_EMPTY=",
 	}, "\r\n")
 
 	got, err := ParseDotEnv(strings.NewReader(src))
@@ -238,12 +238,12 @@ func TestParseDotEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		"NETCONFIG_USERNAME":     "admin",
-		"NETCONFIG_PASSWORD":     "pass#word",
-		"NETCONFIG_DC1_PASSWORD": `quoted "pw" # kept`,
-		"NETCONFIG_DC2_PASSWORD": `single $quoted \n`,
-		"NETCONFIG_DC3_USERNAME": "spaced",
-		"NETCONFIG_EMPTY":        "",
+		"NETOPS_USERNAME":     "admin",
+		"NETOPS_PASSWORD":     "pass#word",
+		"NETOPS_DC1_PASSWORD": `quoted "pw" # kept`,
+		"NETOPS_DC2_PASSWORD": `single $quoted \n`,
+		"NETOPS_DC3_USERNAME": "spaced",
+		"NETOPS_EMPTY":        "",
 	}
 	for k, v := range want {
 		if got[k] != v {
@@ -284,11 +284,11 @@ func TestLoadDotEnv(t *testing.T) {
 	}
 
 	p := filepath.Join(dir, ".env")
-	if err := os.WriteFile(p, []byte("NETCONFIG_USERNAME=u\n"), 0o600); err != nil {
+	if err := os.WriteFile(p, []byte("NETOPS_USERNAME=u\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	d, err := LoadDotEnv(p)
-	if err != nil || d.Values["NETCONFIG_USERNAME"] != "u" || len(d.Warnings) != 0 {
+	if err != nil || d.Values["NETOPS_USERNAME"] != "u" || len(d.Warnings) != 0 {
 		t.Fatalf("0600 file: %+v err=%v", d, err)
 	}
 
@@ -306,13 +306,13 @@ func TestLoadDotEnv(t *testing.T) {
 func TestJumpCredentialsResolution(t *testing.T) {
 	r := &Resolver{
 		DotEnv: map[string]string{
-			"NETCONFIG_USERNAME":                 "global-dev-user",
-			"NETCONFIG_JUMP_HOST":                "global-bastion:22",
-			"NETCONFIG_JUMP_USERNAME":            "global-jump-user",
-			"NETCONFIG_JUMP_PASSWORD":            "global-jump-pass",
-			"NETCONFIG_JUMP_BASTION_DC_HOST":     "dc-bastion:2222",
-			"NETCONFIG_JUMP_BASTION_DC_USERNAME": "dc-jump-user",
-			"NETCONFIG_JUMP_BASTION_DC_PASSWORD": "dc-jump-pass",
+			"NETOPS_USERNAME":                 "global-dev-user",
+			"NETOPS_JUMP_HOST":                "global-bastion:22",
+			"NETOPS_JUMP_USERNAME":            "global-jump-user",
+			"NETOPS_JUMP_PASSWORD":            "global-jump-pass",
+			"NETOPS_JUMP_BASTION_DC_HOST":     "dc-bastion:2222",
+			"NETOPS_JUMP_BASTION_DC_USERNAME": "dc-jump-user",
+			"NETOPS_JUMP_BASTION_DC_PASSWORD": "dc-jump-pass",
 		},
 	}
 
@@ -336,12 +336,12 @@ func TestJumpCredentialsResolution(t *testing.T) {
 func TestKeyFileCredentialsResolution(t *testing.T) {
 	r := &Resolver{
 		DotEnv: map[string]string{
-			"NETCONFIG_USERNAME":                 "global-user",
-			"NETCONFIG_KEY_FILE":                 "/path/to/global_id_ed25519",
-			"NETCONFIG_SITE_A_USERNAME":          "site-user",
-			"NETCONFIG_SITE_A_KEY_FILE":          "/path/to/site_a_key",
-			"NETCONFIG_JUMP_KEY_FILE":            "/path/to/jump_key",
-			"NETCONFIG_JUMP_BASTION_DC_KEY_FILE": "/path/to/dc_jump_key",
+			"NETOPS_USERNAME":                 "global-user",
+			"NETOPS_KEY_FILE":                 "/path/to/global_id_ed25519",
+			"NETOPS_SITE_A_USERNAME":          "site-user",
+			"NETOPS_SITE_A_KEY_FILE":          "/path/to/site_a_key",
+			"NETOPS_JUMP_KEY_FILE":            "/path/to/jump_key",
+			"NETOPS_JUMP_BASTION_DC_KEY_FILE": "/path/to/dc_jump_key",
 		},
 	}
 
@@ -375,16 +375,16 @@ func TestKeyFileCredentialsResolution(t *testing.T) {
 func TestOverridesBeatAllTiers(t *testing.T) {
 	r := &Resolver{
 		DotEnv: map[string]string{
-			"NETCONFIG_USERNAME":  "file-user",
-			"NETCONFIG_PASSWORD":  "file-pass",
-			"NETCONFIG_JUMP_HOST": "file-bastion:22",
+			"NETOPS_USERNAME":  "file-user",
+			"NETOPS_PASSWORD":  "file-pass",
+			"NETOPS_JUMP_HOST": "file-bastion:22",
 		},
 		LookupEnv: mapEnv(map[string]string{
-			"NETCONFIG_USERNAME": "env-user",
+			"NETOPS_USERNAME": "env-user",
 		}),
 		Overrides: map[string]string{
-			"NETCONFIG_USERNAME":  "flag-user",
-			"NETCONFIG_JUMP_HOST": "flag-bastion:2222",
+			"NETOPS_USERNAME":  "flag-user",
+			"NETOPS_JUMP_HOST": "flag-bastion:2222",
 		},
 	}
 	c, err := r.Resolve("dc1")
@@ -432,9 +432,9 @@ func TestIsDirect(t *testing.T) {
 func TestForJumpHostDirectOverride(t *testing.T) {
 	r := &Resolver{
 		DotEnv: map[string]string{
-			"NETCONFIG_JUMP_HOST":     "bastion.example.com:22",
-			"NETCONFIG_JUMP_USERNAME": "jumpuser",
-			"NETCONFIG_JUMP_PASSWORD": "jumppass",
+			"NETOPS_JUMP_HOST":     "bastion.example.com:22",
+			"NETOPS_JUMP_USERNAME": "jumpuser",
+			"NETOPS_JUMP_PASSWORD": "jumppass",
 		},
 	}
 

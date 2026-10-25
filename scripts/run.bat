@@ -14,10 +14,10 @@ rem ============================================================================
 set "SCRIPT_DIR=%~dp0"
 set "ROOT_DIR=%SCRIPT_DIR%..\"
 
-set BINARY="%ROOT_DIR%bin\netconfig.exe"
-set ARCH_BINARY="%ROOT_DIR%bin\netconfig-windows-amd64.exe"
-set ROOT_BINARY="%ROOT_DIR%netconfig.exe"
-set ROOT_ARCH_BINARY="%ROOT_DIR%netconfig-windows-amd64.exe"
+set BINARY="%ROOT_DIR%bin\netops.exe"
+set ARCH_BINARY="%ROOT_DIR%bin\netops-windows-amd64.exe"
+set ROOT_BINARY="%ROOT_DIR%netops.exe"
+set ROOT_ARCH_BINARY="%ROOT_DIR%netops-windows-amd64.exe"
 
 if exist %BINARY% goto :run
 if exist %ARCH_BINARY% (
@@ -57,9 +57,9 @@ for /f "delims=" %%i in ('git describe --tags --always --dirty 2^>nul') do set V
 set LDFLAGS=-s -w -X main.version=%VERSION%
 
 set CGO_ENABLED=0
-go build -mod=vendor -trimpath -ldflags "%LDFLAGS%" -o "%ROOT_DIR%bin\netconfig.exe" .\cmd\netconfig
+go build -mod=vendor -trimpath -ldflags "%LDFLAGS%" -o "%ROOT_DIR%bin\netops.exe" .\cmd\netops
 popd
-set BINARY="%ROOT_DIR%bin\netconfig.exe"
+set BINARY="%ROOT_DIR%bin\netops.exe"
 
 :run
 %BINARY% %*

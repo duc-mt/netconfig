@@ -33,12 +33,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"netconfig/internal/compliance"
-	"netconfig/internal/errcat"
-	"netconfig/internal/inventory"
-	"netconfig/internal/redact"
-	"netconfig/internal/task"
-	"netconfig/internal/vendor"
+	"netops/internal/compliance"
+	"netops/internal/errcat"
+	"netops/internal/inventory"
+	"netops/internal/redact"
+	"netops/internal/task"
+	"netops/internal/vendor"
 )
 
 // Config holds everything a backup run needs besides the device list.

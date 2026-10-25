@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"netconfig/internal/vendor"
+	"netops/internal/vendor"
 )
 
 // PlanRow is one device's line of the -plan impact matrix.
@@ -73,7 +73,7 @@ func BuildPlanRows(jobs []Job, reports []LintReport) []PlanRow {
 // the rollback safety legend. It is what -plan shows before asking to proceed.
 func RenderPlan(rows []PlanRow, opts PlanRenderOptions) string {
 	var b strings.Builder
-	title := "netconfig change plan"
+	title := "netops change plan"
 	if opts.DryRun {
 		title += " (DRY-RUN: nothing will be committed or saved)"
 	}

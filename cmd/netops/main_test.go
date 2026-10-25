@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"netconfig/internal/memory"
-	"netconfig/internal/task"
+	"netops/internal/memory"
+	"netops/internal/task"
 )
 
 // fixture writes an inventory and a commands file and returns the base args.
@@ -25,7 +25,7 @@ func fixture(t *testing.T, vendorName, commands string) []string {
 		}
 		return p
 	}
-	for _, k := range []string{"NETCONFIG_USERNAME", "NETCONFIG_PASSWORD", "NETCONFIG_JUMP_HOST"} {
+	for _, k := range []string{"NETOPS_USERNAME", "NETOPS_PASSWORD", "NETOPS_JUMP_HOST"} {
 		t.Setenv(k, "")
 	}
 	inv := write("inventory.csv", "hostname,address,port,vendor,credential_group\nsw1,192.0.2.1,22,"+vendorName+",default\n")
@@ -127,7 +127,7 @@ func TestPlanRendersImpactMatrix(t *testing.T) {
 		t.Fatalf("exit=%d\n%s", code, out)
 	}
 	for _, want := range []string{
-		"netconfig change plan (DRY-RUN", "HOST", "VENDOR", "CMDS", "RISK", "IMPACT", "ROLLBACK",
+		"netops change plan (DRY-RUN", "HOST", "VENDOR", "CMDS", "RISK", "IMPACT", "ROLLBACK",
 		"sw1", "huawei", "HIGH", "Interface", "UNSAFE",
 		"interface-shutdown",    // the finding behind the risk level
 		"UNSAFE / OOB REQUIRED", // per-device hazard line for -commit-confirm
@@ -152,7 +152,7 @@ func TestPlanNeedsATerminalToAskForConfirmation(t *testing.T) {
 		t.Fatal("nothing may be contacted before the operator confirmed")
 	}
 	// The matrix is still shown before the refusal.
-	if !strings.Contains(out, "netconfig change plan") {
+	if !strings.Contains(out, "netops change plan") {
 		t.Fatalf("plan not rendered:\n%s", out)
 	}
 }
@@ -369,7 +369,7 @@ func TestStrictSubcommandDispatch(t *testing.T) {
 
 	// 5. Config subcommand help
 	code, _, stderr = runDispatch("config", "-h")
-	if code != task.ExitOK || !strings.Contains(stderr, "netconfig config - apply configuration") {
+	if code != task.ExitOK || !strings.Contains(stderr, "netops config - apply configuration") {
 		t.Fatalf("config -h must exit OK with config usage, got code=%d:\n%s", code, stderr)
 	}
 }

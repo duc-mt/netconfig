@@ -21,9 +21,9 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"netconfig/internal/memory"
-	"netconfig/internal/sshclient"
-	"netconfig/internal/task"
+	"netops/internal/memory"
+	"netops/internal/sshclient"
+	"netops/internal/task"
 )
 
 // jumpPool maintains lazily-initialised, shared *ssh.Client bastions and route memory.

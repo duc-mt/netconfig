@@ -17,32 +17,32 @@ import (
 	"syscall"
 	"time"
 
-	"netconfig/internal/backup"
-	"netconfig/internal/compliance"
-	"netconfig/internal/credentials"
-	"netconfig/internal/inventory"
-	"netconfig/internal/logging"
-	"netconfig/internal/memory"
-	"netconfig/internal/report"
-	"netconfig/internal/sshclient"
-	"netconfig/internal/task"
-	"netconfig/internal/vendor"
+	"netops/internal/backup"
+	"netops/internal/compliance"
+	"netops/internal/credentials"
+	"netops/internal/inventory"
+	"netops/internal/logging"
+	"netops/internal/memory"
+	"netops/internal/report"
+	"netops/internal/sshclient"
+	"netops/internal/task"
+	"netops/internal/vendor"
 )
 
-const backupUsageText = `netconfig backup: archive device configurations, detect changes and report drift.
+const backupUsageText = `netops backup: archive device configurations, detect changes and report drift.
 
 Usage:
-  netconfig backup [flags]                       back up the devices in the inventory
-  netconfig backup show [flags] [node-name]      view or locate the newest saved backup
-                                                 (see: netconfig backup show -h)
+  netops backup [flags]                       back up the devices in the inventory
+  netops backup show [flags] [node-name]      view or locate the newest saved backup
+                                                 (see: netops backup show -h)
 
 Each device's configuration is saved as <backup-dir>/<run>/<platform>/<host>.<ext>.
 A device whose configuration is unchanged since its last backup is not written
 again (volatile lines such as clock stamps are ignored when comparing), and
 secrets are masked in the saved files unless -redact=false.
 
-Credentials come from -env-file or the environment (NETCONFIG_USERNAME and
-NETCONFIG_PASSWORD, or per credential group); NETBACKUP_* names are accepted too.
+Credentials come from -env-file or the environment (NETOPS_USERNAME and
+NETOPS_PASSWORD, or per credential group).
 
 Exit status: 0 every device succeeded, 1 usage or configuration error,
 2 at least one device failed.
@@ -98,7 +98,7 @@ var backupFlagGroups = []flagGroup{
 // -known-hosts-policy, -show-diff, ...) stay accepted so existing scripts keep
 // working.
 func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {
-	fs := flag.NewFlagSet("netconfig backup", flag.ContinueOnError)
+	fs := flag.NewFlagSet("netops backup", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
 		fmt.Fprintf(stderr, backupUsageText, strings.Join(vendor.Names(), ", "))
@@ -158,7 +158,7 @@ func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return task.ExitFatal
 	}
 	fatal := func(format string, a ...any) int {
-		fmt.Fprintf(stderr, "netconfig backup: "+format+"\n", a...)
+		fmt.Fprintf(stderr, "netops backup: "+format+"\n", a...)
 		return task.ExitFatal
 	}
 	if fs.NArg() > 0 {
@@ -197,13 +197,13 @@ func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		log.Errorf("", format, a...)
 		return task.ExitFatal
 	}
-	log.Infof("", "netconfig %s backup starting; audit log: %s", version, log.Path())
+	log.Infof("", "netops %s backup starting; audit log: %s", version, log.Path())
 
 	// ---- inputs ----------------------------------------------------------
 	allDevs, err := inventory.Load(o.inventory)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no such file") {
-			fmt.Fprintf(stderr, "\nTip: Run 'netconfig -init' to create sample inventory.csv, commands.txt, and .env templates.\n\n")
+			fmt.Fprintf(stderr, "\nTip: Run 'netops init' to create sample inventory.csv, commands.txt, and .env templates.\n\n")
 		}
 		return die("%v", err)
 	}
@@ -215,11 +215,11 @@ func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	// ---- credentials -----------------------------------------------------
 	overrides := make(map[string]string)
 	for name, val := range map[string]string{
-		"NETCONFIG_KEY_FILE":      o.keyFile,
-		"NETCONFIG_JUMP_USERNAME": o.jumpUser,
-		"NETCONFIG_JUMP_PASSWORD": o.jumpPassword,
-		"NETCONFIG_JUMP_KEY_FILE": o.jumpKeyFile,
-		"NETCONFIG_JUMP_HOST":     o.jumpHost,
+		"NETOPS_KEY_FILE":      o.keyFile,
+		"NETOPS_JUMP_USERNAME": o.jumpUser,
+		"NETOPS_JUMP_PASSWORD": o.jumpPassword,
+		"NETOPS_JUMP_KEY_FILE": o.jumpKeyFile,
+		"NETOPS_JUMP_HOST":     o.jumpHost,
 	} {
 		if val != "" {
 			overrides[name] = val
@@ -232,9 +232,7 @@ func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	for _, w := range dot.Warnings {
 		log.Warnf("", "%s", w)
 	}
-	values, migrated := migrateLegacyEnv(dot.Values)
-	lookup, usedLegacy := legacyLookupEnv(os.LookupEnv)
-	resolver := &credentials.Resolver{DotEnv: values, LookupEnv: lookup, Overrides: overrides}
+	resolver := &credentials.Resolver{DotEnv: dot.Values, LookupEnv: os.LookupEnv, Overrides: overrides}
 	if credentials.IsTerminal(stdin) {
 		resolver.Prompter = &credentials.TerminalPrompter{In: stdin, Out: stderr}
 	}
@@ -271,9 +269,6 @@ func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		}
 	} else {
 		log.Infof("", "jump host routing disabled via -jump=false: all devices are connected directly")
-	}
-	if len(migrated) > 0 || usedLegacy() {
-		log.Warnf("", "using NETBACKUP_* variables; rename them to NETCONFIG_* (the NETBACKUP_* names will stop working in a future release)")
 	}
 
 	// ---- transport -------------------------------------------------------
@@ -434,53 +429,6 @@ func jumpFor(r *credentials.Resolver, d inventory.Device, flagHost string, globa
 	default:
 		return global
 	}
-}
-
-// legacyEnvPrefix / envPrefix: netbackup read NETBACKUP_<X>, netconfig reads
-// NETCONFIG_<X>; the rest of the name is identical.
-const (
-	legacyEnvPrefix = "NETBACKUP_"
-	envPrefix       = "NETCONFIG_"
-)
-
-// migrateLegacyEnv returns the .env values with every NETBACKUP_<X> entry also
-// available as NETCONFIG_<X> (an explicit NETCONFIG_<X> wins), and the names
-// that were migrated. The input map is not modified.
-func migrateLegacyEnv(values map[string]string) (map[string]string, []string) {
-	out := make(map[string]string, len(values))
-	for k, v := range values {
-		out[k] = v
-	}
-	var migrated []string
-	for k, v := range values {
-		if rest, ok := strings.CutPrefix(k, legacyEnvPrefix); ok {
-			if _, exists := out[envPrefix+rest]; !exists {
-				out[envPrefix+rest] = v
-				migrated = append(migrated, k)
-			}
-		}
-	}
-	return out, migrated
-}
-
-// legacyLookupEnv wraps an environment lookup so NETCONFIG_<X> falls back to
-// NETBACKUP_<X>. The returned func reports whether a fallback was used.
-func legacyLookupEnv(lookup func(string) (string, bool)) (func(string) (string, bool), func() bool) {
-	used := false
-	return func(key string) (string, bool) {
-			if v, ok := lookup(key); ok {
-				return v, true
-			}
-			if rest, ok := strings.CutPrefix(key, envPrefix); ok {
-				if v, ok := lookup(legacyEnvPrefix + rest); ok {
-					used = true
-					return v, true
-				}
-			}
-			return "", false
-		}, func() bool {
-			return used
-		}
 }
 
 // configureSemanticDiff wires the volatile-line filter into the backup

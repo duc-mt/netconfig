@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"netconfig/internal/inventory"
-	"netconfig/internal/vendor"
+	"netops/internal/inventory"
+	"netops/internal/vendor"
 )
 
 func TestParseVerifyRules(t *testing.T) {

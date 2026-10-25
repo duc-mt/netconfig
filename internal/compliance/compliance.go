@@ -36,7 +36,7 @@ import (
 	"regexp"
 	"strings"
 
-	"netconfig/internal/vendor"
+	"netops/internal/vendor"
 )
 
 // commonSection holds the rules that apply to every vendor.

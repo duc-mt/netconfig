@@ -33,14 +33,14 @@ import (
 
 	"golang.org/x/term"
 
-	"netconfig/internal/credentials"
-	"netconfig/internal/inventory"
-	"netconfig/internal/logging"
-	"netconfig/internal/memory"
-	"netconfig/internal/sshclient"
-	"netconfig/internal/task"
-	"netconfig/internal/ui"
-	"netconfig/internal/vendor"
+	"netops/internal/credentials"
+	"netops/internal/inventory"
+	"netops/internal/logging"
+	"netops/internal/memory"
+	"netops/internal/sshclient"
+	"netops/internal/task"
+	"netops/internal/ui"
+	"netops/internal/vendor"
 )
 
 //go:embed samples/inventory.csv
@@ -55,35 +55,35 @@ var sampleCommands []byte
 // version is overridden at build time: -ldflags "-X main.version=1.2.3".
 var version = "dev"
 
-const rootUsageText = `netconfig - multi-vendor network device automation over SSH
+const rootUsageText = `netops - multi-vendor network device automation over SSH
 
 Usage:
-  netconfig <subcommand> [flags]
+  netops <subcommand> [flags]
 
 Subcommands:
-  config       apply configuration commands to network devices (netconfig config -h)
-  backup       archive device configurations, detect changes (netconfig backup -h)
-  backup show  view, diff or locate saved backups (netconfig backup show -h)
+  config       apply configuration commands to network devices (netops config -h)
+  backup       archive device configurations, detect changes (netops backup -h)
+  backup show  view, diff or locate saved backups (netops backup show -h)
   init         generate sample inventory.csv, commands.txt, and .env templates
   version      display version information
 
-Run 'netconfig <subcommand> -h' for flags and usage of a specific subcommand.
+Run 'netops <subcommand> -h' for flags and usage of a specific subcommand.
 `
 
-const configUsageText = `netconfig config - apply configuration commands to many network devices over SSH
+const configUsageText = `netops config - apply configuration commands to many network devices over SSH
 
 Usage:
-  netconfig config -commands commands.txt [flags]
-  netconfig config -template config.tmpl -var ntp=10.0.0.1 [flags]
-  netconfig config -op -commands <(echo "show ip ospf route") [flags]
+  netops config -commands commands.txt [flags]
+  netops config -template config.tmpl -var ntp=10.0.0.1 [flags]
+  netops config -op -commands <(echo "show ip ospf route") [flags]
 
 Supported vendors: %s
 
 Credentials are never accepted as flags (they would be visible in "ps").
 Provide them in .env, in environment variables, or at the interactive prompt:
-  NETCONFIG_USERNAME / NETCONFIG_PASSWORD                     all devices
-  NETCONFIG_<GROUP>_USERNAME / NETCONFIG_<GROUP>_PASSWORD     one credential_group
-  NETCONFIG_[<GROUP>_]ENABLE_PASSWORD                         optional enable secret
+  NETOPS_USERNAME / NETOPS_PASSWORD                     all devices
+  NETOPS_<GROUP>_USERNAME / NETOPS_<GROUP>_PASSWORD     one credential_group
+  NETOPS_[<GROUP>_]ENABLE_PASSWORD                         optional enable secret
 Precedence: .env file, then process environment, then interactive prompt;
 a group-specific variable always overrides the global one.
 
@@ -114,7 +114,7 @@ func printRootUsage(w io.Writer) {
 
 func runInit(stdout, stderr io.Writer) int {
 	fatal := func(format string, a ...any) int {
-		fmt.Fprintf(stderr, "netconfig: "+format+"\n", a...)
+		fmt.Fprintf(stderr, "netops: "+format+"\n", a...)
 		return task.ExitFatal
 	}
 	created := 0
@@ -155,10 +155,10 @@ func runInit(stdout, stderr io.Writer) int {
 }
 
 // dispatch routes arguments to subcommands ("config", "backup", "init", "version").
-// Invoking netconfig without a subcommand or with an invalid subcommand is fatal.
+// Invoking netops without a subcommand or with an invalid subcommand is fatal.
 func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "netconfig: missing subcommand")
+		fmt.Fprintln(stderr, "netops: missing subcommand")
 		fmt.Fprintln(stderr)
 		printRootUsage(stderr)
 		return task.ExitFatal
@@ -171,24 +171,24 @@ func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	case "init", "-init":
 		return runInit(stdout, stderr)
 	case "version", "-version", "--version":
-		fmt.Fprintln(stdout, "netconfig", version)
+		fmt.Fprintln(stdout, "netops", version)
 		return task.ExitOK
 	case "-h", "--help", "help":
 		printRootUsage(stderr)
 		return task.ExitOK
 	case "show-backup":
 		// retired spelling: without this it would be read as an unknown subcommand
-		fmt.Fprintln(stderr, "netconfig: 'show-backup' is now 'netconfig backup show' (same flags)")
+		fmt.Fprintln(stderr, "netops: 'show-backup' is now 'netops backup show' (same flags)")
 		return task.ExitFatal
 	default:
-		fmt.Fprintf(stderr, "netconfig: unknown subcommand %q\n\n", args[0])
+		fmt.Fprintf(stderr, "netops: unknown subcommand %q\n\n", args[0])
 		printRootUsage(stderr)
 		return task.ExitFatal
 	}
 }
 
 func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("netconfig config", flag.ContinueOnError)
+	fs := flag.NewFlagSet("netops config", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	cf := &commonFlags{}
 	cf.register(fs)
@@ -255,11 +255,11 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return task.ExitFatal
 	}
 	fatal := func(format string, a ...any) int {
-		fmt.Fprintf(stderr, "netconfig: "+format+"\n", a...)
+		fmt.Fprintf(stderr, "netops: "+format+"\n", a...)
 		return task.ExitFatal
 	}
 	if *showVersion {
-		fmt.Fprintln(stdout, "netconfig", version)
+		fmt.Fprintln(stdout, "netops", version)
 		return task.ExitOK
 	}
 	if *initConfig {
@@ -308,7 +308,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return fatal("unexpected arguments: %s", strings.Join(fs.Args(), " "))
 	}
 	if (*cmdsPath == "") == (*tmplPath == "") {
-		hint := "Tip: Run 'netconfig -init' to create sample inventory.csv, commands.txt, and .env templates.\n"
+		hint := "Tip: Run 'netops init' to create sample inventory.csv, commands.txt, and .env templates.\n"
 		fmt.Fprintln(stderr, hint)
 		return fatal("exactly one of -commands (or commands.txt) or -template is required (see -h)")
 	}
@@ -376,13 +376,13 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		log.Errorf("", format, a...)
 		return task.ExitFatal
 	}
-	log.Infof("", "netconfig %s starting; audit log: %s", version, log.Path())
+	log.Infof("", "netops %s starting; audit log: %s", version, log.Path())
 
 	// ---- inputs ----------------------------------------------------------
 	allDevs, err := inventory.Load(cf.inventory)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no such file") {
-			fmt.Fprintf(stderr, "\nTip: Run 'netconfig -init' to create sample inventory.csv, commands.txt, and .env templates.\n\n")
+			fmt.Fprintf(stderr, "\nTip: Run 'netops init' to create sample inventory.csv, commands.txt, and .env templates.\n\n")
 		}
 		return die("%v", err)
 	}
@@ -505,19 +505,19 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	// ---- credentials -----------------------------------------------------
 	overrides := make(map[string]string)
 	if cf.keyFile != "" {
-		overrides["NETCONFIG_KEY_FILE"] = cf.keyFile
+		overrides["NETOPS_KEY_FILE"] = cf.keyFile
 	}
 	if cf.jumpUser != "" {
-		overrides["NETCONFIG_JUMP_USERNAME"] = cf.jumpUser
+		overrides["NETOPS_JUMP_USERNAME"] = cf.jumpUser
 	}
 	if cf.jumpPassword != "" {
-		overrides["NETCONFIG_JUMP_PASSWORD"] = cf.jumpPassword
+		overrides["NETOPS_JUMP_PASSWORD"] = cf.jumpPassword
 	}
 	if cf.jumpKeyFile != "" {
-		overrides["NETCONFIG_JUMP_KEY_FILE"] = cf.jumpKeyFile
+		overrides["NETOPS_JUMP_KEY_FILE"] = cf.jumpKeyFile
 	}
 	if cf.jumpHost != "" {
-		overrides["NETCONFIG_JUMP_HOST"] = cf.jumpHost
+		overrides["NETOPS_JUMP_HOST"] = cf.jumpHost
 	}
 
 	dot, err := credentials.LoadDotEnv(cf.envFile)
@@ -807,8 +807,8 @@ func hintPasswordFlag(args []string, w io.Writer) {
 		}
 		switch name {
 		case "password", "pass", "passwd", "pw", "enable-password":
-			fmt.Fprintln(w, "netconfig: passwords are never accepted as command-line flags (they would leak through 'ps'); "+
-				"set NETCONFIG_[<GROUP>_]PASSWORD in .env or the environment, or use the interactive prompt")
+			fmt.Fprintln(w, "netops: passwords are never accepted as command-line flags (they would leak through 'ps'); "+
+				"set NETOPS_[<GROUP>_]PASSWORD in .env or the environment, or use the interactive prompt")
 			return
 		}
 	}

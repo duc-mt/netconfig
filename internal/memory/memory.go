@@ -19,7 +19,7 @@ import (
 )
 
 // DefaultFile is the default persistent memory filename.
-const DefaultFile = ".netconfig_memory.json"
+const DefaultFile = ".netops_memory.json"
 
 // RouteRecord stores learned routing decisions for a single device.
 type RouteRecord struct {
