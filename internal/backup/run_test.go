@@ -242,7 +242,7 @@ func TestFetchConfigSophosMultiCommand(t *testing.T) {
 	wantCmds := []string{
 		"system diagnostics show version-info",
 		"show network interfaces",
-		"show static-route",
+		"show network static-route",
 		"system ha show details",
 	}
 	if !slices.Equal(tr.sent, wantCmds) {

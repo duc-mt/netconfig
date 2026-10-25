@@ -32,7 +32,7 @@ var archiveSpecs = map[string]archiveSpec{
 	vendor.Arista:     {Dir: "arista", Ext: ".cfg"},
 	vendor.Aruba:      {Dir: "aruba", Ext: ".cfg"},
 	vendor.Ruijie:     {Dir: "ruijie", Ext: ".cfg"},
-	vendor.PaloAlto:   {Dir: "paloalto", Ext: ".cfg"},
+	vendor.PaloAlto:   {Dir: "paloalto", Ext: ".set"},
 	vendor.Sophos:     {Dir: "sophos", Ext: ".cfg"},
 	vendor.Fortinet:   {Dir: "fortigate", Ext: ".conf"},
 	vendor.CheckPoint: {Dir: "checkpoint_gaia", Ext: ".cfg"},

@@ -395,7 +395,8 @@ backups/
 
 | Platform (vendor key) | Directory | Extension |
 |---|---|---|
-| `cisco`, `cisco_sb`, `cisco_asa`, `huawei`, `arista`, `aruba`, `ruijie`, `paloalto` | `cisco_ios`, `cisco_sb`, `cisco_asa`, `huawei_vrp`, `arista`, `aruba`, `ruijie`, `paloalto` | `.cfg` |
+| `cisco`, `cisco_sb`, `cisco_asa`, `huawei`, `arista`, `aruba`, `ruijie` | `cisco_ios`, `cisco_sb`, `cisco_asa`, `huawei_vrp`, `arista`, `aruba`, `ruijie` | `.cfg` |
+| `paloalto` | `paloalto` | `.set` (flat CLI `set ...` commands format for interactive/scripting-mode restoration) |
 | `sophos` | `sophos` | `.cfg` (CLI network interface/zone dump for drift auditing; see note below) |
 | `junos` | `juniper_junos` | `.set` (archived as `show configuration \| display set`, one statement per line) |
 | `fortinet` | `fortigate` | `.conf` |
@@ -410,7 +411,7 @@ backups/
 > Therefore, `netconfig` executes a comprehensive suite of show commands under `sophos/<hostname>.cfg` for configuration drift tracking, change detection (`.diff`), and network state documentation:
 > 1. `system diagnostics show version-info` (Firmware version, build, serial number, device ID)
 > 2. `show network interfaces` (Physical & virtual interfaces, zones, IP/netmask, MTU, speed/duplex)
-> 3. `show static-route` (Active static routing table)
+> 3. `show network static-route` (Active static routing table)
 > 4. `system ha show details` (High Availability cluster mode, node status, peer health)
 > 
 > Each command output is clearly demarcated with `=== <command> ===` section banners.
@@ -565,7 +566,7 @@ When recovering devices using saved backups under `<backup-dir>/<run>/<vendor_di
 | **Aruba AOS-CX / AOS-S** | `aruba/*.cfg` | AOS-CX: `copy <file.cfg> checkpoint <name>` then `checkpoint rollback <name>`<br>Cold: `copy <file.cfg> startup-config && boot system` | Enter `configure terminal`, paste commands, `write memory` |
 | **VyOS** | `vyos/*.config` | In configure mode: `load /config/<host>.config`, verify with `compare`, then `commit && save` | Paste `set ...` lines in configure mode, `commit`, `save` |
 | **MikroTik RouterOS** | `mikrotik/*.rsc` | `/import verbose=yes file-name=<host>.rsc`<br>*(Cold reset: `/system reset-configuration run-after-reset=<host>.rsc keep-users=no`)* | Paste script directly into terminal |
-| **Palo Alto PAN-OS** | `paloalto/*.cfg` | CLI: `scp import configuration from ...` then in configure: `load config from <file.cfg>` and `commit`<br>*(WebUI: Device > Setup > Operations > Import snapshot)* | Paste `set ...` lines under `configure`, `commit` |
+| **Palo Alto PAN-OS** | `paloalto/*.set` | In `configure`: run `set scripting-mode on`, paste `set ...` commands, then `commit`<br>*(Disaster recovery: paste into blank/factory candidate config and commit)* | Enter `configure`, run `set scripting-mode on`, paste commands with pacing delay, `commit` |
 | **pfSense** | `pfsense/*.xml` | WebUI: *Diagnostics > Backup & Restore > Restore configuration*<br>*(CLI: Place at `/conf/config.xml` and run `/etc/rc.reload_all`)* | N/A (XML format: restore via WebUI or filesystem) |
 | **Ruijie RGOS** | `ruijie/*.cfg` | `copy tftp://<srv>/<host>.cfg startup-config && reload` | Enter `configure terminal`, paste with 30ms pacing delay, `end`, `write` |
 | **Sophos** | `sophos/*.cfg` | **Audit/Documentation Only**: `sophos/*.cfg` captures the CLI network interface and zone state (`show network interfaces`) for drift auditing. For full system recovery, use native SFOS backups: WebUI (*Backup & Firmware > Backup & Restore*) or Advanced Shell (`/bin/opcode system_backup_now -ds nosync` in `/var/conf/backupdata/`) | N/A (database-driven: restore native `.backup` or `Entities.xml` package via WebUI) |

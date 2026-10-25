@@ -305,6 +305,21 @@ func TestPrompts(t *testing.T) {
 		{"sophos", "NHG-BVU-FW-01_console> ", true},
 		{"sophos", "Select Menu Number:", false},
 		{"sophos", "Main Menu", false},
+		{"paloalto", "admin@PA-3020> ", true},
+		{"paloalto", "admin@PA-3020# ", true},
+		{"paloalto", "admin@NHG-HO-PALOALTO-01(active)> ", true},
+		{"paloalto", "admin@NHG-HO-PALOALTO-01(passive)> ", true},
+		{"paloalto", "admin@NHG-HO-PALOALTO-01(active)# ", true},
+		{"paloalto", "admin@NHG-HO-PALOALTO-01(active-primary)> ", true},
+		{"paloalto", "admin@NHG-HO-PALOALTO-01(active-secondary)> ", true},
+		{"paloalto", "admin@NHG-HO-PALOALTO-01(standby)> ", true},
+		{"paloalto", "admin@NHG-HO-PALOALTO-01(suspended)> ", true},
+		{"paloalto", "admin@PA-VM[vsys1]> ", true},
+		{"paloalto", "admin@PA-VM(active)[vsys1]> ", true},
+		{"paloalto", `CORP\admin@PA-3020(active)> `, true},
+		{"paloalto", "nms-net@NHG-HO-FW-01(active)> nms-net@NHG-HO-FW-01(active)> ", true},
+		{"paloalto", "Invalid syntax.", false},
+		{"paloalto", "Server error : ...", false},
 	}
 	for _, c := range cases {
 		if got := mustLookup(t, c.vendor).Prompt.MatchString(c.line); got != c.want {
@@ -474,7 +489,7 @@ func TestValidateBackup(t *testing.T) {
 	if len(sophos.BackupCommands) != 4 {
 		t.Errorf("sophos BackupCommands count = %d, want 4", len(sophos.BackupCommands))
 	}
-	multiOut := "=== system diagnostics show version-info ===\nSerial Number: SFVUNL\nVersion: SFOS 22.0.2\n\n=== show network interfaces ===\nPort1 Zonetype:LAN MTU:1500\n\n=== show static-route ===\nNo routes\n\n=== system ha show details ===\nHA: Disabled\n"
+	multiOut := "=== system diagnostics show version-info ===\nSerial Number: SFVUNL\nVersion: SFOS 22.0.2\n\n=== show network interfaces ===\nPort1 Zonetype:LAN MTU:1500\n\n=== show network static-route ===\nNo routes\n\n=== system ha show details ===\nHA: Disabled\n"
 	if err := sophos.ValidateBackup(multiOut); err != nil {
 		t.Errorf("expected valid multi-command sophos backup, got %v", err)
 	}

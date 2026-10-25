@@ -610,6 +610,22 @@ func fetchConfig(ctx context.Context, dev inventory.Device, profile *vendor.Prof
 		return "", nil
 	}
 
+	if profile.Name == vendor.PaloAlto {
+		_, _ = sess.Send(ctx, "set cli config-output-format set", 3*cfg.commandTimeout())
+		_, _ = sess.Send(ctx, "configure", 3*cfg.commandTimeout())
+		out, err := sess.Send(ctx, "show", 3*cfg.commandTimeout())
+		_, _ = sess.Send(ctx, "exit", 3*cfg.commandTimeout())
+		if err != nil {
+			return "", errcat.Classify(dev.Hostname, "command", err)
+		}
+		out = strings.TrimSuffix(strings.TrimSpace(out), "[edit]")
+		out = strings.TrimSpace(out)
+		if err := profile.ValidateBackup(out); err != nil {
+			return "", errcat.Classify(dev.Hostname, "validate", err)
+		}
+		return out, nil
+	}
+
 	spec := archiveFor(profile)
 	cmds := spec.Commands
 	if len(cmds) == 0 && spec.Command != "" {

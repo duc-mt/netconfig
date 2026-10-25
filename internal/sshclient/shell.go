@@ -243,9 +243,9 @@ func (s *Shell) cleanConsumed(raw []byte) string {
 // and turns the pager off.
 func (s *Shell) login(ctx context.Context, cfg Config) error {
 	total := cfg.LoginTimeout
-	first := 1 * time.Second
-	if total < 3*time.Second {
-		first = total / 3
+	first := 5 * time.Second
+	if total < 10*time.Second {
+		first = total / 2
 	}
 	_, _, err := s.expect(ctx, first, nil)
 	if errors.Is(err, errExpectTimeout) {
@@ -279,7 +279,7 @@ func (s *Shell) login(ctx context.Context, cfg Config) error {
 			if ctx.Err() != nil {
 				return err
 			}
-			s.logf("warning: could not run %q: %v", cmd, err) // the --More-- handler still copes
+			s.logf("warning: could not run %q: %v", cmd, err)
 		}
 	}
 	return nil

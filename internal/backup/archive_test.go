@@ -19,7 +19,7 @@ var netbackupLayout = []struct{ key, ext string }{
 	{"cisco_ios", ".cfg"}, {"cisco_sb", ".cfg"}, {"cisco_asa", ".cfg"},
 	{"huawei_vrp", ".cfg"}, {"juniper_junos", ".set"}, {"fortigate", ".conf"},
 	{"arista", ".cfg"}, {"vyos", ".config"}, {"ruijie", ".cfg"}, {"aruba", ".cfg"},
-	{"checkpoint_gaia", ".cfg"}, {"paloalto", ".cfg"}, {"pfsense", ".xml"}, {"sophos", ".cfg"},
+	{"checkpoint_gaia", ".cfg"}, {"paloalto", ".set"}, {"pfsense", ".xml"}, {"sophos", ".cfg"},
 	{"mikrotik", ".rsc"},
 }
 
@@ -78,7 +78,7 @@ func TestArchiveResolvesMultipleCommandsForSophos(t *testing.T) {
 	wantCmds := []string{
 		"system diagnostics show version-info",
 		"show network interfaces",
-		"show static-route",
+		"show network static-route",
 		"system ha show details",
 	}
 	if !slices.Equal(spec.Commands, wantCmds) {

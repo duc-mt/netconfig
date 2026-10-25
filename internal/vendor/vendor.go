@@ -277,7 +277,7 @@ var (
 	reVyOSPrompt        = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:(?::\S*)?[$#]|#)\s*$`)
 	reCheckPointPrompt  = regexp.MustCompile(`^[\w.\-]+>\s*$`)
 
-	rePaloAltoPrompt = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:>|#)\s*$`)
+	rePaloAltoPrompt = regexp.MustCompile(`^(?:[\w.\-\\/:~]+@[\w.\-]+(?:\([^()]+\))?(?:\[[^\]]+\])?\s*[>#]\s*)*[\w.\-\\/:~]+@[\w.\-]+(?:\([^()]+\))?(?:\[[^\]]+\])?\s*[>#]\s*$`)
 	rePfSensePrompt  = regexp.MustCompile(`^(?:(?:\[[^\]]+\])*\[[\w.\-]+@[\w.\-]+\][^:#$%]*[:#$%]\s*$|Enter an option:\s*$)`)
 	reSophosPrompt   = regexp.MustCompile(`(?i)^\s*(?:(?:[a-zA-Z0-9.\-]+_)?console>|Select Menu Number \[[0-9\-]+\]:)\s*$`)
 	reSophosMenu     = regexp.MustCompile(`(?i)^\s*Select Menu Number \[[0-9\-]+\]:\s*$`)
@@ -950,7 +950,7 @@ func newSophos() *Profile {
 		BackupCommands: []string{
 			"system diagnostics show version-info",
 			"show network interfaces",
-			"show static-route",
+			"show network static-route",
 			"system ha show details",
 		},
 		probe: "show version",
