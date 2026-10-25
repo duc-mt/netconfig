@@ -787,7 +787,7 @@ Key new flags:
 Route SSH connections through an SSH jump host (bastion) using direct-tcpip tunneling (equivalent to OpenSSH `ProxyJump` / `-J`). Supports a hybrid configuration:
 
 - **Global Bastion:** Pass via `-jump-host mgmt-gw:22` or configure `NETCONFIG_JUMP_HOST`, `NETCONFIG_JUMP_USERNAME`, `NETCONFIG_JUMP_PASSWORD` in `.env`.
-- **Per-Device Bastion:** Add an optional 6th column `jump_host` in `inventory.csv` (`hostname,address,port,vendor,credential_group,jump_host`). Specific named bastions resolve credentials via `NETCONFIG_JUMP_<NAME>_HOST`, `_USERNAME`, `_PASSWORD`.
+- **Per-Device Bastion & Direct Override:** Add an optional 6th column `jump_host` in `inventory.csv` (`hostname,address,port,vendor,credential_group,jump_host`). Specific named bastions resolve credentials via `NETCONFIG_JUMP_<NAME>_HOST`, `_USERNAME`, `_PASSWORD`. Set to `direct`, `none`, or `-` to bypass the global bastion and connect directly (e.g. for devices reached over WireGuard or local LAN). Leaving it blank inherits the global bastion if configured, or connects directly if none is set.
 - **Master Kill-Switch:** Disable all jump routing on demand with `-jump=false`.
 - **Zero Configuration Impact:** When no jump host is configured, all devices connect directly with zero overhead or prompt.
 

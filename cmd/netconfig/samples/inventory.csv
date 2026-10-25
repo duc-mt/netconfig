@@ -5,7 +5,7 @@
 #       cisco_sb  = Cisco Small Business SF/SG/CBS; rollback rating UNSAFE (no "reload in", so no on-box deadman)
 #       cisco_asa = Cisco ASA; rollback rating REBOOT ONLY (deadman is "reload in N", needs -allow-reboot-rollback)
 #   - credential_group: optional, defaults to "default" (maps to NETCONFIG_USERNAME/PASSWORD or KEY_FILE in .env)
-#   - jump_host: optional; leave blank for direct connections, or set to bastion name / host[:port]
+#   - jump_host: optional; leave blank for default (.env bastion if set, else direct), "direct"/"none"/"-" to force direct, or set to bastion name / host[:port]
 hostname,address,port,vendor,credential_group,jump_host
 core-sw1,10.10.0.11,22,cisco,dc1,
 edge-mx1,10.20.0.1,,junos,dc2,bastion-dc
