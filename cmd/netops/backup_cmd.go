@@ -98,7 +98,7 @@ var backupFlagGroups = []flagGroup{
 
 // newBackupFlagSet declares the flags. The names follow the task's
 // specification; legacy flag spellings (-out, -md-report, -save-unchanged,
-// -known-hosts-policy, -show-diff, ...) stay accepted so existing scripts keep
+// -known-hosts-policy, ...) stay accepted so existing scripts keep
 // working.
 func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {
 	fs := flag.NewFlagSet("netops backup", flag.ContinueOnError)
@@ -119,7 +119,6 @@ func newBackupFlagSet(o *backupOpts, stderr io.Writer) *flag.FlagSet {
 	fs.BoolVar(&o.ignoreVolatile, "ignore-volatile", true, "ignore volatile lines (clock stamps, \"last changed\" comments, ...) when detecting changes; saved files are never modified")
 	fs.StringVar(&o.volatilePatterns, "volatile-patterns", "", "optional file with extra volatile-line regular expressions, one per line (# starts a comment)")
 	fs.BoolVar(&o.diff, "diff", true, "display a colorized diff against the previous backup when the configuration changes")
-	fs.BoolVar(&o.diff, "show-diff", true, "alias for -diff")
 	fs.BoolVar(&o.keepBanners, "keep-banners", false, "preserve leading terminal banners (e.g. 'Building configuration...') in saved backups")
 	fs.StringVar(&o.goldenDir, "golden-dir", "", "directory of <vendor>.golden baseline files (plus optional common.golden); enables golden-config drift checks")
 	fs.StringVar(&o.complianceRules, "compliance-rules", "", "single compliance rules file with optional [vendor] sections; can be combined with -golden-dir")

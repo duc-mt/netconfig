@@ -373,3 +373,19 @@ func TestStrictSubcommandDispatch(t *testing.T) {
 		t.Fatalf("config -h must exit OK with config usage, got code=%d:\n%s", code, stderr)
 	}
 }
+
+func TestDiffFlagValidation(t *testing.T) {
+	base := fixture(t, "cisco", "show version")
+
+	// -diff without -backup must fail
+	code, out := runCLI(t, append(base, "-diff")...)
+	if code != task.ExitFatal || !strings.Contains(out, "-diff requires -backup") {
+		t.Fatalf("expected '-diff requires -backup', got code=%d output:\n%s", code, out)
+	}
+
+	// -show-diff flag is no longer accepted
+	code, out = runCLI(t, append(base, "-show-diff")...)
+	if code != task.ExitFatal || !strings.Contains(out, "flag provided but not defined: -show-diff") {
+		t.Fatalf("expected unknown flag for -show-diff, got code=%d output:\n%s", code, out)
+	}
+}

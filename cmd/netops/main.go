@@ -216,7 +216,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		allowRebootRB  = fs.Bool("allow-reboot-rollback", false, "permit 'reload in <min>' as the deadman on platforms without hitless rollback (classic IOS)")
 		verifyFile     = fs.String("verify-file", "", "post-change health checks to run on each device (see README); '!@verify' blocks inside the commands file or template are honoured too")
 		planMode       = fs.Bool("plan", false, "preview risk, impact and rollback safety per device, then ask before proceeding (combine with -dry-run)")
-		showDiff       = fs.Bool("show-diff", false, "after a successful change, diff the post-change configuration against the pre-change backup (requires -backup)")
+		diff           = fs.Bool("diff", false, "after a successful change, diff the post-change configuration against the pre-change backup (requires -backup)")
 		outputDir      = fs.String("output-dir", "", "write per-device command output to <dir>/<hostname>.txt")
 		jsonReport     = fs.String("json-report", "", "write a JSON run report to this file path")
 		csvReport      = fs.String("csv-report", "", "write a CSV run report to this file path")
@@ -325,8 +325,8 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	if *rollbackOnFail && !*backup {
 		return fatal("-rollback-on-fail requires -backup")
 	}
-	if *showDiff && !*backup {
-		return fatal("-show-diff requires -backup")
+	if *diff && !*backup {
+		return fatal("-diff requires -backup")
 	}
 	if *commitConfirm < 0 {
 		return fatal("-commit-confirm must not be negative")
@@ -659,7 +659,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 			BackupDir:      *backupDir,
 			RollbackOnFail: *rollbackOnFail,
 			OutputDir:      *outputDir,
-			ShowDiff:       *showDiff,
+			ShowDiff:       *diff,
 
 			CommitConfirm:       *commitConfirm,
 			AllowRebootRollback: *allowRebootRB,

@@ -631,7 +631,7 @@ Taking backups uses `netops backup <flags>`, and browsing backups uses
  
 * **Flags**: Common alternative flag spellings are supported for convenience: `-out` (alias for `-backup-dir`),
   `-md-report` (alias for `-md-changelog`), `-save-unchanged` (alias for `-force`),
-  `-known-hosts-policy` (alias for `-host-key-policy`), and `-show-diff` (alias for `-diff`).
+  and `-known-hosts-policy` (alias for `-host-key-policy`).
 * **Vendor names**: All common vendor spellings and aliases (`cisco_ios`, `juniper_junos`, `fortigate`,
   `checkpoint_gaia`, `huawei_vrp`, `mikrotik`, etc.) resolve seamlessly.
 * **Safety & Security**:

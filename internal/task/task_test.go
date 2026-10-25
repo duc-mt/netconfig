@@ -744,12 +744,12 @@ func TestRollbackOutcomeRecorded(t *testing.T) {
 	})
 }
 
-// ---- show-diff ----------------------------------------------------------------
+// ---- diff ----------------------------------------------------------------
 
 // countingConfig returns a respond function that answers the backup
 // command with "before" on its first call and "after" on every call after
 // that -- simulating the pre-change backup, then the post-change re-read
-// that -show-diff performs once the change has succeeded.
+// that -diff performs once the change has succeeded.
 func countingConfig(t *testing.T, before, after string) func(host, line string) (string, error) {
 	t.Helper()
 	var mu sync.Mutex
@@ -947,7 +947,7 @@ func TestRenderHidesDiffColumnWhenUnused(t *testing.T) {
 	}
 	out := Summarize(results).Render(RenderOptions{})
 	if strings.Contains(out, "DIFF") {
-		t.Errorf("DIFF column should be hidden when no result used -show-diff:\n%s", out)
+		t.Errorf("DIFF column should be hidden when no result used -diff:\n%s", out)
 	}
 }
 

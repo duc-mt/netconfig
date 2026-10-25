@@ -193,7 +193,7 @@ func diffCell(r Result) string {
 }
 
 // anyDiffActivity reports whether any result recorded a diff, so the DIFF
-// column can be omitted entirely on a run that didn't use -show-diff.
+// column can be omitted entirely on a run that didn't use -diff.
 func anyDiffActivity(results []Result) bool {
 	for _, r := range results {
 		if r.DiffAdded != 0 || r.DiffRemoved != 0 {

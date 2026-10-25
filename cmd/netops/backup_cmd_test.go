@@ -290,7 +290,7 @@ func TestBackupCommandAcceptsAlternativeFlagSpellings(t *testing.T) {
 	args := []string{
 		"backup", "-inventory", e.args[2], "-env-file", e.args[4], "-out", e.path("other"),
 		"-log-dir", e.path("logs"), "-known-hosts", e.path("known_hosts"), "-memory=false", "-jump=false",
-		"-dial-jitter", "0", "-md-report", e.path("log.md"), "-save-unchanged", "-show-diff=false",
+		"-dial-jitter", "0", "-md-report", e.path("log.md"), "-save-unchanged", "-diff=false",
 		"-known-hosts-policy", "accept-new", "-update-known-hosts=false", "-no-color",
 	}
 	in, _ := os.Open(os.DevNull)
@@ -304,6 +304,14 @@ func TestBackupCommandAcceptsAlternativeFlagSpellings(t *testing.T) {
 	}
 	if _, err := os.Stat(e.path("log.md")); err != nil {
 		t.Errorf("-md-report was not honoured: %v", err)
+	}
+}
+
+func TestBackupCommandRejectsRemovedShowDiffFlag(t *testing.T) {
+	e := newBackupEnv(t, "hostname,address,port,vendor,credential_group\nsw1,10.0.0.1,22,cisco,\n")
+	code, _, stderr := e.run("-show-diff=false")
+	if code != task.ExitFatal || !strings.Contains(stderr, "flag provided but not defined: -show-diff") {
+		t.Fatalf("expected unknown flag error for -show-diff, got code=%d stderr:\n%s", code, stderr)
 	}
 }
 
