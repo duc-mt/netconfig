@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"netconfig/internal/credentials"
+	"netconfig/internal/inventory"
 	"netconfig/internal/sshclient"
 	"netconfig/internal/task"
 )
@@ -600,5 +602,46 @@ func TestBackupTerminalBannersCleanedCLI(t *testing.T) {
 	}
 	if sw1Kept != rawRuijie {
 		t.Errorf("backup with -keep-banners mismatch:\n got: %q\nwant: %q", sw1Kept, rawRuijie)
+	}
+}
+
+func TestJumpForResolution(t *testing.T) {
+	r := &credentials.Resolver{
+		DotEnv: map[string]string{
+			"NETCONFIG_JUMP_HOST":          "env-bastion:22",
+			"NETCONFIG_JUMP_BASTION2_HOST": "bastion2:2222",
+		},
+	}
+	globalDef := credentials.JumpCredentials{Host: "env-bastion:22"}
+
+	// 1. Explicit direct bypasses global default
+	directDevs := []string{"direct", "none", "-", "off", "false"}
+	for _, mode := range directDevs {
+		d := inventory.Device{Hostname: "dev1", JumpHost: mode}
+		jc := jumpFor(r, d, "", globalDef)
+		if jc.Host != "" {
+			t.Errorf("jumpFor with jump_host=%q got host=%q, want empty (direct)", mode, jc.Host)
+		}
+	}
+
+	// 2. Empty jump_host inherits global default
+	dEmpty := inventory.Device{Hostname: "dev2", JumpHost: ""}
+	jcEmpty := jumpFor(r, dEmpty, "", globalDef)
+	if jcEmpty.Host != "env-bastion:22" {
+		t.Errorf("jumpFor with empty jump_host got %q, want env-bastion:22", jcEmpty.Host)
+	}
+
+	// 3. Named bastion resolves
+	dNamed := inventory.Device{Hostname: "dev3", JumpHost: "bastion2"}
+	jcNamed := jumpFor(r, dNamed, "", globalDef)
+	if jcNamed.Host != "bastion2:2222" {
+		t.Errorf("jumpFor with named bastion got %q, want bastion2:2222", jcNamed.Host)
+	}
+
+	// 4. Raw host:port in jump_host
+	dCustom := inventory.Device{Hostname: "dev4", JumpHost: "custom-gw:3000"}
+	jcCustom := jumpFor(r, dCustom, "", globalDef)
+	if jcCustom.Host != "custom-gw:3000" {
+		t.Errorf("jumpFor with custom host:port got %q, want custom-gw:3000", jcCustom.Host)
 	}
 }

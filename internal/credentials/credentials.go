@@ -191,11 +191,28 @@ func (r *Resolver) JumpDefaults() JumpCredentials {
 	return JumpCredentials{Host: host, Username: u, Password: p, KeyFile: k}
 }
 
+// IsDirect reports whether a jump_host value explicitly indicates a direct
+// connection bypassing any jump host or bastion ("direct", "none", "-", "off",
+// "false", "no").
+func IsDirect(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "direct", "none", "-", "off", "false", "no":
+		return true
+	default:
+		return false
+	}
+}
+
 // ForJumpHost resolves credentials for a named jump host.
 // It checks NETCONFIG_JUMP_<NAME>_HOST / USERNAME / PASSWORD / KEY_FILE first,
 // falling back to the global NETCONFIG_JUMP_* variables, and finally
 // to the global device username/keyfile if jump credentials are unset.
+// If name explicitly indicates a direct connection (IsDirect), it returns an
+// empty JumpCredentials{} with Host == "".
 func (r *Resolver) ForJumpHost(name string) JumpCredentials {
+	if IsDirect(name) {
+		return JumpCredentials{}
+	}
 	cleanName := cleanGroupName(name)
 	host, _ := r.lookupJump(cleanName, "HOST")
 	u, _ := r.lookupJump(cleanName, "USERNAME")
@@ -204,7 +221,11 @@ func (r *Resolver) ForJumpHost(name string) JumpCredentials {
 
 	def := r.JumpDefaults()
 	if host == "" {
-		host = def.Host
+		if strings.Contains(name, ":") {
+			host = strings.TrimSpace(name)
+		} else {
+			host = def.Host
+		}
 	}
 	if u == "" {
 		u = def.Username

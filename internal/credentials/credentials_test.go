@@ -399,3 +399,62 @@ func TestOverridesBeatAllTiers(t *testing.T) {
 		t.Errorf("got jump host %q, want flag-bastion:2222", jump.Host)
 	}
 }
+
+func TestIsDirect(t *testing.T) {
+	directCases := []string{
+		"direct", "DIRECT", " Direct ",
+		"none", "NONE", " None ",
+		"-", " - ",
+		"off", "OFF",
+		"false", "FALSE",
+		"no", "NO",
+	}
+	for _, tc := range directCases {
+		if !IsDirect(tc) {
+			t.Errorf("IsDirect(%q) = false, want true", tc)
+		}
+	}
+
+	nonDirectCases := []string{
+		"", "   ",
+		"default", "DEFAULT",
+		"bastion", "bastion-dc",
+		"192.168.1.1:22",
+		"direct-gw", "none-bastion",
+	}
+	for _, tc := range nonDirectCases {
+		if IsDirect(tc) {
+			t.Errorf("IsDirect(%q) = true, want false", tc)
+		}
+	}
+}
+
+func TestForJumpHostDirectOverride(t *testing.T) {
+	r := &Resolver{
+		DotEnv: map[string]string{
+			"NETCONFIG_JUMP_HOST":     "bastion.example.com:22",
+			"NETCONFIG_JUMP_USERNAME": "jumpuser",
+			"NETCONFIG_JUMP_PASSWORD": "jumppass",
+		},
+	}
+
+	// Global defaults resolve to bastion
+	def := r.JumpDefaults()
+	if def.Host != "bastion.example.com:22" {
+		t.Fatalf("unexpected global jump host: %s", def.Host)
+	}
+
+	// Direct keywords bypass bastion and return empty JumpCredentials
+	for _, kw := range []string{"direct", "none", "-", "off", "false"} {
+		jc := r.ForJumpHost(kw)
+		if jc.Host != "" {
+			t.Errorf("ForJumpHost(%q) host = %q, want empty", kw, jc.Host)
+		}
+	}
+
+	// Normal named bastion falls back or resolves
+	other := r.ForJumpHost("other-bastion")
+	if other.Host != "bastion.example.com:22" {
+		t.Errorf("ForJumpHost(other-bastion) host = %q, want bastion.example.com:22", other.Host)
+	}
+}

@@ -515,9 +515,11 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 			}
 			var jc credentials.JumpCredentials
 			switch {
+			case credentials.IsDirect(jobs[i].Device.JumpHost):
+				// Explicitly direct: leave jc empty so no bastion is used
 			case jobs[i].Device.JumpHost != "":
 				jc = resolver.ForJumpHost(jobs[i].Device.JumpHost)
-				if jc.Host == "" {
+				if jc.Host == "" || strings.Contains(jobs[i].Device.JumpHost, ":") {
 					// Treat inventory jump_host value directly as host[:port]
 					jc.Host = jobs[i].Device.JumpHost
 				}

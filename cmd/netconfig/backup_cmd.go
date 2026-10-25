@@ -415,11 +415,15 @@ func (e *credentialError) ErrorKind() string { return "auth" }
 
 // jumpFor picks the bastion for a device: its inventory jump_host, else the
 // -jump-host flag, else the global default from the environment.
+// Values recognized by credentials.IsDirect ("direct", "none", "-", etc.)
+// explicitly bypass any jump host, forcing a direct connection.
 func jumpFor(r *credentials.Resolver, d inventory.Device, flagHost string, global credentials.JumpCredentials) credentials.JumpCredentials {
 	switch {
+	case credentials.IsDirect(d.JumpHost):
+		return credentials.JumpCredentials{}
 	case d.JumpHost != "":
 		jc := r.ForJumpHost(d.JumpHost)
-		if jc.Host == "" {
+		if jc.Host == "" || strings.Contains(d.JumpHost, ":") {
 			jc.Host = d.JumpHost // the inventory value is itself a host[:port]
 		}
 		return jc
