@@ -183,6 +183,12 @@ cause. Use `-verbose` to see full rollback traces.
 > rollback re-applies the entire backup as individual commands, which may not
 > be identical to a native rollback on every platform. Test in a lab before
 > relying on this in production.
+>
+> **Precaution for in-band SSH rollback:** If the pre-change backup modifies
+> management interface IPs, AAA credentials, or VTY access-lists, automated
+> rollback over in-band SSH could sever the session before completion. For
+> disruptive changes, use deadman timers (`-commit-confirm`, `-allow-reboot-rollback`)
+> or apply changes with out-of-band console access. See [Precautions When Restoring via CLI Paste](#precautions-when-restoring-via-cli-paste).
 
 ### Pre-Flight Safety Lint (`-strict-safety`, `-allow-dangerous`)
 
@@ -527,6 +533,46 @@ It honours `-backup-dir` and works for every platform's extension. When several 
 is no terminal to ask on, it lists them and exits `1`. Only the *first* argument after `backup` selects
 `show`, so a flag value such as `-limit show` is still a device filter.
 
+### Restoring from Backup & Disaster Recovery
+
+When recovering devices using saved backups under `<backup-dir>/<run>/<vendor_dir>/<hostname><ext>`, operators can choose between **native file-based restoration** (recommended for full disaster recovery) and **interactive CLI pasting** (for targeted section rollbacks).
+
+#### Platform-by-Platform Recovery Procedures
+
+| Platform | Format & Path | Native / File-Based Recovery (Recommended) | CLI Paste Procedure |
+| :--- | :--- | :--- | :--- |
+| **Check Point Gaia** | `checkpoint_gaia/*.cfg` | `clish -s -f <file.cfg>` or `load configuration <file.cfg>`<br>*(WebUI: Device > System Operations > Restore)* | Ensure `set clienv on-failure continue` is at line 1, then paste line-by-line into Clish |
+| **Fortinet FortiOS** | `fortigate/*.conf` | `execute restore config tftp/ftp/usb <file.conf>`<br>*(WebUI: System > Configuration > Restore)* — reboots clean | Paste blocks directly (configure terminal pacing to avoid dropping keys) |
+| **Cisco IOS / IOS-XE** | `cisco_ios/*.cfg` | Atomic (Zero-Reboot): `configure replace tftp://<srv>/<host>.cfg force`<br>Cold: `copy tftp:... startup-config && reload` | Enter `configure terminal`, paste with 20–50ms delay, `end`, `write memory` |
+| **Cisco Small Business** | `cisco_sb/*.cfg` | `copy tftp://<srv>/<host>.cfg startup-config && reload`<br>*(WebUI: Administration > File Management > File Operations)* | Enter `configure terminal`, paste with 30ms pacing delay, `end`, `write memory` |
+| **Cisco ASA** | `cisco_asa/*.cfg` | `copy tftp://<srv>/<host>.cfg startup-config && reload` | Paste under `configure terminal`, then `write memory` |
+| **Juniper Junos** | `juniper_junos/*.set` | In `configure`: `load set /var/tmp/<host>.set`, verify with `commit check`, then `commit`<br>*(Disaster recovery: `load factory-default` -> `load set ...` -> `commit`)* | Enter `configure`, paste `set ...` commands, verify with `commit check`, `commit` |
+| **Huawei VRP** | `huawei_vrp/*.cfg` | Transfer to flash, then: `startup saved-configuration <host>.cfg && reboot fast` | Enter `system-view`, paste commands with pacing delay, `return`, `save` |
+| **Arista EOS** | `arista/*.cfg` | Atomic: `configure replace <file.cfg>` (zero-reboot running config replace)<br>Cold: `copy <file.cfg> startup-config && reload` | Enter `configure`, paste commands, `commit`, `write memory` |
+| **Aruba AOS-CX / AOS-S** | `aruba/*.cfg` | AOS-CX: `copy <file.cfg> checkpoint <name>` then `checkpoint rollback <name>`<br>Cold: `copy <file.cfg> startup-config && boot system` | Enter `configure terminal`, paste commands, `write memory` |
+| **VyOS** | `vyos/*.config` | In configure mode: `load /config/<host>.config`, verify with `compare`, then `commit && save` | Paste `set ...` lines in configure mode, `commit`, `save` |
+| **MikroTik RouterOS** | `mikrotik/*.rsc` | `/import verbose=yes file-name=<host>.rsc`<br>*(Cold reset: `/system reset-configuration run-after-reset=<host>.rsc keep-users=no`)* | Paste script directly into terminal |
+| **Palo Alto PAN-OS** | `paloalto/*.cfg` | CLI: `scp import configuration from ...` then in configure: `load config from <file.cfg>` and `commit`<br>*(WebUI: Device > Setup > Operations > Import snapshot)* | Paste `set ...` lines under `configure`, `commit` |
+| **pfSense** | `pfsense/*.xml` | WebUI: *Diagnostics > Backup & Restore > Restore configuration*<br>*(CLI: Place at `/conf/config.xml` and run `/etc/rc.reload_all`)* | N/A (XML format: restore via WebUI or filesystem) |
+| **Ruijie RGOS** | `ruijie/*.cfg` | `copy tftp://<srv>/<host>.cfg startup-config && reload` | Enter `configure terminal`, paste with 30ms pacing delay, `end`, `write` |
+| **Sophos** | `sophos/*.cfg` | WebUI: *Backup & Firmware > Backup & Restore > Restore* (select `.cfg` file) | N/A (binary/encoded configuration: restore via WebUI) |
+
+#### Precautions When Restoring via CLI Paste
+
+If pasting full configuration backups into a live switch (e.g., using SecureCRT, PuTTY, iTerm2, or serial console):
+
+1. **Line Pacing / Buffer Overflow:**
+   * Avoid dumping thousands of bytes into a terminal emulator at once.
+   * Set a **20–50 ms inter-line paste delay** in your terminal client (e.g., SecureCRT: *Session Options > Terminal > Emulation > Advanced > Paste Delay*; iTerm2: *Preferences > Advanced > Paste delay*; PuTTY paste delays).
+   * Device UART and PTY input buffers (notably on Cisco Catalyst/IOS, Ruijie RGOS, and Comware switches) easily overflow during rapid multi-line pastes, causing dropped characters, corrupted crypto keys/secrets, truncated ACL remarks, or syntax errors.
+
+2. **Session Interruption & Command Ordering:**
+   * Ensure commands affecting management connectivity (such as `ip access-list standard VTY-ACL`, `access-class` under `line vty`, management VLAN interface IPs, default gateways, or AAA/SSH authentication) are applied **last**, immediately before `end` and `write memory` (or `commit`).
+   * If pasted over an in-band SSH session, modifying management parameters mid-paste instantly drops the connection before reaching the save step, leaving the device half-configured and unmanageable remotely.
+
+3. **Prefer Out-of-Band (OOB) / Console Access:**
+   * For bare-metal disaster recovery or whole-configuration restores, connect via direct serial console or dedicated out-of-band management network whenever possible to eliminate the risk of mid-paste session drops.
+
 ### Migrating from the standalone `netbackup`
 
 `netbackup <flags>` becomes `netconfig backup <flags>`, and browsing backups uses
@@ -613,7 +659,8 @@ masked in logs and in the confirmation preview; what is *sent* to the device is 
   itself, and `-backup` / `-rollback-on-fail` remain the fallback for platforms without a timer.
 * **Backup (`-backup`, `-backup-dir backups`):** each device's running configuration is saved
   (mode 0600, written atomically) *before* anything is changed. If the backup fails, that device is
-  not touched (`BACKUP_FAILED`).
+  not touched (`BACKUP_FAILED`). When restoring backups manually via CLI paste, follow the
+  [restoration precautions](#precautions-when-restoring-via-cli-paste) (pacing delay and command ordering).
 * **Stop on first error per device:** a rejected command ends that device's run. Cleanup leaves
   configuration mode **without saving** (Cisco/Arista `end` and no `write memory`; Junos `rollback 0`
   and no commit; Huawei `return`, no `save`; FortiOS `abort`). Other devices are unaffected.
