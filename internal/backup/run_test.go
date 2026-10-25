@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -227,6 +228,31 @@ func TestFetchConfigUsesTheArchiveCommand(t *testing.T) {
 	}
 	if want := "show configuration | display set"; tr.sent[0] != want {
 		t.Errorf("sent %q, want %q (netbackup archives Junos as set commands)", tr.sent[0], want)
+	}
+}
+
+func TestFetchConfigSophosMultiCommand(t *testing.T) {
+	tr := newFakeTransport()
+	tr.add("fw1", &fakeDevice{output: "Port1 Zonetype:LAN MTU:1500"})
+	prof, _ := vendor.Lookup("sophos")
+	out, err := fetchConfig(context.Background(), device("fw1", "10.0.0.3", "sophos"), prof, testConfig(t, tr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCmds := []string{
+		"system diagnostics show version-info",
+		"show network interfaces",
+		"show static-route",
+		"system ha show details",
+	}
+	if !slices.Equal(tr.sent, wantCmds) {
+		t.Errorf("sent = %v, want %v", tr.sent, wantCmds)
+	}
+	for _, cmd := range wantCmds {
+		header := fmt.Sprintf("=== %s ===", cmd)
+		if !strings.Contains(out, header) {
+			t.Errorf("output missing section header %q", header)
+		}
 	}
 }
 

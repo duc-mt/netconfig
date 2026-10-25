@@ -912,15 +912,28 @@ func (r *Runner) backup(ctx context.Context, sess Session, job Job) (string, err
 		dir = "backups"
 	}
 
-	r.Log.Infof(host, "backing up configuration (%s)", prof.BackupCommand)
-	out, err := sess.Send(ctx, prof.BackupCommand, r.Opts.CommandTimeout*r.slow())
-	if err != nil {
-		return "", fmt.Errorf("run %q: %w", prof.BackupCommand, err)
+	cmds := prof.BackupCommands
+	if len(cmds) == 0 && prof.BackupCommand != "" {
+		cmds = []string{prof.BackupCommand}
 	}
-	if bad, ok := prof.FindError(out); ok {
-		return "", fmt.Errorf("device rejected %q: %s", prof.BackupCommand, bad)
+	var sections []string
+	for _, cmd := range cmds {
+		r.Log.Infof(host, "backing up configuration (%s)", cmd)
+		out, err := sess.Send(ctx, cmd, r.Opts.CommandTimeout*r.slow())
+		if err != nil {
+			return "", fmt.Errorf("run %q: %w", cmd, err)
+		}
+		if bad, ok := prof.FindError(out); ok {
+			return "", fmt.Errorf("device rejected %q: %s", cmd, bad)
+		}
+		if len(cmds) > 1 {
+			sections = append(sections, fmt.Sprintf("=== %s ===\n%s", cmd, strings.TrimSpace(out)))
+		} else {
+			sections = append(sections, out)
+		}
 	}
-	if err := prof.ValidateBackup(out); err != nil {
+	allOut := strings.Join(sections, "\n\n")
+	if err := prof.ValidateBackup(allOut); err != nil {
 		return "", err
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -928,10 +941,10 @@ func (r *Runner) backup(ctx context.Context, sess Session, job Job) (string, err
 	}
 	name := fmt.Sprintf("%s_%s.cfg", unsafeFileChars.ReplaceAllString(job.Device.Hostname, "_"), r.now().Format("20060102-150405"))
 	dst := filepath.Join(dir, name)
-	if err := writeFileAtomic(dst, []byte(out+"\n"), 0o600); err != nil {
+	if err := writeFileAtomic(dst, []byte(allOut+"\n"), 0o600); err != nil {
 		return "", err
 	}
-	r.Log.Infof(host, "backup saved: %s (%d bytes)", dst, len(out))
+	r.Log.Infof(host, "backup saved: %s (%d bytes)", dst, len(allOut))
 	return dst, nil
 }
 
@@ -955,17 +968,35 @@ func (r *Runner) reportDiff(ctx context.Context, sess Session, job Job, res *Res
 		return
 	}
 
-	after, err := sess.Send(ctx, prof.BackupCommand, r.Opts.CommandTimeout*r.slow())
-	if err != nil {
-		r.Log.Warnf(host, "diff: could not read post-change configuration: %v", err)
+	cmds := prof.BackupCommands
+	if len(cmds) == 0 && prof.BackupCommand != "" {
+		cmds = []string{prof.BackupCommand}
+	}
+	var postSections []string
+	var fetchErr error
+	for _, cmd := range cmds {
+		part, err := sess.Send(ctx, cmd, r.Opts.CommandTimeout*r.slow())
+		if err != nil {
+			fetchErr = err
+			break
+		}
+		if bad, ok := prof.FindError(part); ok {
+			fetchErr = fmt.Errorf("device rejected %q: %s", cmd, bad)
+			break
+		}
+		if len(cmds) > 1 {
+			postSections = append(postSections, fmt.Sprintf("=== %s ===\n%s", cmd, strings.TrimSpace(part)))
+		} else {
+			postSections = append(postSections, part)
+		}
+	}
+	if fetchErr != nil {
+		r.Log.Warnf(host, "diff: could not read post-change configuration: %v", fetchErr)
 		return
 	}
-	if bad, ok := prof.FindError(after); ok {
-		r.Log.Warnf(host, "diff: device rejected %q while reading the post-change configuration: %s", prof.BackupCommand, bad)
-		return
-	}
+	after := strings.Join(postSections, "\n\n")
 	if err := prof.ValidateBackup(after); err != nil {
-		r.Log.Warnf(host, "diff: %q output after the change does not look like a complete configuration (%v); skipping diff", prof.BackupCommand, err)
+		r.Log.Warnf(host, "diff: backup output after the change does not look like a complete configuration (%v); skipping diff", err)
 		return
 	}
 

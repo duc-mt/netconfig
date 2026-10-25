@@ -610,19 +610,34 @@ func fetchConfig(ctx context.Context, dev inventory.Device, profile *vendor.Prof
 		return "", nil
 	}
 
-	command := archiveFor(profile).Command
-	out, err := sess.Send(ctx, command, 3*cfg.commandTimeout())
-	if err != nil {
-		return "", errcat.Classify(dev.Hostname, "command", err)
+	spec := archiveFor(profile)
+	cmds := spec.Commands
+	if len(cmds) == 0 && spec.Command != "" {
+		cmds = []string{spec.Command}
 	}
-	if line, bad := profile.FindError(out); bad {
-		return "", errcat.New(errcat.CategoryCommandFailed, dev.Hostname, "command",
-			fmt.Errorf("device rejected %q: %s", command, line))
+
+	var sections []string
+	for _, cmd := range cmds {
+		out, err := sess.Send(ctx, cmd, 3*cfg.commandTimeout())
+		if err != nil {
+			return "", errcat.Classify(dev.Hostname, "command", err)
+		}
+		if line, bad := profile.FindError(out); bad {
+			return "", errcat.New(errcat.CategoryCommandFailed, dev.Hostname, "command",
+				fmt.Errorf("device rejected %q: %s", cmd, line))
+		}
+		if len(cmds) > 1 {
+			sections = append(sections, fmt.Sprintf("=== %s ===\n%s", cmd, strings.TrimSpace(out)))
+		} else {
+			sections = append(sections, out)
+		}
 	}
-	if err := profile.ValidateBackup(out); err != nil {
+	allOut := strings.Join(sections, "\n\n")
+
+	if err := profile.ValidateBackup(allOut); err != nil {
 		return "", errcat.Classify(dev.Hostname, "validate", err)
 	}
-	return out, nil
+	return allOut, nil
 }
 
 // save writes the captured config to <outputDir>/<runName>/<archive dir>/<hostname><ext>.

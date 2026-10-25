@@ -72,6 +72,20 @@ func TestArchiveCommandDefaultsToTheProfilesBackupCommand(t *testing.T) {
 	}
 }
 
+func TestArchiveResolvesMultipleCommandsForSophos(t *testing.T) {
+	p, _ := vendor.Lookup("sophos")
+	spec := archiveFor(p)
+	wantCmds := []string{
+		"system diagnostics show version-info",
+		"show network interfaces",
+		"show static-route",
+		"system ha show details",
+	}
+	if !slices.Equal(spec.Commands, wantCmds) {
+		t.Errorf("sophos archive commands = %v, want %v", spec.Commands, wantCmds)
+	}
+}
+
 // Existing netbackup inventories keep working: every vendor spelling netbackup
 // accepted still resolves, except the two platforms netconfig does not have.
 func TestNetbackupVendorSpellingsStillResolve(t *testing.T) {

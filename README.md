@@ -395,13 +395,26 @@ backups/
 
 | Platform (vendor key) | Directory | Extension |
 |---|---|---|
-| `cisco`, `cisco_sb`, `cisco_asa`, `huawei`, `arista`, `aruba`, `ruijie`, `paloalto`, `sophos` | `cisco_ios`, `cisco_sb`, `cisco_asa`, `huawei_vrp`, `arista`, `aruba`, `ruijie`, `paloalto`, `sophos` | `.cfg` |
+| `cisco`, `cisco_sb`, `cisco_asa`, `huawei`, `arista`, `aruba`, `ruijie`, `paloalto` | `cisco_ios`, `cisco_sb`, `cisco_asa`, `huawei_vrp`, `arista`, `aruba`, `ruijie`, `paloalto` | `.cfg` |
+| `sophos` | `sophos` | `.cfg` (CLI network interface/zone dump for drift auditing; see note below) |
 | `junos` | `juniper_junos` | `.set` (archived as `show configuration \| display set`, one statement per line) |
 | `fortinet` | `fortigate` | `.conf` |
 | `checkpoint` | `checkpoint_gaia` | `.cfg` |
 | `pfsense` | `pfsense` | `.xml` |
 | `vyos` | `vyos` | `.config` |
 | `mikrotik` | `mikrotik` | `.rsc` |
+
+> [!NOTE]
+> **Sophos SFOS Architecture & Multi-Command Backup**:
+> Unlike Cisco, FortiOS, or Junos, Sophos SFOS does not store configuration in flat text files. Settings reside in an internal PostgreSQL database (`corporate.db`). The SFOS Device Console (`console>`) does not provide a CLI command to dump a full importable configuration (like `running-config`).
+> Therefore, `netconfig` executes a comprehensive suite of show commands under `sophos/<hostname>.cfg` for configuration drift tracking, change detection (`.diff`), and network state documentation:
+> 1. `system diagnostics show version-info` (Firmware version, build, serial number, device ID)
+> 2. `show network interfaces` (Physical & virtual interfaces, zones, IP/netmask, MTU, speed/duplex)
+> 3. `show static-route` (Active static routing table)
+> 4. `system ha show details` (High Availability cluster mode, node status, peer health)
+> 
+> Each command output is clearly demarcated with `=== <command> ===` section banners.
+> To obtain a native 1-click importable backup, use WebAdmin (*Backup & Firmware > Backup & Restore* for `.backup` binary archives, or *Import Export* for `Entities.xml` packages) or the Sophos Central / XML API over HTTPS.
 
 The directory names are the ones the standalone netbackup used, so an existing backup tree, its
 retention and its "diff against the previous backup" carry straight over. Backups and diffs are
@@ -555,7 +568,7 @@ When recovering devices using saved backups under `<backup-dir>/<run>/<vendor_di
 | **Palo Alto PAN-OS** | `paloalto/*.cfg` | CLI: `scp import configuration from ...` then in configure: `load config from <file.cfg>` and `commit`<br>*(WebUI: Device > Setup > Operations > Import snapshot)* | Paste `set ...` lines under `configure`, `commit` |
 | **pfSense** | `pfsense/*.xml` | WebUI: *Diagnostics > Backup & Restore > Restore configuration*<br>*(CLI: Place at `/conf/config.xml` and run `/etc/rc.reload_all`)* | N/A (XML format: restore via WebUI or filesystem) |
 | **Ruijie RGOS** | `ruijie/*.cfg` | `copy tftp://<srv>/<host>.cfg startup-config && reload` | Enter `configure terminal`, paste with 30ms pacing delay, `end`, `write` |
-| **Sophos** | `sophos/*.cfg` | WebUI: *Backup & Firmware > Backup & Restore > Restore* (select `.cfg` file) | N/A (binary/encoded configuration: restore via WebUI) |
+| **Sophos** | `sophos/*.cfg` | **Audit/Documentation Only**: `sophos/*.cfg` captures the CLI network interface and zone state (`show network interfaces`) for drift auditing. For full system recovery, use native SFOS backups: WebUI (*Backup & Firmware > Backup & Restore*) or Advanced Shell (`/bin/opcode system_backup_now -ds nosync` in `/var/conf/backupdata/`) | N/A (database-driven: restore native `.backup` or `Entities.xml` package via WebUI) |
 
 #### Precautions When Restoring via CLI Paste
 

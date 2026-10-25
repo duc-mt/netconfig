@@ -74,6 +74,10 @@ var builtinVolatileSpecs = []volatileSpec{
 
 	// Linux-like platforms: dynamic comment banners and uptime stamps.
 	{"hash-banner", hashCommentVendors, `(?i)^\s*#\s*(generated|exported|created|last (login|updated|saved|modified|changed|commit)|date|timestamp|uptime)\b`},
+
+	// Sophos SFOS: uptime and active status timestamps.
+	{"sophos-uptime", []string{"sophos"}, `(?i)^\s*uptime\s*:`},
+	{"sophos-ha-status-timestamp", []string{"sophos"}, `(?i)^\s*(?:current status|status)\s*:\s*primary.*from\b`},
 }
 
 type volatileRule struct {

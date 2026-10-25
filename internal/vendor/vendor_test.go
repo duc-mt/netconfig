@@ -298,6 +298,13 @@ func TestPrompts(t *testing.T) {
 		{"pfsense", "[2.8.1-RELEASE][duc.mt@pfSense-automation-gw.cmctelecom.vn]/home/duc.mt: ", true},
 		{"pfsense", "[2.7.2-RELEASE][admin@pfsense.home.arpa]/root: ", true},
 		{"pfsense", "invalid option", false},
+		{"sophos", "Select Menu Number [0-7]: ", true},
+		{"sophos", "    Select Menu Number [0-7]:  ", true},
+		{"sophos", "console>", true},
+		{"sophos", "console> ", true},
+		{"sophos", "NHG-BVU-FW-01_console> ", true},
+		{"sophos", "Select Menu Number:", false},
+		{"sophos", "Main Menu", false},
 	}
 	for _, c := range cases {
 		if got := mustLookup(t, c.vendor).Prompt.MatchString(c.line); got != c.want {
@@ -310,6 +317,15 @@ func TestPrompts(t *testing.T) {
 	}
 	if mustLookup(t, "cisco").UserPrompt.MatchString("Router#") {
 		t.Error("cisco user prompt must not match privileged prompt")
+	}
+	if !mustLookup(t, "sophos").UserPrompt.MatchString("    Select Menu Number [0-7]:  ") {
+		t.Error("sophos user prompt should match indented menu prompt")
+	}
+	if mustLookup(t, "sophos").UserPrompt.MatchString("console>") {
+		t.Error("sophos user prompt must not match console prompt")
+	}
+	if mustLookup(t, "sophos").UserPrompt.MatchString("NHG-BVU-FW-01_console> ") {
+		t.Error("sophos user prompt must not match prefixed console prompt")
 	}
 }
 
@@ -451,6 +467,25 @@ func TestValidateBackup(t *testing.T) {
 	// VyOS without EndMarkers defined (passes with config marker)
 	if err := vyos.ValidateBackup("set interfaces ethernet eth0\n"); err != nil {
 		t.Errorf("expected valid vyos backup, got %v", err)
+	}
+
+	// Valid Sophos SFOS show network interfaces
+	sophos := mustLookup(t, "sophos")
+	if len(sophos.BackupCommands) != 4 {
+		t.Errorf("sophos BackupCommands count = %d, want 4", len(sophos.BackupCommands))
+	}
+	multiOut := "=== system diagnostics show version-info ===\nSerial Number: SFVUNL\nVersion: SFOS 22.0.2\n\n=== show network interfaces ===\nPort1 Zonetype:LAN MTU:1500\n\n=== show static-route ===\nNo routes\n\n=== system ha show details ===\nHA: Disabled\n"
+	if err := sophos.ValidateBackup(multiOut); err != nil {
+		t.Errorf("expected valid multi-command sophos backup, got %v", err)
+	}
+	if err := sophos.ValidateBackup("--------------------------------------------------------------------------------\nInterface           Speed/Duplex            MTU       Zone           IP\n--------------------------------------------------------------------------------\nPort1               1000 Mbps / Full        1500      LAN            192.168.1.1/24\n"); err != nil {
+		t.Errorf("expected valid sophos backup table, got %v", err)
+	}
+	if err := sophos.ValidateBackup("Port1 Zonetype:LAN MAC Address:00:11:22:33:44:55 MTU:1500\nPort2 Zonetype:WAN MAC Address:00:11:22:33:44:56 MTU:1500\n"); err != nil {
+		t.Errorf("expected valid sophos backup port lines, got %v", err)
+	}
+	if err := sophos.ValidateBackup("random text without any marker\n"); err == nil {
+		t.Error("expected error for missing sophos config markers")
 	}
 }
 

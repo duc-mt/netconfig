@@ -191,19 +191,20 @@ type Profile struct {
 	Name    string
 	Display string
 
-	Prompt        *regexp.Regexp   // matches the last output line when the device is ready for input
-	UserPrompt    *regexp.Regexp   // unprivileged prompt; if matched, EnableCommand is needed first
-	PromptPrefix  *regexp.Regexp   // optional multi-line prompt prefix (e.g. Junos "{master:0}") stripped with the prompt
-	EnableCommand string           // "" when the vendor has no privilege escalation step
-	DisablePaging []string         // session-local commands that turn the pager off
-	Pagers        []*regexp.Regexp // "--More--" style markers; answered with a space
-	Confirms      []Confirm
-	ErrorPatterns []*regexp.Regexp         // matched per output line
-	BackupCommand string                   // prints the full running configuration
-	EndMarkers    []string                 // substrings expected at or near end of untruncated backup (e.g. "\nend", "\nreturn")
-	EndAnchored   bool                     // EndMarkers must end the output, not merely occur in it (for terminators that also appear mid-config)
-	ValidateTail  func(output string) bool // optional fallback validation when EndAnchored is true but trailing global config is present
-	CandidateDiff string                   // read-only command inside config mode to inspect candidate diff (e.g. "show | compare")
+	Prompt         *regexp.Regexp   // matches the last output line when the device is ready for input
+	UserPrompt     *regexp.Regexp   // unprivileged prompt; if matched, EnableCommand is needed first
+	PromptPrefix   *regexp.Regexp   // optional multi-line prompt prefix (e.g. Junos "{master:0}") stripped with the prompt
+	EnableCommand  string           // "" when the vendor has no privilege escalation step
+	DisablePaging  []string         // session-local commands that turn the pager off
+	Pagers         []*regexp.Regexp // "--More--" style markers; answered with a space
+	Confirms       []Confirm
+	ErrorPatterns  []*regexp.Regexp         // matched per output line
+	BackupCommand  string                   // prints the full running configuration
+	BackupCommands []string                 // optional list of show commands to capture and concatenate
+	EndMarkers     []string                 // substrings expected at or near end of untruncated backup (e.g. "\nend", "\nreturn")
+	EndAnchored    bool                     // EndMarkers must end the output, not merely occur in it (for terminators that also appear mid-config)
+	ValidateTail   func(output string) bool // optional fallback validation when EndAnchored is true but trailing global config is present
+	CandidateDiff  string                   // read-only command inside config mode to inspect candidate diff (e.g. "show | compare")
 
 	probe         string
 	apply         []Step // StepBody is a placeholder for the user's commands
@@ -245,10 +246,16 @@ func (p *Profile) ValidateBackup(output string) error {
 }
 
 func hasConfigMarkers(out string) bool {
-	markers := []string{"version ", "!", "#", "system", "interface", "config ", "set ", "<pfsense", "<?xml", "<config"}
-	for _, m := range markers {
-		if strings.Contains(out, "\n"+m) || strings.HasPrefix(out, m) {
-			return true
+	markers := []string{
+		"version ", "!", "#", "system", "interface", "config ", "set ",
+		"<pfsense", "<?xml", "<config", "port", "zonetype",
+	}
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.ToLower(strings.TrimSpace(line))
+		for _, m := range markers {
+			if strings.HasPrefix(trimmed, m) {
+				return true
+			}
 		}
 	}
 	return false
@@ -272,8 +279,8 @@ var (
 
 	rePaloAltoPrompt = regexp.MustCompile(`^[\w.\-]+@[\w.\-]+(?:>|#)\s*$`)
 	rePfSensePrompt  = regexp.MustCompile(`^(?:(?:\[[^\]]+\])*\[[\w.\-]+@[\w.\-]+\][^:#$%]*[:#$%]\s*$|Enter an option:\s*$)`)
-	reSophosPrompt   = regexp.MustCompile(`^(?:[a-zA-Z0-9.\-]+_)?console>\s*$`)
-	reSophosMenu     = regexp.MustCompile(`(?i)^Select Menu Number \[[0-9\-]+\]:\s*$`)
+	reSophosPrompt   = regexp.MustCompile(`(?i)^\s*(?:(?:[a-zA-Z0-9.\-]+_)?console>|Select Menu Number \[[0-9\-]+\]:)\s*$`)
+	reSophosMenu     = regexp.MustCompile(`(?i)^\s*Select Menu Number \[[0-9\-]+\]:\s*$`)
 	reRouterOSPrompt = regexp.MustCompile(`^\[[^@\s]+@[^\]\s]+\](?:\s+[^>#]+)*\s*[>#]\s*$`)
 
 	rePagerMore   = regexp.MustCompile(`(?i)--\s*More\s*--`)
@@ -917,6 +924,19 @@ func newPfSense() *Profile {
 	}
 }
 
+// newSophos defines the profile for Sophos Firewall OS (SFOS / XG).
+//
+// NOTE (Architecture & Backup Format):
+// Unlike Cisco, FortiOS, or Junos, Sophos SFOS does not store configuration
+// in a flat text file; settings reside in an internal PostgreSQL database
+// (corporate.db). The SFOS Device Console (Option 4) has no native command
+// to dump a full, importable plaintext configuration (such as "running-config").
+//
+// BackupCommand is set to "show network interfaces" to capture interface
+// addressing, zones, MACs, MTUs, and link status as an audit trail and for
+// configuration drift tracking. Official importable SFOS backups are either
+// binary snapshots (.backup via WebAdmin / opcode system_backup_now in Advanced Shell)
+// or XML entity packages (.tar containing Entities.xml via WebAdmin / Sophos XML API).
 func newSophos() *Profile {
 	return &Profile{
 		Name:          Sophos,
@@ -927,7 +947,13 @@ func newSophos() *Profile {
 		Confirms:      genericConfirms,
 		ErrorPatterns: []*regexp.Regexp{reSophosErr},
 		BackupCommand: "show network interfaces",
-		probe:         "show version",
+		BackupCommands: []string{
+			"system diagnostics show version-info",
+			"show network interfaces",
+			"show static-route",
+			"system ha show details",
+		},
+		probe: "show version",
 		apply: []Step{
 			{Kind: StepBody},
 		},

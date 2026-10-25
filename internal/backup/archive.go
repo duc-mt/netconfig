@@ -17,9 +17,10 @@ import (
 // so that an existing backup tree, its retention rules and the "diff against
 // the previous backup" check carry straight over to the merged binary.
 type archiveSpec struct {
-	Dir     string // directory under <backup-dir>/<run>/
-	Ext     string // file extension, including the dot
-	Command string // overrides the profile's BackupCommand when set
+	Dir      string   // directory under <backup-dir>/<run>/
+	Ext      string   // file extension, including the dot
+	Command  string   // overrides the profile's BackupCommand when set
+	Commands []string // overrides the profile's BackupCommands when set
 }
 
 // archiveSpecs is keyed by vendor profile name.
@@ -49,6 +50,9 @@ func archiveFor(p *vendor.Profile) archiveSpec {
 	spec, ok := archiveSpecs[p.Name]
 	if !ok {
 		spec = archiveSpec{Dir: p.Name, Ext: ".cfg"}
+	}
+	if len(spec.Commands) == 0 && len(p.BackupCommands) > 0 {
+		spec.Commands = p.BackupCommands
 	}
 	if spec.Command == "" {
 		spec.Command = p.BackupCommand

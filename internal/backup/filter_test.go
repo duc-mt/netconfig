@@ -374,3 +374,33 @@ func TestVolatileFilterCiscoASAWrittenBy(t *testing.T) {
 		t.Error("static ASA header lines must not be volatile")
 	}
 }
+
+func TestVolatileFilterSophos(t *testing.T) {
+	cfg := strings.Join([]string{
+		"=== system diagnostics show version-info ===",
+		"Serial Number: SFVUNL12345",
+		"Firmware Version: SFOS 22.0.2 MR-2-Build546",
+		"Uptime: 6 days 18 hours 25 minutes",
+		"",
+		"=== system ha show details ===",
+		"HA Status: Enabled",
+		"Current status: Primary (Active) from 05:38:55 PM, Oct 18, 2026",
+		"Node Name: Master",
+	}, "\n")
+	want := strings.Join([]string{
+		"=== system diagnostics show version-info ===",
+		"Serial Number: SFVUNL12345",
+		"Firmware Version: SFOS 22.0.2 MR-2-Build546",
+		"",
+		"=== system ha show details ===",
+		"HA Status: Enabled",
+		"Node Name: Master",
+	}, "\n")
+
+	f := DefaultVolatileFilter()
+	for _, vendorName := range []string{"sophos", "sfos", "sophos_xg"} {
+		if got := f.Apply(vendorName, cfg); got != want {
+			t.Errorf("vendor %q: Apply = %q, want %q", vendorName, got, want)
+		}
+	}
+}
