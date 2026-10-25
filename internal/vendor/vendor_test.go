@@ -42,6 +42,7 @@ func TestLookupAliases(t *testing.T) {
 		"cisco_sb": CiscoSB, "Cisco-SB": CiscoSB, "SG350": CiscoSB, "CBS350": CiscoSB,
 		"cisco_asa": CiscoASA, "ASA": CiscoASA, "FTD": CiscoASA,
 		"h3c": Huawei, "Comware": Huawei, "HP_Comware": Huawei,
+		"mikrotik": MikroTik, "MikroTik": MikroTik, "routeros": MikroTik, "ROS": MikroTik,
 	}
 	for in, want := range cases {
 		p, ok := Lookup(in)
@@ -52,7 +53,7 @@ func TestLookupAliases(t *testing.T) {
 	if _, ok := Lookup("nokia"); ok {
 		t.Error("Lookup(nokia) should fail")
 	}
-	if got := Names(); !slices.Equal(got, []string{"arista", "aruba", "checkpoint", "cisco", "cisco_asa", "cisco_sb", "fortinet", "huawei", "junos", "paloalto", "pfsense", "ruijie", "sophos", "vyos"}) {
+	if got := Names(); !slices.Equal(got, []string{"arista", "aruba", "checkpoint", "cisco", "cisco_asa", "cisco_sb", "fortinet", "huawei", "junos", "mikrotik", "paloalto", "pfsense", "ruijie", "sophos", "vyos"}) {
 		t.Errorf("Names() = %v", got)
 	}
 }
@@ -286,6 +287,10 @@ func TestPrompts(t *testing.T) {
 		{"cisco_asa", "asa1/pri/act(config)# ", true},
 		{"cisco_asa", "asa1(config-if)#", true},
 		{"cisco_asa", "ERROR: % Invalid input detected at '^' marker.", false},
+		{"mikrotik", "[admin@MikroTik] > ", true},
+		{"mikrotik", "[admin@MikroTik] /ip route> ", true},
+		{"mikrotik", "[admin@MikroTik] # ", true},
+		{"mikrotik", "syntax error (line 1 column 5)", false},
 	}
 	for _, c := range cases {
 		if got := mustLookup(t, c.vendor).Prompt.MatchString(c.line); got != c.want {
@@ -342,6 +347,14 @@ func TestFindError(t *testing.T) {
 		// ...and the ASA rule must not leak into the other Cisco-style vendors.
 		{"cisco", "ERROR: not an IOS error format", false},
 		{"cisco_sb", "ERROR: not an SB error format", false},
+		// MikroTik RouterOS
+		{"mikrotik", "bad command name route (line 1 column 1)", true},
+		{"mikrotik", "syntax error (line 1 column 5)", true},
+		{"mikrotik", "failure: already have interface with such name", true},
+		{"mikrotik", "script error: cannot find script", true},
+		{"mikrotik", "no such item", true},
+		{"mikrotik", "interrupted", true},
+		{"mikrotik", "[admin@MikroTik] > ", false},
 	}
 	for _, c := range cases {
 		_, got := mustLookup(t, c.vendor).FindError(c.output)
@@ -604,7 +617,7 @@ func TestCanonicalResolvesAnyAliasToTheProfileName(t *testing.T) {
 			t.Errorf("Canonical(%q) = %q, %v; want %q", in, got, ok, want)
 		}
 	}
-	for _, in := range []string{"", "mikrotik", "no such vendor"} {
+	for _, in := range []string{"", "nokia", "no such vendor"} {
 		if got, ok := Canonical(in); ok || got != "" {
 			t.Errorf("Canonical(%q) = %q, %v; want nothing", in, got, ok)
 		}

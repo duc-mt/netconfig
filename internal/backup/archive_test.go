@@ -20,6 +20,7 @@ var netbackupLayout = []struct{ key, ext string }{
 	{"huawei_vrp", ".cfg"}, {"juniper_junos", ".set"}, {"fortigate", ".conf"},
 	{"arista", ".cfg"}, {"vyos", ".config"}, {"ruijie", ".cfg"}, {"aruba", ".cfg"},
 	{"checkpoint_gaia", ".cfg"}, {"paloalto", ".cfg"}, {"pfsense", ".xml"}, {"sophos", ".cfg"},
+	{"mikrotik", ".rsc"},
 }
 
 func TestBackupsKeepNetbackupsDirectoriesAndExtensions(t *testing.T) {
@@ -88,13 +89,14 @@ func TestNetbackupVendorSpellingsStillResolve(t *testing.T) {
 		"checkpoint_gaia": "checkpoint", "gaia": "checkpoint",
 		"pan_os": "paloalto", "panos": "paloalto",
 		"rgos": "ruijie", "sophos_xg": "sophos", "sfos": "sophos",
+		"mikrotik": "mikrotik", "routeros": "mikrotik", "ros": "mikrotik",
 	}
 	for in, want := range spellings {
 		if p, ok := vendor.Lookup(in); !ok || p.Name != want {
 			t.Errorf("Lookup(%q) = %v, %v; want %s", in, p, ok, want)
 		}
 	}
-	for _, unsupported := range []string{"mikrotik", "routeros", "ros", "generic"} {
+	for _, unsupported := range []string{"generic"} {
 		if _, ok := vendor.Lookup(unsupported); ok {
 			t.Errorf("%q now resolves: update the migration notes and add its archive layout", unsupported)
 		}

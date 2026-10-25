@@ -441,6 +441,7 @@ func TestNewVendorSectionsResolve(t *testing.T) {
 		"[sg350]", "sntp server 10.0.0.1",
 		"[asa]", "ssh version 2",
 		"[ftd]", "ssh version 2",
+		"[routeros]", "set telnet disabled=yes",
 		"[h3c]", "sysname r1",
 	}, "\n")
 
@@ -448,7 +449,7 @@ func TestNewVendorSectionsResolve(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	want := map[string]int{"cisco_sb": 1, "cisco_asa": 2, "huawei": 1}
+	want := map[string]int{"cisco_sb": 1, "cisco_asa": 2, "mikrotik": 1, "huawei": 1}
 	for key, n := range want {
 		if got := len(sections[key]); got != n {
 			t.Errorf("section %q has %d rules, want %d", key, got, n)
@@ -465,6 +466,7 @@ func TestNewVendorGoldenFilesApplyByAlias(t *testing.T) {
 	writeGolden(t, dir, "cisco.golden", "service password-encryption\n")
 	writeGolden(t, dir, "asa.golden", "ssh version 2\n")
 	writeGolden(t, dir, "sg350.golden", "sntp server 10.0.0.1\n")
+	writeGolden(t, dir, "routeros.golden", "set telnet disabled=yes\n")
 	writeGolden(t, dir, "huawei.golden", "sysname r1\n")
 
 	b, errs := Load(dir, "")
@@ -482,6 +484,8 @@ func TestNewVendorGoldenFilesApplyByAlias(t *testing.T) {
 		{"cisco_sb", "banner login x\nsntp server 10.0.0.1\n"},
 		{"cbs350", "banner login x\nsntp server 10.0.0.1\n"},
 		{"sg300", "banner login x\nsntp server 10.0.0.1\n"},
+		{"mikrotik", "banner x\nset telnet disabled=yes\n"},
+		{"ros", "banner x\nset telnet disabled=yes\n"},
 		{"h3c", "banner x\nsysname r1\n"},
 		{"hp_comware", "banner x\nsysname r1\n"},
 		// The IOS baseline still applies to IOS only.
@@ -513,7 +517,7 @@ func TestShippedGoldenBaselinesCoverNewVendors(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("shipped golden baselines have errors: %v", errs)
 	}
-	for _, key := range []string{"cisco", "vyos", "cisco_sb", "cisco_asa"} {
+	for _, key := range []string{"cisco", "vyos", "cisco_sb", "cisco_asa", "mikrotik"} {
 		if !b.Applies(key) {
 			t.Errorf("no shipped baseline applies to %q", key)
 		}
@@ -535,6 +539,15 @@ func TestShippedGoldenBaselinesCoverNewVendors(t *testing.T) {
 			"sntp server 10.0.0.1",
 			"logging host 10.0.0.9",
 			"exit",
+		}, "\n"),
+		"mikrotik": strings.Join([]string{
+			"/system identity", "set name=rtr1",
+			"/system note", `set note="Authorized access only" show-at-login=yes`,
+			"/system ntp client", "set enabled=yes",
+			"/system logging", "add action=memory topics=info",
+			"/ip service",
+			`set telnet address="" disabled=yes port=23`,
+			`set ftp address="" disabled=yes port=21`,
 		}, "\n"),
 	}
 	for vendorKey, cfg := range good {
@@ -559,23 +572,30 @@ func TestShippedGoldenBaselinesCoverNewVendors(t *testing.T) {
 	if !hasDrift(rep, KindForbidden, "ip telnet server") || !hasDrift(rep, KindMissing, "server") {
 		t.Errorf("sg350: expected forbidden telnet server + missing sntp server, got %v", rep.DriftMessages())
 	}
+
+	// MikroTik: telnet service left enabled (verbose export form).
+	mtBad := strings.Replace(good["mikrotik"], `set telnet address="" disabled=yes port=23`, `set telnet address="" disabled=no port=23`, 1)
+	rep = b.Check("routeros", mtBad)
+	if len(rep.Drifts) != 1 || !hasDrift(rep, KindMissing, "telnet") {
+		t.Errorf("routeros: expected exactly the telnet drift, got %v", rep.DriftMessages())
+	}
 }
 
-// netconfig has no MikroTik profile, so a baseline for it cannot apply. That
-// must be reported, not silently ignored: otherwise a leftover mikrotik.golden
+// An unsupported vendor baseline cannot apply. That
+// must be reported, not silently ignored: otherwise a leftover invalid.golden
 // would look like a passing check.
 func TestUnsupportedVendorBaselineIsReported(t *testing.T) {
-	_, errs := ParseRules("[mikrotik]\nset telnet disabled=yes\n", "common")
+	_, errs := ParseRules("[nosuchvendor]\nset telnet disabled=yes\n", "common")
 	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "unknown vendor") {
-		t.Errorf("section [mikrotik]: errors = %v, want one unknown-vendor error", errs)
+		t.Errorf("section [nosuchvendor]: errors = %v, want one unknown-vendor error", errs)
 	}
 
 	dir := t.TempDir()
 	writeGolden(t, dir, "common.golden", "re: (?i)\\bbanner\\b\n")
-	writeGolden(t, dir, "mikrotik.golden", "set telnet disabled=yes\n")
+	writeGolden(t, dir, "nosuchvendor.golden", "set telnet disabled=yes\n")
 	b, errs := Load(dir, "")
-	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "mikrotik.golden") {
-		t.Errorf("mikrotik.golden: errors = %v, want one error naming the file", errs)
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "nosuchvendor.golden") {
+		t.Errorf("nosuchvendor.golden: errors = %v, want one error naming the file", errs)
 	}
 	if b == nil || !b.Applies("cisco") {
 		t.Error("the supported baselines must still load")

@@ -57,6 +57,12 @@ var builtinVolatileSpecs = []volatileSpec{
 	// "show running-config" ("Written by enable_15 at 09:41:07.589 UTC ...").
 	{"asa-written-by", []string{"cisco_asa"}, `(?i)^\s*:\s*written by\s+\S+\s+at\b`},
 
+	// MikroTik RouterOS: the "/export" header carries the export time and the
+	// RouterOS version ("# 2026-10-19 09:41:00 by RouterOS 7.16" in v7,
+	// "# oct/19/2026 09:41:00 by RouterOS 6.49" in v6) plus the license id.
+	{"mikrotik-export-header", []string{"mikrotik"}, `(?i)^\s*#\s+\S+\s+\d{1,2}:\d{2}:\d{2}\s+by routeros\b`},
+	{"mikrotik-software-id", []string{"mikrotik"}, `(?i)^\s*#\s+software id\b`},
+
 	// Juniper Junos.
 	{"junos-last-changed", []string{"junos"}, `(?i)^\s*##\s*last changed\s*:`},
 	{"junos-last-commit", []string{"junos"}, `(?i)^\s*##\s*last commit\s*:`},

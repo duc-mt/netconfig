@@ -37,6 +37,7 @@ var archiveSpecs = map[string]archiveSpec{
 	vendor.CheckPoint: {Dir: "checkpoint_gaia", Ext: ".cfg"},
 	vendor.PfSense:    {Dir: "pfsense", Ext: ".xml"},
 	vendor.VyOS:       {Dir: "vyos", Ext: ".config"},
+	vendor.MikroTik:   {Dir: "mikrotik", Ext: ".rsc"},
 	// netbackup archives Junos as "set" commands (one statement per line),
 	// which diff far better than the curly-brace form.
 	vendor.Junos: {Dir: "juniper_junos", Ext: ".set", Command: "show configuration | display set"},

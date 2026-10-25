@@ -30,6 +30,7 @@ const (
 	PaloAlto   = "paloalto"
 	PfSense    = "pfsense"
 	Sophos     = "sophos"
+	MikroTik   = "mikrotik"
 )
 
 // StepKind classifies one command of an execution plan; the runner uses it to
@@ -267,6 +268,7 @@ var (
 	rePfSensePrompt  = regexp.MustCompile(`^(?:\[[\w.\-]+@[\w.\-]+\][^#$]*[#$]\s*$|Enter an option:\s*$)`)
 	reSophosPrompt   = regexp.MustCompile(`^(?:[a-zA-Z0-9.\-]+_)?console>\s*$`)
 	reSophosMenu     = regexp.MustCompile(`(?i)^Select Menu Number \[[0-9\-]+\]:\s*$`)
+	reRouterOSPrompt = regexp.MustCompile(`^\[[^@\s]+@[^\]\s]+\](?:\s+[^>#]+)*\s*[>#]\s*$`)
 
 	rePagerMore   = regexp.MustCompile(`--\s*More\s*--`)
 	rePagerHuawei = regexp.MustCompile(`----\s*More\s*----`)
@@ -283,6 +285,7 @@ var (
 	rePfSenseMenu   = regexp.MustCompile(`^Enter an option:\s*$`)
 	rePfSenseErr    = regexp.MustCompile(`(?i)^\s*(?:[/\w.\-]+:\s*(?:not found|command not found|Permission denied|syntax error)|usage:)`)
 	reSophosErr     = regexp.MustCompile(`(?i)^\s*(?:% Error:|Unknown parameter|Syntax Error)`)
+	reRouterOSErr   = regexp.MustCompile(`(?i)^\s*(?:bad command name|syntax error|failure:|script error:|no such item|interrupted)`)
 )
 
 // reASAErr complements reCiscoErr for the ASA, which prints rejections as
@@ -880,6 +883,24 @@ func newSophos() *Profile {
 	}
 }
 
+func newMikroTik() *Profile {
+	return &Profile{
+		Name:          MikroTik,
+		Display:       "MikroTik RouterOS",
+		Prompt:        reRouterOSPrompt,
+		Confirms:      genericConfirms,
+		ErrorPatterns: []*regexp.Regexp{reRouterOSErr},
+		BackupCommand: "/export verbose",
+		probe:         "/system resource print",
+		apply: []Step{
+			{Kind: StepBody},
+		},
+		opApply: []Step{
+			{Kind: StepBody},
+		},
+	}
+}
+
 var registry = map[string]*Profile{}
 
 // ciscoXE is the IOS-XE variant of the cisco profile. It is reachable only
@@ -908,12 +929,14 @@ var aliases = map[string]string{
 	"paloalto": PaloAlto, "panos": PaloAlto, "pan-os": PaloAlto,
 	"pfsense": PfSense,
 	"sophos":  Sophos, "sophos-xg": Sophos, "sfos": Sophos,
+	"mikrotik": MikroTik, "routeros": MikroTik, "ros": MikroTik,
 }
 
 func init() {
 	for _, p := range []*Profile{
 		newCisco(), newCiscoSB(), newCiscoASA(), newJunos(), newHuawei(), newFortinet(), newArista(),
 		newVyOS(), newRuijie(), newAruba(), newCheckPoint(), newPaloAlto(), newPfSense(), newSophos(),
+		newMikroTik(),
 	} {
 		registry[p.Name] = p
 	}

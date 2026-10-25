@@ -53,7 +53,7 @@ func TestIOSXEVariantKeepsCanonicalName(t *testing.T) {
 	if xe.Name != Cisco || classic.Name != Cisco {
 		t.Fatalf("both stay the canonical %q vendor (templates compare on it): %q / %q", Cisco, xe.Name, classic.Name)
 	}
-	if slices.Contains(Names(), "ios-xe") || len(Names()) != 14 {
+	if slices.Contains(Names(), "ios-xe") || len(Names()) != 15 {
 		t.Fatalf("the variant must not become a separate canonical vendor: %v", Names())
 	}
 	// Everything but the safety mechanism is shared.

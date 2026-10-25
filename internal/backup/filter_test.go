@@ -265,6 +265,54 @@ func TestVolatileFilterCiscoSBAndASA(t *testing.T) {
 	}
 }
 
+func TestVolatileFilterMikroTik(t *testing.T) {
+	f := DefaultVolatileFilter()
+	body := "/interface bridge\nadd name=bridge1\n/ip address\nadd address=192.168.88.1/24 interface=bridge1 network=192.168.88.0\n/system identity\nset name=rtr1"
+	tests := []struct {
+		name   string
+		vendor string
+		config string
+		want   string
+	}{
+		{
+			name:   "RouterOS 6 header (mon/dd/yyyy)",
+			vendor: "mikrotik",
+			config: "# jan/02/1970 00:00:00 by RouterOS 6.49.10\n# software id = ABCD-1234\n#\n# model = RB4011iGS+\n# serial number = ABC123456789\n" + body,
+			want:   "#\n# model = RB4011iGS+\n# serial number = ABC123456789\n" + body,
+		},
+		{
+			name:   "RouterOS 7 header (ISO date)",
+			vendor: "routeros",
+			config: "# 2026-10-19 09:41:00 by RouterOS 7.16.1\n# software id = ABCD-1234\n#\n" + body,
+			want:   "#\n" + body,
+		},
+		{
+			name:   "CRLF line endings and alias",
+			vendor: "ros",
+			config: "# 2026-10-19 09:41:00 by RouterOS 7.16.1\r\n# software id = ABCD-1234\r\n" + body,
+			want:   body,
+		},
+		{
+			name:   "lookalike lines are kept",
+			vendor: "mikrotik",
+			config: "# managed by RouterOS team\n# software identifier is not a header\n/system script add name=s source=\"# software id check\"",
+			want:   "# managed by RouterOS team\n# software identifier is not a header\n/system script add name=s source=\"# software id check\"",
+		},
+	}
+	for _, tt := range tests {
+		if got := f.Apply(tt.vendor, tt.config); got != tt.want {
+			t.Errorf("%s: Apply = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+
+	if !f.IsVolatile("mikrotik", "# 2026-10-19 09:41:00 by RouterOS 7.16.1\r") {
+		t.Error("expected RouterOS export header (with CR) to be volatile")
+	}
+	if f.IsVolatile("mikrotik", "/system identity") {
+		t.Error("a RouterOS menu line must not be volatile")
+	}
+}
+
 func TestVolatileFilterNewVendorsAreScoped(t *testing.T) {
 	f := DefaultVolatileFilter()
 

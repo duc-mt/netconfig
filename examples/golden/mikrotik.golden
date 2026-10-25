@@ -1,0 +1,4 @@
+# Golden baseline for MikroTik RouterOS (also reachable as routeros.golden, ros.golden).
+# Matching is per output line, so these rules work for both "/export" and "/export verbose".
+re: ^set telnet\b.*\bdisabled=yes\b
+re: ^set ftp\b.*\bdisabled=yes\b

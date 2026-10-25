@@ -395,6 +395,7 @@ backups/
 | `checkpoint` | `checkpoint_gaia` | `.cfg` |
 | `pfsense` | `pfsense` | `.xml` |
 | `vyos` | `vyos` | `.config` |
+| `mikrotik` | `mikrotik` | `.rsc` |
 
 The directory names are the ones the standalone netbackup used, so an existing backup tree, its
 retention and its "diff against the previous backup" carry straight over. Backups and diffs are

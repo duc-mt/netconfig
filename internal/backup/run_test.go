@@ -377,7 +377,7 @@ func TestRunAllReportsEachFailureWithoutStoppingTheOthers(t *testing.T) {
 		device("badauth", "10.0.0.2", "cisco"),
 		device("ghost", "10.0.0.3", "cisco"), // the transport does not know it: unreachable
 		device("cut", "10.0.0.4", "cisco"),
-		device("mt", "10.0.0.5", "mikrotik"), // not a netconfig vendor
+		device("baddev", "10.0.0.5", "nosuchvendor"), // not a netconfig vendor
 	}
 	res := RunAll(context.Background(), devs, cfg)
 
@@ -397,10 +397,10 @@ func TestRunAllReportsEachFailureWithoutStoppingTheOthers(t *testing.T) {
 				devs[i].Hostname, res[i].Success, res[i].Category, res[i].Err, w.ok, w.cat)
 		}
 	}
-	if err := res[4].Err; err == nil || !strings.Contains(err.Error(), `unsupported vendor "mikrotik"`) || !strings.Contains(err.Error(), "cisco_sb") {
+	if err := res[4].Err; err == nil || !strings.Contains(err.Error(), `unsupported vendor "nosuchvendor"`) || !strings.Contains(err.Error(), "cisco_sb") {
 		t.Errorf("unsupported vendor error should list what is supported: %v", err)
 	}
-	if tr.opens["mt"] != 0 {
+	if tr.opens["baddev"] != 0 {
 		t.Error("a device with an unsupported vendor must not be contacted")
 	}
 }

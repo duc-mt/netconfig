@@ -419,7 +419,7 @@ func TestBackupCommandHelp(t *testing.T) {
 		if code != task.ExitOK {
 			t.Errorf("%s: exit %d", flagName, code)
 		}
-		for _, want := range []string{"netconfig backup", "-backup-dir", "-retention-count", "-golden-dir", "-html-report", "-md-changelog", "-limit", "-force", "cisco_asa"} {
+		for _, want := range []string{"netconfig backup", "-backup-dir", "-retention-count", "-golden-dir", "-html-report", "-md-changelog", "-limit", "-force", "cisco_asa", "mikrotik"} {
 			if !strings.Contains(errb.String(), want) {
 				t.Errorf("%s: help is missing %q", flagName, want)
 			}
