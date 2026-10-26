@@ -178,6 +178,7 @@ type PlanOptions struct {
 	AllowReboot   bool // permit a timed reload as the deadman (RollbackRebootOnly platforms)
 	Verify        bool // keep a StepVerify placeholder so the runner can run post-change checks
 	PreDiff       bool // inspect candidate configuration diff before committing on supported platforms
+	PreVerify     bool // keep a StepVerify placeholder BEFORE the first save/commit (plain plans), so the runner can check the change before persisting it
 }
 
 // Confirm describes an interactive confirmation dialog and its answer.
@@ -218,6 +219,12 @@ type Profile struct {
 	confirmApply   []Step // apply template with an on-box deadman ({mins}/{hms} are substituted); nil: none
 	confirmCleanup []Step
 	confirmAbort   []Step // optional immediate revert of an armed change
+
+	// Optional capabilities (see capabilities.go); nil when the platform has none.
+	users   UserProvisioner
+	vlans   VLANManager
+	facts   FactsCollector
+	locator NetworkLocator
 }
 
 // ValidateBackup checks that backup output contains valid configuration markers
@@ -428,6 +435,27 @@ func insertStepInspect(steps []Step, diffCmd string) []Step {
 	return append(steps, Step{Kind: StepInspect, Line: diffCmd})
 }
 
+// insertStepVerify inserts a StepVerify placeholder right before the first
+// StepPersist or StepConfirm step, or appends one when the plan never persists
+// (FortiOS saves each block as it is closed). Plans that already verify are left alone.
+func insertStepVerify(steps []Step) []Step {
+	for _, s := range steps {
+		if s.Kind == StepVerify {
+			return steps
+		}
+	}
+	for i, s := range steps {
+		if s.Kind == StepPersist || s.Kind == StepConfirm {
+			out := make([]Step, 0, len(steps)+1)
+			out = append(out, steps[:i]...)
+			out = append(out, Step{Kind: StepVerify})
+			out = append(out, steps[i:]...)
+			return out
+		}
+	}
+	return append(steps, Step{Kind: StepVerify})
+}
+
 // buildApply builds the real (non dry-run) plan. A requested commit-confirm is
 // honoured only when the platform can do it: natively, or via a timed reload
 // when the operator allowed one. Otherwise the plain plan is returned and the
@@ -448,7 +476,10 @@ func (p *Profile) buildApply(expand func([]Step) []Step, opts PlanOptions) Plan 
 		} else {
 			plan.Steps, plan.Cleanup = expand(p.apply), expand(p.applyCleanup)
 		}
-		if opts.Verify {
+		switch {
+		case opts.PreVerify:
+			plan.Steps = insertStepVerify(plan.Steps)
+		case opts.Verify:
 			plan.Steps = append(plan.Steps, Step{Kind: StepVerify})
 		}
 		if opts.PreDiff && p.CandidateDiff != "" {
@@ -1015,8 +1046,10 @@ func init() {
 		newVyOS(), newRuijie(), newAruba(), newCheckPoint(), newPaloAlto(), newPfSense(), newSophos(),
 		newMikroTik(),
 	} {
+		attachCapabilities(p)
 		registry[p.Name] = p
 	}
+	attachCapabilities(ciscoXE)
 }
 
 // Lookup resolves a vendor name or alias ("IOS-XE", "eos", "FortiGate").

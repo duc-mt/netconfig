@@ -1,0 +1,9 @@
+=== show version ===
+System description      : Ruijie 10G Ethernet Switch(S5750C-28GT4XS-H) By Ruijie Networks
+System start time       : 2026-09-01 10:11:12
+System uptime           : 53:12:30:41
+System hardware version : 1.00
+System software version : S5750C_RGOS 11.4(1)B79P3
+System patch number     : NA
+System serial number    : G1MQ12345678
+System boot version     : 10.4(3b11p1) Release(08143113)

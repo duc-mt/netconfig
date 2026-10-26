@@ -1,0 +1,13 @@
+=== show version all ===
+Product version Check Point Gaia R81.10
+OS build 335
+OS kernel version 3.10.0-957.21.3cpx86_64
+OS edition 64-bit
+=== show asset all ===
+Platform:       Check Point 5200
+Model:          Check Point 5200
+Serial Number:  1234567890
+=== show uptime ===
+up 8 days, 4:04
+=== show hostname ===
+cp-gw1

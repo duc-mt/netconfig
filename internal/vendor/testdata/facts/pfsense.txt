@@ -1,0 +1,10 @@
+=== cat /etc/version ===
+2.7.2-RELEASE
+=== kenv smbios.system.product ===
+Netgate 4100
+=== kenv smbios.system.serial ===
+1234567890ABC
+=== uptime ===
+ 3:21PM  up 42 days,  1:23, 2 users, load averages: 0.10, 0.12, 0.09
+=== hostname ===
+pfsense.example.net

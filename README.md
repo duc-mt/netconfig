@@ -5,7 +5,9 @@ single static binary. Built for air-gapped management networks: no runtime
 dependencies, no network access other than SSH to the devices.
 
 The same binary also archives configurations and watches them for change and drift:
-[`netops backup`](#backup-change-detection-and-drift-netops-backup) and `netops backup show`.
+[`netops backup`](#backup-change-detection-and-drift-netops-backup) and `netops backup show`,
+and automates the routine operations around them: [accounts, passwords, VLANs, asset facts, MAC/IP location, compliance audits
+and change previews](#operations-automation-user-passwd-vlan-facts-find-audit-diff).
 
 Supported platforms: Cisco IOS/IOS-XE, Cisco Small Business (SF/SG/CBS), Cisco ASA, Juniper Junos, Huawei VRP, Fortinet FortiOS, Arista EOS, VyOS, Ruijie RGOS, Aruba AOS-CX/AOS-S, Check Point Gaia, Palo Alto PAN-OS, pfSense, Sophos.
 
@@ -637,6 +639,160 @@ Taking backups uses `netops backup <flags>`, and browsing backups uses
   * `-mesh-fallback` is **opt-in** to avoid unneeded hops over neighboring management interfaces.
   * Authentication failures, host-key mismatches, and refused commands are **never retried** by `-retries` to avoid account lockouts.
 
+## Operations automation (`user`, `passwd`, `vlan`, `facts`, `find`, `audit`, `diff`)
+
+Seven subcommands built on the same engine as a configuration run: same `inventory.csv`, `.env`
+credentials, jump hosts, host-key policy, `-limit`, `-concurrency`, `-backup`, `-dry-run`, `-yes`,
+`-canary`, `-rollback-on-fail`, logging and result table. `-timeout` is an alias of
+`-command-timeout`, and every flag may be written `-flag` or `--flag`.
+
+```sh
+./run user add -u svc-backup --privilege 15      # create an account where it is missing
+./run user del -u olduser                        # remove it where it exists
+./run passwd -u svc-backup                       # rotate a password, verified before it is kept
+./run passwd --enable                            # rotate the enable secret
+./run vlan add --id 30 --name Servers            # create a VLAN where it is missing
+./run vlan del --id 30
+./run facts --output facts.csv                   # model / serial / version / uptime for a CMDB
+./run find --ip 10.1.20.15                       # which switch port is this host on?
+./run audit --output-dir audit_reports/          # PASS / FAIL matrix against a baseline
+./run diff -commands commands.txt                # what would this file change?
+./run <subcommand> --help                        # every flag of that subcommand
+```
+
+On Windows use `.\scripts\run.bat <subcommand>` with the same arguments.
+
+### How changes are made (`user`, `passwd`, `vlan`)
+
+Each device is **read first** and changed only where it differs, then the change goes through the
+normal apply path (backup, dry-run, canary/batch, rollback, summary). So every run is idempotent:
+
+```
+sw1   OK       create user "alice" (privilege 15)
+sw2   OK       skipped: user "alice" already exists        <- never touched, never put in config mode
+```
+
+* A device that **rejects the state check** (syntax error, no permission) fails with `SYNTAX_ERROR`
+  and is never treated as "absent": that would make an add overwrite what it could not see.
+* `vlan add` never renames an existing VLAN (a different requested name is reported). VLAN 1 can
+  never be deleted. Junos deletes by name, so the name is read from the device first.
+* Names are validated before anything connects: usernames `[A-Za-z0-9._-]{1,32}`, VLAN IDs 1-4094,
+  and new passwords may not contain whitespace, control characters, quotes, backslash or `?` (which
+  an interactive CLI would treat as "show help" and silently truncate the stored secret).
+* `user del` **refuses to delete the account this run logs in with** (`NETOPS_USERNAME` or the
+  credential group's user, compared case-insensitively) *before any device is contacted*. There is no
+  override, not even `-force`: log in as a different administrator.
+* The pre-flight lint (`-strict-safety`) also runs on the generated commands, and a change needs the
+  usual `[y/N]` confirmation (`-yes` for unattended use).
+
+### Passwords (`user add`, `passwd`)
+
+Credentials are never accepted as command-line flags to prevent leaking secrets into `ps` process lists
+and shell history. The new password comes from a **hidden prompt** (asked twice), `NETOPS_NEW_PASSWORD`,
+or automated file generation:
+
+`passwd --auto-generate --password-file FILE` creates a random 20-character password and writes it
+to `FILE` (mode `0600`, must not already exist). It is **never printed**. Passwords are masked in the
+console, the audit log and reports; commands that carry them are redacted wherever they are shown.
+
+### Verified rotation (`passwd`)
+
+The new credentials are tested with a **fresh SSH login** before the change is kept, and the old state
+is restored if the test fails:
+
+| Platform class | How it is protected |
+|---|---|
+| Platforms with a native, hitless commit-confirm / revert timer: Junos, VyOS, Arista, and IOS-XE (vendor `ios-xe`; plain `cisco` is the classic row below) | applied under that timer (`--commit-confirm`, default 5 min). The login test runs while it is armed; the device reverts by itself if it fails or the run dies. |
+| No native timer; the change is live immediately (classic IOS, Cisco SB, ASA, Ruijie, Aruba, Huawei, FortiOS) | the account's **stored (hashed) credential is captured first**; the login test runs after the change but **before it is saved**; on failure the captured credential is re-applied and nothing is saved. |
+
+A device where the previous credential cannot be captured is **refused**, not rotated without a way
+back. Rotating the account the run itself uses is allowed (the later sessions switch to the new
+password); update `NETOPS_PASSWORD` afterwards, the run reminds you. Junos takes a pre-hashed
+`$6$` password (computed locally, standard library only) so plaintext never reaches the device or the
+log. On an enable-secret rotation the test only proves the new secret when the login lands in user
+EXEC; a device that logs straight into privileged mode cannot exercise it.
+
+### Asset facts (`facts`)
+
+Queries every device with read-only commands, prints an ASCII table and optionally exports it:
+`--output facts.csv` (CSV), `--output facts.json` or `--json` (JSON; without `--output`, JSON goes to
+stdout instead of the table). Columns: hostname, ip, vendor, model, serial, version, uptime. A device
+whose output yields nothing recognisable **fails** (`SYNTAX_ERROR`) rather than producing an empty row.
+
+### Locating a host (`find`)
+
+```
+$ ./run find --ip 10.1.20.15
+[FOUND] 10.1.20.15 (SW-ACCESS-02) -> Port Gi1/0/14 (VLAN 30)
+```
+
+`--mac` accepts `aabb.ccdd.eeff`, `aa:bb:cc:dd:ee:ff`, `aa-bb-cc-dd-ee-ff` and bare hex, rewritten into
+each platform's own notation. `--ip` resolves the MAC from the ARP tables first. All switches are
+queried concurrently; CPU/internal ports are dropped, and so are **uplinks** (port-channels
+everywhere, plus trunks on platforms that can list them: Cisco, Arista). Uplink sightings are shown
+(`[UPLINK]`) only when nothing better was found, or with `--all`. Exit 2 means not found.
+
+### Compliance audit (`audit`)
+
+Read-only. Fetches each configuration and prints a PASS / FAIL / N/A matrix, then a remediation for
+every failure (highest severity first). `--output-dir DIR` also writes `audit-<time>.csv/.json/.txt`.
+
+Built-in checks: NTP server, remote syslog, Telnet disabled (`transport input ssh`), no default SNMP
+community (`public`/`private`), idle timeout of at most 5 minutes (`exec-timeout 5 0` and equivalents)
+and RADIUS/TACACS+. Block-aware: every `line vty` block must comply, and the console line is ignored.
+A platform without a rule for a check is **N/A, never guessed**. A configuration that is empty, an
+error, or visibly truncated fails the device instead of producing a verdict.
+
+`--rules FILE` replaces the baseline. Start from the built-in one:
+`./run audit --print-defaults > compliance.yaml` (also in `examples/compliance.example.yaml`). The
+file is a deliberately small **YAML subset** (no third-party parser is linked in): `rules:` followed by
+`- key: value` items with `id, title, severity, vendors, block, require, forbid, remediation`.
+Put regular expressions in 'single quotes'. Unknown keys and bad patterns are rejected with a line number.
+
+Exit codes: **3** = every device audited but a check failed; 2 = a device could not be audited;
+0 = all passed or N/A.
+
+### Change preview (`diff`)
+
+```
+./run diff -commands commands.txt              # preview only: nothing is changed
+./run diff -commands commands.txt --apply      # preview, confirm, then apply to devices that differ
+```
+
+* **Junos, VyOS, Arista**: the device's own candidate compare (`show | compare`), validated and discarded.
+* **Cisco IOS/SB/ASA, Ruijie, Aruba, Huawei, FortiOS**: the running configuration is downloaded
+  (read-only), the commands are replayed against it locally, and the predicted `+`/`-` diff is shown
+  under the block it belongs to (`interface Gi1/0/14`, `aaa`, `config system admin`).
+* Others are reported as unsupported.
+
+> **The local diff is a prediction, not the device's answer.** It knows which commands open a
+> sub-mode, that `no`/`undo` removes a line, and that well-known commands (`description`,
+> `switchport access vlan`, `username X`, FortiOS `set`, ...) hold one value so a new one replaces
+> the old. It cannot know a platform's defaults or side effects, and new lines are listed at the
+> end of their block. Use it as a review aid. Secrets in the preview are masked.
+
+### What each platform supports
+
+Anything unsupported is **skipped and reported** (`UNSUPPORTED_OPERATION`, with the reason), never
+guessed at, and never stops the rest of the run.
+
+| Platform | user / passwd | enable | vlan | facts | find (MAC / ARP) | audit rules | diff |
+|---|---|---|---|---|---|---|---|
+| Cisco IOS/IOS-XE | yes | yes | yes | yes | yes / yes | 6 of 6 | local |
+| Cisco Small Business | yes | yes | no | yes | yes / yes | 5 of 6 | local |
+| Cisco ASA | yes | yes | no | yes | no / yes | 6 of 6 | local |
+| Junos | yes | no | yes | yes | yes / yes | 6 of 6 | native |
+| Huawei VRP | yes | no | yes | yes | yes / yes | 6 of 6 | local |
+| FortiOS | yes (super_admin only) | no | no | yes | no / yes | 6 of 6 | local |
+| Arista EOS | yes | yes | yes | yes | yes / yes | 6 of 6 | native |
+| VyOS | yes | no | no | yes | no / yes | 5 of 6 | native |
+| Ruijie RGOS | yes | yes | yes | yes | yes / yes | 6 of 6 | local |
+| Aruba (AOS-CX) | yes (privilege 15 only) | no | yes | yes | yes / yes | 5 of 6 | local |
+| Check Point Gaia | no | no | no | yes | no / yes | 6 of 6 | no |
+| Palo Alto PAN-OS | no | no | no | yes | no / yes | 3 of 6 | no |
+| pfSense | no | no | no | yes | no / yes | 3 of 6 | no |
+| Sophos | no | no | no | yes | no / no | 0 of 6 | no |
+
 ## Inventory
 
 ```csv
@@ -837,13 +993,16 @@ internal/inventory       CSV parsing and filtering
 internal/credentials     .env parsing, 3-tier resolution, terminal prompter
 internal/vendor          per-vendor prompts, pagers, confirmations, errors, config-mode plans
                            + BuildOpPlan() for operational mode
+                           + capability drivers: users, VLANs, facts, MAC/ARP locator (capabilities.go)
 internal/sshclient       dial/handshake/auth, PTY shell, expect loop, host key policies, SafeBuffer
 internal/task            jobs, worker pool, backup, dry-run, rollback, per-device output, JSON report
+                           + per-device handlers and the read-then-apply change engine (handler.go, change.go)
 internal/logging         console + file logger, secret masking
 internal/backup          the backup engine: worker pool, change detection, diff, risk, retention,
                            console summary, browsing a backup tree
 internal/redact          masks secrets in configuration text before it is saved
 internal/compliance      golden-config baselines and drift
+internal/audit           security-baseline rules, YAML-subset reader, evaluation (netops audit)
 internal/report          HTML report, Markdown changelog, JSON/CSV, result table
 internal/errcat          failure categories used in summaries and reports
 ```

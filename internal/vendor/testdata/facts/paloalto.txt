@@ -1,0 +1,12 @@
+=== show system info ===
+hostname: PA-220-HQ
+ip-address: 10.0.0.5
+netmask: 255.255.255.0
+default-gateway: 10.0.0.1
+mac-address: 00:1b:17:00:aa:bb
+time: Sat Oct 24 10:11:12 2026
+uptime: 5 days, 12:03:10
+family: 200
+model: PA-220
+serial: 012345678901
+sw-version: 10.1.6-h6

@@ -67,21 +67,21 @@ type backupOpts struct {
 	backupDir string
 	logFormat string
 
-	retries                int
-	retryDelay, dialJitter time.Duration
-	retentionCount         int
-	retentionDays          int
+	retries                       int
+	retryDelay, dialJitter        time.Duration
+	retentionCount                int
+	retentionDays                 int
 	redact, saveUnchanged, dryRun bool
-	diff, ignoreVolatile   bool
-	keepBanners            bool
-	resultTable            bool
-	insecureHostKey        bool
-	verbose                bool
-	volatilePatterns       string
-	goldenDir              string
-	complianceRules        string
-	htmlReport, mdReport   string
-	jsonReport, csvReport  string
+	diff, ignoreVolatile          bool
+	keepBanners                   bool
+	resultTable                   bool
+	insecureHostKey               bool
+	verbose                       bool
+	volatilePatterns              string
+	goldenDir                     string
+	complianceRules               string
+	htmlReport, mdReport          string
+	jsonReport, csvReport         string
 }
 
 // backupFlagGroups organises the help. Every flag of the command must appear in

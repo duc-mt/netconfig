@@ -1,0 +1,14 @@
+=== show version ===
+-----------------------------------------------------------------------------
+ArubaOS-CX
+(c) Copyright 2017-2023 Hewlett Packard Enterprise Development LP
+-----------------------------------------------------------------------------
+Version      : FL.10.10.1010
+Build Date   : 2022-12-13 11:02:44 PST
+=== show system ===
+Hostname                : sw-cx1
+System Description      :
+System Contact          :
+Product Name            : JL675A 6100 48G CL4 4SFP+ Swch
+Chassis Serial Nbr      : SG12345678
+Up Time                 : 23 days, 4 hours, 12 minutes

@@ -1,0 +1,7 @@
+=== display version ===
+Huawei Versatile Routing Platform Software
+VRP (R) software, Version 5.170 (S5720 V200R011C10SPC600)
+Copyright (C) 2000-2020 HUAWEI TECH CO., LTD
+HUAWEI S5720-28X-LI-AC Routing Switch uptime is 12 weeks, 4 days, 3 hours, 5 minutes
+=== display esn ===
+ESN of device: 2102350XXXXXXXXXXXXX

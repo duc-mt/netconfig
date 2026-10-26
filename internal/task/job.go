@@ -14,6 +14,7 @@
 package task
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -55,6 +56,7 @@ const (
 	CatUnsupportedVendor Category = "UNSUPPORTED_VENDOR"
 	CatNoCredentials     Category = "NO_CREDENTIALS"
 	CatNoCommands        Category = "NO_COMMANDS"
+	CatUnsupportedOp     Category = "UNSUPPORTED_OPERATION" // the platform has no safe CLI form of the requested operation
 	CatCanaryFailed      Category = "CANARY_FAILED"
 	CatThresholdExceeded Category = "THRESHOLD_EXCEEDED"
 	// CatCancelled is also used for devices not started before an interrupt.
@@ -95,6 +97,26 @@ type Job struct {
 	// Skip, when set, means the device is not processed (and why).
 	Skip       Category
 	SkipDetail string
+
+	// PreCommitCheck, when set, runs once the change is applied but before it
+	// is saved or confirmed (see vendor.PlanOptions.PreVerify). A non-nil error
+	// fails the device and triggers Undo / the platform's rollback.
+	PreCommitCheck func(ctx context.Context, job Job) error
+
+	// Undo are configuration commands that restore the pre-change state when
+	// the job fails after the device was modified. They run on the live
+	// session and are never saved. Not used on commit-confirm platforms, which
+	// revert on their own.
+	Undo []string
+
+	// CommitConfirm, when > 0, overrides Options.CommitConfirm (minutes) for
+	// this device only.
+	CommitConfirm int
+
+	// PostCred, when set, are the credentials that work once the change has
+	// been applied (a rotated password of the login account). Sessions opened
+	// after the change, such as the commit-confirm reachability probe, use it.
+	PostCred *credentials.Credential
 }
 
 // Result is the outcome for one device.

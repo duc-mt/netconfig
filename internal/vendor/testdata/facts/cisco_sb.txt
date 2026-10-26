@@ -1,0 +1,14 @@
+=== show version ===
+SW version    2.5.5.47 ( date  20-Jan-2020 time  16:43:23 )
+Boot version  1.4.0.00 ( date  14-Jul-2017 time  11:52:38 )
+HW version    V02
+=== show system ===
+System Description:                       SG350-28 28-Port Gigabit Managed Switch
+System Up Time (days,hour:min:sec):       05,02:03:04
+System Contact:
+System Name:                              sw-sb1
+System Location:
+System MAC Address:                       00:11:22:33:44:55
+=== show inventory ===
+NAME: "1"     DESCR: "SG350-28 28-Port Gigabit Managed Switch"
+PID: SG350-28-K9   VID: V02  SN: DNI2147ABCD

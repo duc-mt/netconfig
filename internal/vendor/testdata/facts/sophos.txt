@@ -1,0 +1,4 @@
+=== system diagnostics show version-info ===
+Appliance Model: XG115
+Appliance Key: C12345ABCDEF123
+Firmware Version: SFOS 18.5.3 MR-3-Build408

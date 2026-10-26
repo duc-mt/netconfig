@@ -48,6 +48,18 @@ func (p *TerminalPrompter) Password(group, username string) (string, error) {
 	return string(b), nil
 }
 
+// ReadSecret prompts on out and reads one line from in with echo disabled.
+// in must be a terminal.
+func ReadSecret(in *os.File, out io.Writer, prompt string) (string, error) {
+	fmt.Fprint(out, prompt)
+	b, err := term.ReadPassword(int(in.Fd()))
+	fmt.Fprintln(out)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
 // readLine reads byte-by-byte so nothing beyond the newline is consumed; a
 // buffered reader could swallow input meant for the next prompt.
 func readLine(r io.Reader) (string, error) {

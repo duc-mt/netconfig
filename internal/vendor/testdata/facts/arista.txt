@@ -1,0 +1,13 @@
+=== show version ===
+Arista DCS-7050TX-64-F
+Hardware version:    01.02
+Serial number:       JPE12345678
+System MAC address:  001c.7312.3456
+
+Software image version: 4.28.3M
+Architecture:           x86_64
+Uptime:                 12 weeks, 3 days, 2 hours and 10 minutes
+Free memory:            3012345 kB
+=== show hostname ===
+Hostname: arista-leaf1
+FQDN:     arista-leaf1.example.net

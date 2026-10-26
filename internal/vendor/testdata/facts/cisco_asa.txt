@@ -1,0 +1,14 @@
+=== show version ===
+
+Cisco Adaptive Security Appliance Software Version 9.12(4)
+SSP Operating System Version 2.6(1.254)
+Device Manager Version 7.12(2)
+
+Hardware:   ASA5525, 8192 MB RAM, CPU Clarkdale 3100 MHz, 1 CPU (2 cores)
+Internal ATA Compact Flash, 256MB
+
+fw-edge up 12 days 3 hours
+failover cluster up 12 days 3 hours
+
+Serial Number: JMX1234L0AB
+Configuration last modified by enable_15 at 10:01:02.123 UTC Mon Sep 28 2026

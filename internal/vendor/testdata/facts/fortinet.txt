@@ -1,0 +1,14 @@
+=== get system status ===
+Version: FortiGate-60F v7.0.12,build0523,230112 (GA)
+Virus-DB: 91.01234(2026-10-20 08:30)
+Extended DB: 1.00000(2018-04-09 18:07)
+Serial-Number: FGT60FTK20012345
+BIOS version: 04000029
+Hostname: FGT-HQ
+Operation Mode: NAT
+Current virtual domain: root
+=== get system performance status ===
+CPU states: 1% user 0% system 0% nice 99% idle 0% iowait 0% irq 0% softirq
+Memory: 2054872k total, 1038456k used (50.5%), 698216k free (34.0%), 318200k freeable (15.5%)
+Average network usage: 12 / 10 kbps in 1 minute
+Uptime: 12 days,  3 hours,  24 minutes

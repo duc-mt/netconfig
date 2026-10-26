@@ -1,0 +1,307 @@
+# netconfig audit rules. Several rules may share an id: on each device the
+# first rule whose vendors cover it applies; a platform with none is N/A.
+rules:
+  - id: ntp
+    title: 'NTP server configured'
+    severity: medium
+    vendors: [cisco, cisco_asa, arista, ruijie, aruba]
+    require: '^\s*ntp server\s+\S+'
+    remediation: 'Configure at least one NTP server: ntp server <address>'
+  - id: ntp
+    title: 'NTP server configured'
+    severity: medium
+    vendors: [cisco_sb]
+    require: '^\s*sntp server\s+\S+'
+    remediation: 'Configure SNTP: sntp server <address>'
+  - id: ntp
+    title: 'NTP server configured'
+    severity: medium
+    vendors: [huawei]
+    require: '^\s*ntp-service unicast-server\s+\S+'
+    remediation: 'ntp-service unicast-server <address>'
+  - id: ntp
+    title: 'NTP server configured'
+    severity: medium
+    vendors: [junos]
+    require: '^set system ntp server\s+\S+'
+    remediation: 'set system ntp server <address>'
+  - id: ntp
+    title: 'NTP server configured'
+    severity: medium
+    vendors: [fortinet]
+    block: '^config system ntp'
+    require: '^\s*set server\s+\S+'
+    remediation: 'config system ntp / config ntpserver / edit 1 / set server <address>'
+  - id: ntp
+    title: 'NTP server configured'
+    severity: medium
+    vendors: [vyos]
+    require: '^set (?:system|service) ntp\b.*\bserver\b'
+    remediation: 'set service ntp server <address>'
+  - id: ntp
+    title: 'NTP server configured'
+    severity: medium
+    vendors: [checkpoint]
+    require: '^set ntp server (?:primary|secondary)\s+\S+'
+    remediation: 'set ntp server primary <address>'
+  - id: ntp
+    title: 'NTP server configured'
+    severity: medium
+    vendors: [paloalto]
+    require: '\bntp-server-address\s+\S+'
+    remediation: 'Device > Setup > Services: set a primary NTP server'
+  - id: ntp
+    title: 'NTP server configured'
+    severity: medium
+    vendors: [pfsense]
+    require: '<timeservers>\S+</timeservers>'
+    remediation: 'System > General Setup: set the time server'
+  - id: syslog
+    title: 'Remote syslog host configured'
+    severity: medium
+    vendors: [cisco, cisco_sb, cisco_asa, arista, ruijie, aruba]
+    require: '^\s*logging\s+(?:host|server)\s+\S+|^\s*logging\s+\d{1,3}(?:\.\d{1,3}){3}\b'
+    remediation: 'Send logs to a collector: logging host <address>'
+  - id: syslog
+    title: 'Remote syslog host configured'
+    severity: medium
+    vendors: [huawei]
+    require: '^\s*info-center loghost\s+\S+'
+    remediation: 'info-center loghost <address>'
+  - id: syslog
+    title: 'Remote syslog host configured'
+    severity: medium
+    vendors: [junos]
+    require: '^set system syslog host\s+\S+'
+    remediation: 'set system syslog host <address> any notice'
+  - id: syslog
+    title: 'Remote syslog host configured'
+    severity: medium
+    vendors: [fortinet]
+    block: '^config log syslogd'
+    require: '^\s*set server\s+\S+'
+    remediation: 'config log syslogd setting / set status enable / set server <address>'
+  - id: syslog
+    title: 'Remote syslog host configured'
+    severity: medium
+    vendors: [vyos]
+    require: '^set system syslog host\s+\S+'
+    remediation: 'set system syslog host <address> facility all level notice'
+  - id: syslog
+    title: 'Remote syslog host configured'
+    severity: medium
+    vendors: [checkpoint]
+    require: '^add syslog log-remote-address\s+\S+'
+    remediation: 'add syslog log-remote-address <address> level all'
+  - id: syslog
+    title: 'Remote syslog host configured'
+    severity: medium
+    vendors: [pfsense]
+    require: '<remoteserver>\S+</remoteserver>'
+    remediation: 'Status > System Logs > Settings: enable remote logging'
+  - id: telnet
+    title: 'Telnet disabled (SSH only)'
+    severity: high
+    vendors: [cisco, ruijie]
+    block: '^line vty'
+    require: '^\s*transport input ssh\s*$'
+    remediation: 'On every vty line: transport input ssh'
+  - id: telnet
+    title: 'Telnet disabled (SSH only)'
+    severity: high
+    vendors: [cisco_asa]
+    forbid: '^telnet\s+\d{1,3}(?:\.\d{1,3}){3}'
+    remediation: 'Remove telnet access: no telnet <network> <mask> <interface>'
+  - id: telnet
+    title: 'Telnet disabled (SSH only)'
+    severity: high
+    vendors: [cisco_sb]
+    require: '^\s*no ip telnet server'
+    remediation: 'no ip telnet server'
+  - id: telnet
+    title: 'Telnet disabled (SSH only)'
+    severity: high
+    vendors: [arista]
+    block: '^management telnet'
+    forbid: '^\s*no shutdown\b'
+    remediation: 'management telnet / shutdown'
+  - id: telnet
+    title: 'Telnet disabled (SSH only)'
+    severity: high
+    vendors: [huawei]
+    block: '^user-interface vty'
+    require: '^\s*protocol inbound ssh\s*$'
+    remediation: 'user-interface vty 0 4 / protocol inbound ssh'
+  - id: telnet
+    title: 'Telnet disabled (SSH only)'
+    severity: high
+    vendors: [junos]
+    forbid: '^set system services telnet\b'
+    remediation: 'delete system services telnet'
+  - id: telnet
+    title: 'Telnet disabled (SSH only)'
+    severity: high
+    vendors: [fortinet]
+    forbid: '^\s*set admintelnet enable\b|^\s*set allowaccess\b.*\btelnet\b'
+    remediation: 'Remove telnet from set allowaccess and set admintelnet disable'
+  - id: telnet
+    title: 'Telnet disabled (SSH only)'
+    severity: high
+    vendors: [vyos]
+    forbid: '^set service telnet\b'
+    remediation: 'delete service telnet'
+  - id: telnet
+    title: 'Telnet disabled (SSH only)'
+    severity: high
+    vendors: [aruba]
+    forbid: '^\s*telnet server\b'
+    remediation: 'no telnet server vrf <vrf>'
+  - id: telnet
+    title: 'Telnet disabled (SSH only)'
+    severity: high
+    vendors: [checkpoint]
+    forbid: '^set net-access telnet on\b'
+    remediation: 'set net-access telnet off'
+  - id: snmp
+    title: 'No default SNMP communities (public/private)'
+    severity: high
+    vendors: [cisco, cisco_sb, cisco_asa, arista, ruijie, aruba]
+    forbid: '^\s*snmp-server\b.*\bcommunity\s+(?:public|private)\b'
+    remediation: 'Remove the default community: no snmp-server community public'
+  - id: snmp
+    title: 'No default SNMP communities (public/private)'
+    severity: high
+    vendors: [huawei]
+    forbid: '^\s*snmp-agent community\s+(?:read|write)(?:\s+(?:cipher|simple))?\s+(?:public|private)\b'
+    remediation: 'undo snmp-agent community <public|private>'
+  - id: snmp
+    title: 'No default SNMP communities (public/private)'
+    severity: high
+    vendors: [junos]
+    forbid: '^set snmp community\s+(?:public|private)\b'
+    remediation: 'delete snmp community public'
+  - id: snmp
+    title: 'No default SNMP communities (public/private)'
+    severity: high
+    vendors: [fortinet]
+    block: '^config system snmp community'
+    forbid: '^\s*set name\s+"?(?:public|private)"?\s*$'
+    remediation: 'Rename or delete the default SNMP community'
+  - id: snmp
+    title: 'No default SNMP communities (public/private)'
+    severity: high
+    vendors: [vyos]
+    forbid: '^set service snmp community\s+''?(?:public|private)''?(?:\s|$)'
+    remediation: 'delete service snmp community public'
+  - id: snmp
+    title: 'No default SNMP communities (public/private)'
+    severity: high
+    vendors: [checkpoint]
+    forbid: '^set snmp community\s+(?:public|private)\b'
+    remediation: 'delete snmp community public'
+  - id: snmp
+    title: 'No default SNMP communities (public/private)'
+    severity: high
+    vendors: [paloalto]
+    forbid: '\bsnmp-community-string\s+(?:public|private)\b'
+    remediation: 'Use SNMPv3 or a non-default community'
+  - id: snmp
+    title: 'No default SNMP communities (public/private)'
+    severity: high
+    vendors: [pfsense]
+    forbid: '<(?:rocommunity|rwcommunity)>(?:public|private)</'
+    remediation: 'Services > SNMP: change the community string'
+  - id: session-timeout
+    title: 'Idle session timeout of at most 5 minutes'
+    severity: medium
+    vendors: [cisco, ruijie]
+    block: '^line vty'
+    require: '^\s*exec-timeout\s+(?:0\s+[1-9]\d*|[1-4]\s+\d+|5\s+0)\s*$'
+    remediation: 'On every vty line: exec-timeout 5 0'
+  - id: session-timeout
+    title: 'Idle session timeout of at most 5 minutes'
+    severity: medium
+    vendors: [cisco_asa]
+    require: '^ssh timeout\s+[1-5]\s*$'
+    remediation: 'ssh timeout 5'
+  - id: session-timeout
+    title: 'Idle session timeout of at most 5 minutes'
+    severity: medium
+    vendors: [arista]
+    block: '^management ssh'
+    require: '^\s*idle-timeout\s+[1-5]\s*$'
+    remediation: 'management ssh / idle-timeout 5'
+  - id: session-timeout
+    title: 'Idle session timeout of at most 5 minutes'
+    severity: medium
+    vendors: [huawei]
+    block: '^user-interface vty'
+    require: '^\s*idle-timeout\s+(?:0\s+[1-9]\d*|[1-4]\s+\d+|5\s+0)\s*$'
+    remediation: 'user-interface vty 0 4 / idle-timeout 5 0'
+  - id: session-timeout
+    title: 'Idle session timeout of at most 5 minutes'
+    severity: medium
+    vendors: [junos]
+    require: '^set system login class\s+\S+\s+idle-timeout\s+[1-5]\s*$'
+    remediation: 'set system login class <class> idle-timeout 5'
+  - id: session-timeout
+    title: 'Idle session timeout of at most 5 minutes'
+    severity: medium
+    vendors: [fortinet]
+    require: '^\s*set admintimeout\s+[1-5]\s*$'
+    remediation: 'config system global / set admintimeout 5'
+  - id: session-timeout
+    title: 'Idle session timeout of at most 5 minutes'
+    severity: medium
+    vendors: [checkpoint]
+    require: '^set inactivity-timeout\s+[1-5]\s*$'
+    remediation: 'set inactivity-timeout 5'
+  - id: session-timeout
+    title: 'Idle session timeout of at most 5 minutes'
+    severity: medium
+    vendors: [paloalto]
+    require: '\bidle-timeout\s+[1-5];'
+    remediation: 'Device > Setup > Management: Idle Timeout 5'
+  - id: aaa
+    title: 'Centralised AAA (RADIUS/TACACS+) configured'
+    severity: medium
+    vendors: [cisco, cisco_sb, cisco_asa, arista, ruijie]
+    require: '^\s*(?:tacacs-server|radius-server|tacacs server|radius server|aaa group server|aaa-server\s+\S+\s+protocol)\b'
+    remediation: 'Define a TACACS+/RADIUS server and use it in the login method list'
+  - id: aaa
+    title: 'Centralised AAA (RADIUS/TACACS+) configured'
+    severity: medium
+    vendors: [aruba]
+    require: '^\s*(?:radius-server|tacacs-server)\s+host\b'
+    remediation: 'radius-server host <address> / tacacs-server host <address>'
+  - id: aaa
+    title: 'Centralised AAA (RADIUS/TACACS+) configured'
+    severity: medium
+    vendors: [huawei]
+    require: '^\s*(?:hwtacacs-server template|radius-server template)\b'
+    remediation: 'hwtacacs-server template <name>'
+  - id: aaa
+    title: 'Centralised AAA (RADIUS/TACACS+) configured'
+    severity: medium
+    vendors: [junos]
+    require: '^set system (?:radius-server|tacplus-server)\s+\S+'
+    remediation: 'set system tacplus-server <address> secret <secret>'
+  - id: aaa
+    title: 'Centralised AAA (RADIUS/TACACS+) configured'
+    severity: medium
+    vendors: [fortinet]
+    block: '^config user (?:radius|tacacs\+)'
+    require: '^\s*edit\s+'
+    remediation: 'config user tacacs+ / edit <name> / set server <address>'
+  - id: aaa
+    title: 'Centralised AAA (RADIUS/TACACS+) configured'
+    severity: medium
+    vendors: [vyos]
+    require: '^set system login (?:radius|tacacs)\b'
+    remediation: 'set system login radius server <address> key <key>'
+  - id: aaa
+    title: 'Centralised AAA (RADIUS/TACACS+) configured'
+    severity: medium
+    vendors: [checkpoint]
+    require: '^add aaa (?:radius|tacacs)-servers\b'
+    remediation: 'add aaa tacacs-servers priority 1 server <address> key <key>'

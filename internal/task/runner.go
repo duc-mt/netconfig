@@ -107,6 +107,10 @@ type Runner struct {
 	Observer    StatusObserver
 	ConfirmFunc func(host string, diff string) bool
 	Now         func() time.Time // for backup file names; defaults to time.Now
+
+	// Handler, when set, replaces the configuration plan: each device is
+	// connected and the handler runs on the open session (see handler.go).
+	Handler Handler
 }
 
 func (r *Runner) now() time.Time {
@@ -406,11 +410,19 @@ func (r *Runner) execute(ctx context.Context, job Job, res *Result) {
 }
 
 func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
+	if r.Handler != nil {
+		r.executeHandler(ctx, job, res)
+		return
+	}
 	host := job.Device.Hostname
 	prof := job.Profile
 	res.CommandsTotal = len(job.Commands)
 
 	rules := r.rulesFor(job)
+	commitConfirm := r.Opts.CommitConfirm
+	if job.CommitConfirm > 0 {
+		commitConfirm = job.CommitConfirm
+	}
 	var plan vendor.Plan
 	if r.Opts.OpMode {
 		plan = prof.BuildOpPlan(job.Commands)
@@ -418,13 +430,14 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 		plan = prof.BuildPlan(job.Commands, vendor.PlanOptions{
 			DryRun:        r.Opts.DryRun,
 			Token:         strconv.FormatInt(r.now().Unix(), 36),
-			CommitConfirm: r.Opts.CommitConfirm,
+			CommitConfirm: commitConfirm,
 			AllowReboot:   r.Opts.AllowRebootRollback,
 			Verify:        len(rules) > 0,
 			PreDiff:       r.Opts.PreDiff,
+			PreVerify:     job.PreCommitCheck != nil,
 		})
 		res.SafetyRating = prof.Safety().String()
-		r.announceSafety(host, prof, plan)
+		r.announceSafety(host, prof, plan, commitConfirm)
 	}
 
 	r.Log.Infof(host, "connecting to %s (%s)", job.Device.Endpoint(), prof.Display)
@@ -684,14 +697,14 @@ func (r *Runner) rulesFor(job Job) []VerifyRule {
 
 // announceSafety logs how this device's change is protected, including the
 // hazard warning when the platform has no on-box rollback.
-func (r *Runner) announceSafety(host string, prof *vendor.Profile, plan vendor.Plan) {
+func (r *Runner) announceSafety(host string, prof *vendor.Profile, plan vendor.Plan, commitConfirm int) {
 	if r.Opts.DryRun {
-		if r.Opts.CommitConfirm > 0 || len(r.Opts.Verify) > 0 {
+		if commitConfirm > 0 || len(r.Opts.Verify) > 0 {
 			r.Log.Infof(host, "DRY-RUN: commit-confirm and post-change verification are not exercised (nothing is applied)")
 		}
 		return
 	}
-	if r.Opts.CommitConfirm <= 0 {
+	if commitConfirm <= 0 {
 		return
 	}
 	switch {
@@ -733,6 +746,18 @@ func (r *Runner) afterFailure(ctx context.Context, sess Session, job Job, plan v
 			r.Log.Warnf(host, "backup rollback skipped: the on-box deadman timer owns the revert")
 		}
 		return
+	}
+	// A job that knows how to put back exactly what it changed does so first:
+	// it is precise, where the backup replay below re-applies a whole config.
+	if len(job.Undo) > 0 {
+		if err := r.undo(sess, job); err != nil {
+			res.Rollback = RollbackFailed
+			r.Log.Errorf(host, "restoring the previous state failed: %v; the device may hold the new settings", err)
+		} else {
+			res.Rollback = RollbackOK
+			r.Log.Infof(host, "previous state restored (the change was never saved)")
+			return
+		}
 	}
 	// Attempt rollback if we took a backup and the option is set.
 	if r.Opts.RollbackOnFail && res.BackupPath != "" {
@@ -783,9 +808,18 @@ func (r *Runner) verifyStep(ctx context.Context, sess Session, job Job, rules []
 			res.VerifyPassed = passed
 		}
 	}
+	if job.PreCommitCheck != nil {
+		res.VerifyTotal++
+		if err := job.PreCommitCheck(ctx, job); err != nil {
+			failures = append(failures, err.Error())
+		} else {
+			res.VerifyPassed++
+			r.Log.Infof(host, "verify OK: pre-commit check")
+		}
+	}
 	if len(failures) == 0 {
-		if len(rules) > 0 {
-			r.Log.Infof(host, "verification passed: %d/%d check(s)", res.VerifyPassed, len(rules))
+		if res.VerifyTotal > 0 {
+			r.Log.Infof(host, "verification passed: %d/%d check(s)", res.VerifyPassed, res.VerifyTotal)
 		}
 		return true
 	}
@@ -804,10 +838,14 @@ func (r *Runner) probeReachability(ctx context.Context, job Job) error {
 	host := job.Device.Hostname
 	pctx, cancel := context.WithTimeout(ctx, r.Opts.ConnectTimeout+r.Opts.CommandTimeout*2)
 	defer cancel()
+	cred := job.Cred
+	if job.PostCred != nil {
+		cred = *job.PostCred // the change rotated the login account's credentials
+	}
 	sess, err := r.Transport.Open(pctx, Target{
 		Device:         job.Device,
 		Profile:        job.Profile,
-		Cred:           job.Cred,
+		Cred:           cred,
 		JumpCred:       job.JumpCred,
 		ConnectTimeout: r.Opts.ConnectTimeout,
 		LoginTimeout:   r.Opts.CommandTimeout,
@@ -1091,6 +1129,28 @@ func parseRawConfig(s string) []string {
 		out = append(out, line)
 	}
 	return out
+}
+
+// undo re-applies job.Undo on the live session, without ever saving: the
+// change being undone was never persisted, so putting the running state back
+// leaves the device exactly as it was. It runs on a fresh context so it still
+// happens after an interrupt.
+func (r *Runner) undo(sess Session, job Job) error {
+	host := job.Device.Hostname
+	plan := job.Profile.BuildPlan(job.Undo, vendor.PlanOptions{})
+	ctx, cancel := context.WithTimeout(context.Background(), r.Opts.CommandTimeout*r.slow()*time.Duration(len(plan.Steps)+1))
+	defer cancel()
+	r.Log.Warnf(host, "restoring the previous state")
+	for _, st := range plan.Steps {
+		if st.Kind == vendor.StepPersist || st.Kind == vendor.StepVerify {
+			continue
+		}
+		if _, _, err := r.runStep(ctx, stepContext{sess: sess, prof: job.Profile, host: host, step: st}); err != nil {
+			r.cleanup(sess, host, plan)
+			return err
+		}
+	}
+	return nil
 }
 
 // writeOutput saves the accumulated command output for one device to

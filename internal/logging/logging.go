@@ -304,7 +304,7 @@ func splitLines(s string) []string {
 // password level 15 encrypted <hash>"), a type (7, encrypted, hash) and a
 // digest ("ntp authentication-key 1 md5 <key>"); all of them are kept and only
 // the secret itself is masked.
-var secretCommand = regexp.MustCompile(`(?i)\b((?:(?:tacacs|radius)-server\s+)?key|password|passwd|secret|psksecret|community|pre-shared-key|psk|passphrase|encrypted-password|authentication-key|auth-password|priv-password|key-string|api-key|auth-token|bearer|aws_secret_access_key|auth-key|priv-key)((?:\s+level\s+\d+)?(?:\s+(?:\d+|encrypted|hash)\b)?(?:\s+(?:md5|sha\d*|hmac-sha\d*)\b)?)\s+("[^"]*"|\S+)`)
+var secretCommand = regexp.MustCompile(`(?i)\b((?:(?:tacacs|radius)-server\s+)?key|password|passwd|secret|psksecret|community|pre-shared-key|psk|passphrase|encrypted-password|authentication-key|auth-password|priv-password|key-string|api-key|auth-token|bearer|aws_secret_access_key|auth-key|priv-key)((?:\s+level\s+\d+)?(?:\s+(?:\d+|encrypted|hash|plaintext|ciphertext|irreversible-cipher|cipher|simple)\b)?(?:\s+(?:md5|sha\d*|hmac-sha\d*)\b)?)\s+("[^"]*"|\S+)`)
 
 // RedactCommand masks the value of well-known secret-bearing configuration
 // keywords so audit logs can show the exact command structure without

@@ -1,0 +1,19 @@
+=== show version ===
+Hostname: ex4300-sw1
+Model: ex4300-48t
+Junos: 21.4R3-S2.3
+JUNOS EX  Software Suite [21.4R3-S2.3]
+JUNOS Online Documentation [21.4R3-S2.3]
+=== show chassis hardware ===
+Hardware inventory:
+Item             Version  Part number  Serial number     Description
+Chassis                                VK3718123456      EX4300-48T
+Pseudo CB 0
+Routing Engine 0 REV 04   650-044931   VK3718123456      EX4300-48T
+=== show system uptime ===
+Current time: 2026-10-24 10:11:12 UTC
+Time Source:  NTP CLOCK
+System booted: 2026-09-10 08:00:00 UTC (6w2d 02:11 ago)
+Protocols started: 2026-09-10 08:02:00 UTC (6w2d 02:09 ago)
+Last configured: 2026-10-20 09:00:00 UTC (4d 01:11:12 ago) by admin
+10:11AM  up 44 days, 2:11, 2 users, load averages: 0.10, 0.08, 0.05

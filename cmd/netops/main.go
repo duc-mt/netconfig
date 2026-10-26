@@ -65,6 +65,13 @@ Subcommands:
   backup         archive device configurations, detect changes (netops backup -h)
   backup show    view, diff or locate saved backups (netops backup show -h)
   backup redact  mask secrets in saved backup files or directories (netops backup redact -h)
+  user           create or remove a local account on devices (netops user -h)
+  passwd         rotate a local account's password or enable secret (netops passwd -h)
+  vlan           create or remove an L2 VLAN on devices (netops vlan -h)
+  facts          collect hardware model, serial, version, uptime (netops facts -h)
+  find           locate the access switch port an IP or MAC is on (netops find -h)
+  audit          audit configurations against a security baseline (netops audit -h)
+  diff           preview candidate diff of command file before apply (netops diff -h)
   init           generate sample inventory.csv, commands.txt, and .env templates
   version        display version information
 
@@ -169,6 +176,20 @@ func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return run(args[1:], stdin, stdout, stderr)
 	case "backup":
 		return runBackup(args[1:], stdin, stdout, stderr)
+	case "user":
+		return runUser(args[1:], stdin, stdout, stderr)
+	case "passwd":
+		return runPasswd(args[1:], stdin, stdout, stderr)
+	case "vlan":
+		return runVLAN(args[1:], stdin, stdout, stderr)
+	case "facts":
+		return runFacts(args[1:], stdin, stdout, stderr)
+	case "find":
+		return runFind(args[1:], stdin, stdout, stderr)
+	case "audit":
+		return runAudit(args[1:], stdin, stdout, stderr)
+	case "diff":
+		return runDiff(args[1:], stdin, stdout, stderr)
 	case "init", "-init":
 		return runInit(stdout, stderr)
 	case "version", "-version", "--version":
@@ -807,7 +828,7 @@ func hintPasswordFlag(args []string, w io.Writer) {
 			name = name[:i]
 		}
 		switch name {
-		case "password", "pass", "passwd", "pw", "enable-password":
+		case "password", "pass", "passwd", "pw", "enable-password", "p":
 			fmt.Fprintln(w, "netops: passwords are never accepted as command-line flags (they would leak through 'ps'); "+
 				"set NETOPS_[<GROUP>_]PASSWORD in .env or the environment, or use the interactive prompt")
 			return
