@@ -18,6 +18,8 @@ import (
 
 	"netops/internal/backup"
 	"netops/internal/credentials"
+	"netops/internal/logging"
+	"netops/internal/redact"
 	"netops/internal/task"
 )
 
@@ -28,10 +30,12 @@ const backupShowUsageText = `Usage:
 View or locate the newest saved configuration of a device. <node-name> may be
 part of a name (case-insensitive); if several devices match, you are asked to
 choose. The file is shown with $PAGER (or less) on a terminal and printed
-as-is otherwise.
+as-is otherwise. Secrets are redacted on screen by default; pass --raw to display
+unredacted contents.
 
 Examples:
-  netops backup show core-sw1
+  netops backup show core-sw1         (redacted on screen by default)
+  netops backup show --raw core-sw1   (display unredacted configuration)
   netops backup show gw-01            (asks which one if several match)
   netops backup show -d core-sw1      (the latest diff instead)
   netops backup show -p core-sw1      (only print the file's path)
@@ -39,13 +43,13 @@ Examples:
 `
 
 // backupShowFlagGroups is the help layout of "backup show".
-var backupShowFlagGroups = []flagGroup{{"Flags", []string{"l", "d", "p", "backup-dir"}}}
+var backupShowFlagGroups = []flagGroup{{"Flags", []string{"l", "d", "p", "raw", "backup-dir"}}}
 
 // runBackupShow is "netops backup show".
 func runBackupShow(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var (
-		dir                  string
-		diff, pathOnly, list bool
+		dir                       string
+		diff, pathOnly, list, raw bool
 	)
 	fs := flag.NewFlagSet("netops backup show", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -60,6 +64,8 @@ func runBackupShow(args []string, stdin *os.File, stdout, stderr io.Writer) int 
 	fs.BoolVar(&pathOnly, "path", false, "alias for -p")
 	fs.BoolVar(&list, "l", false, "list all devices that have a backup")
 	fs.BoolVar(&list, "list", false, "alias for -l")
+	fs.BoolVar(&raw, "raw", false, "display raw unredacted configuration or diff (default is redacted)")
+	fs.BoolVar(&raw, "no-redact", false, "alias for -raw")
 
 	// Flags may come before or after the node name ("backup show -d gw-01",
 	// "backup show gw-01 -d"); the flag package stops at the first non-flag.
@@ -157,7 +163,7 @@ func runBackupShow(args []string, stdin *os.File, stdout, stderr io.Writer) int 
 	}
 
 	fmt.Fprintf(stdout, "==> Latest %s for '%s': %s\n", kind, selected, file)
-	if err := display(file, stdin, stdout, stderr); err != nil {
+	if err := display(file, diff, raw, stdin, stdout, stderr); err != nil {
 		return fail("netops backup show: %v", err)
 	}
 	return task.ExitOK
@@ -201,14 +207,33 @@ func pagerCommand(pager string, hasLess bool) []string {
 }
 
 // display shows a file: through a pager when stdout is a terminal, printed
-// as-is otherwise (so it can be piped or redirected).
-func display(path string, stdin *os.File, stdout, stderr io.Writer) error {
+// as-is otherwise (so it can be piped or redirected). By default, secrets are
+// redacted unless raw is true.
+func display(path string, isDiff, raw bool, stdin *os.File, stdout, stderr io.Writer) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	content := string(data)
+	if !raw {
+		if isDiff {
+			lines := strings.Split(content, "\n")
+			for i, l := range lines {
+				lines[i] = logging.RedactCommand(l)
+			}
+			content = strings.Join(lines, "\n")
+		} else {
+			content = redact.Config(content)
+		}
+	}
+
 	if isTerminalWriter(stdout) {
 		_, lessErr := exec.LookPath("less")
 		if argv := pagerCommand(os.Getenv("PAGER"), lessErr == nil); argv != nil {
 			//nolint:gosec // PAGER is an explicit operator terminal preference
-			cmd := exec.Command(argv[0], append(argv[1:], path)...)
-			cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
+			cmd := exec.Command(argv[0], argv[1:]...)
+			cmd.Stdin = strings.NewReader(content)
+			cmd.Stdout, cmd.Stderr = stdout, stderr
 			err := cmd.Run()
 			if err == nil {
 				return nil
@@ -216,11 +241,6 @@ func display(path string, stdin *os.File, stdout, stderr io.Writer) error {
 			fmt.Fprintf(stderr, "netops backup show: pager %q failed (%v); printing the file instead\n", argv[0], err)
 		}
 	}
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = io.Copy(stdout, f)
+	_, err = io.WriteString(stdout, content)
 	return err
 }

@@ -311,3 +311,47 @@ func TestConsoleMasksRegisteredSecrets(t *testing.T) {
 		t.Errorf("a registered secret leaked:\n%s\n%s", out.String(), file())
 	}
 }
+
+func TestConsoleRedactsDiffAndRiskAlertSecrets(t *testing.T) {
+	c, out, file := newConsole(t, false)
+
+	// 1. DiffLines with secrets
+	c.DiffLines("sw1", "  ", []string{
+		"+enable secret 5 $1$XyZ123hashvalue",
+		"+snmp-server community secretCOMM RO",
+	})
+
+	// 2. Summary with risk alerts containing secret lines
+	c.Summary([]Result{
+		{
+			Device:  inventory.Device{Hostname: "sw1", Address: "10.0.0.1"},
+			Success: true,
+			HasDiff: true,
+			Risk: RiskAssessment{
+				Level:      RiskCritical,
+				Categories: []string{"CREDENTIALS"},
+				Findings: []RiskFinding{
+					{
+						Level:    RiskCritical,
+						Category: "CREDENTIALS",
+						Line:     "+enable secret 5 $1$XyZ123hashvalue",
+					},
+				},
+			},
+		},
+	})
+
+	for name, text := range map[string]string{"console": out.String(), "file": file()} {
+		for _, leaked := range []string{"$1$XyZ123hashvalue", "secretCOMM"} {
+			if strings.Contains(text, leaked) {
+				t.Errorf("%s leaked secret %q:\n%s", name, leaked, text)
+			}
+		}
+		if !strings.Contains(text, "enable secret 5 <redacted>") {
+			t.Errorf("%s missing redacted enable secret:\n%s", name, text)
+		}
+		if !strings.Contains(text, "snmp-server community <redacted> RO") {
+			t.Errorf("%s missing redacted snmp community:\n%s", name, text)
+		}
+	}
+}

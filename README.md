@@ -444,16 +444,20 @@ line on Small Business, whose `exit` also closes every block). A truncated captu
 
 ### Restorable by default, with optional redaction
 
-By default, configurations are saved unredacted (`-redact=false`) so they can be natively restored or imported
+By default, configurations are saved unredacted (`-redact=false`) on disk so they can be natively restored or imported
 into devices during disaster recovery. Because backup directories are excluded from Git and created with restricted
 permissions (`0700` directories, `0600` files), raw hashes and secrets are safely retained for recovery.
 
-If you wish to mask secrets directly at backup time, pass `-redact` (or `-redact=true`). Passwords, password and
+**Screen output and audit logs are always redacted:** all terminal console messages, progress streams, configuration diffs,
+risk alerts, and `netops-*.log` audit files automatically mask passwords, enable secrets, pre-shared keys, hashes, and
+SNMP community strings.
+
+If you wish to mask secrets directly in the saved disk files as well, pass `-redact` (or `-redact=true`). Passwords, password and
 enable hashes, pre-shared keys, SNMP communities, RADIUS/TACACS keys and similar are replaced by `<REDACTED>`
 before anything is written. It understands the multi-token forms of each platform (`enable password level 15 encrypted <hash>`,
 `username x password encrypted <hash>`, ASA `ikev1 pre-shared-key` / `failover key` / `snmp-server host ... community`).
 
-* **Limitation when redacting:** because secrets are stored masked, *rotating* a password produces no diff. Creating,
+* **Limitation when redacting files on disk:** because secrets are stored masked, *rotating* a password produces no diff. Creating,
   deleting or re-parameterising a user or community is still detected.
 * To redact existing backups before sharing, transferring, or archiving, use the **`backup redact`** subcommand.
 
@@ -538,9 +542,10 @@ or a command the device refused. A device whose credentials are missing is not c
 `./run backup` takes a backup, `./run backup show` looks at one.
 
 ```sh
-./run backup show core-sw1        # newest backup, in $PAGER (or less) on a terminal, printed otherwise
+./run backup show core-sw1        # newest backup (redacted on screen by default)
+./run backup show --raw core-sw1  # display raw unredacted configuration
 ./run backup show gw-01           # a part of a name works (case-insensitive); you choose if several match
-./run backup show -d core-sw1     # the newest diff
+./run backup show -d core-sw1     # the newest diff (redacted on screen by default; pass --raw for unredacted)
 ./run backup show -p core-sw1     # just the file's path (for scripts: cat "$(./run backup show -p core-sw1)")
 ./run backup show -l              # every device that has a backup
 ./run backup show -h              # its flags

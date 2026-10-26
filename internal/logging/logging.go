@@ -209,10 +209,10 @@ func (l *Logger) Raw(consoleText, fileText string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.console != nil {
-		_, _ = io.WriteString(l.console, l.maskLocked(consoleText))
+		_, _ = io.WriteString(l.console, RedactCommand(l.maskLocked(consoleText)))
 	}
 	if l.file != nil {
-		_, _ = io.WriteString(l.file, l.maskLocked(fileText))
+		_, _ = io.WriteString(l.file, RedactCommand(l.maskLocked(fileText)))
 	}
 }
 
@@ -238,7 +238,7 @@ func (l *Logger) writeLines(level Level, host string, lines []string, colors []s
 	now := l.now()
 	showConsole := l.console != nil && (level >= LevelInfo || l.verbose)
 	for i, line := range lines {
-		line = l.maskLocked(line)
+		line = RedactCommand(l.maskLocked(line))
 		if l.file != nil {
 			tag := ""
 			if host != "" {
@@ -304,11 +304,26 @@ func splitLines(s string) []string {
 // password level 15 encrypted <hash>"), a type (7, encrypted, hash) and a
 // digest ("ntp authentication-key 1 md5 <key>"); all of them are kept and only
 // the secret itself is masked.
-var secretCommand = regexp.MustCompile(`(?i)\b((?:(?:tacacs|radius)-server\s+)?key|password|passwd|secret|psksecret|community|pre-shared-key|psk|passphrase|encrypted-password|authentication-key|auth-password|priv-password|key-string|api-key|auth-token|bearer|aws_secret_access_key|auth-key|priv-key)((?:\s+level\s+\d+)?(?:\s+(?:\d+|encrypted|hash|plaintext|ciphertext|irreversible-cipher|cipher|simple)\b)?(?:\s+(?:md5|sha\d*|hmac-sha\d*)\b)?)\s+("[^"]*"|\S+)`)
+var (
+	secretCommand   = regexp.MustCompile(`(?i)\b((?:(?:tacacs|radius)-server\s+)?key|password|passwd|password-hash|secret|psksecret|community|community-name|pre-shared-key|psk|passphrase|encrypted-password|authentication-key|auth-password|priv-password|key-string|api-key|auth-token|bearer|aws_secret_access_key|auth-key|priv-key)((?:\s+level\s+\d+)?(?:\s+(?:\d+|encrypted|hash|plaintext|ciphertext|irreversible-cipher|cipher|simple)\b)?(?:\s+(?:md5|sha\d*|hmac-sha\d*)\b)?)\s+("[^"]*"|\S+)`)
+	snmpHostCommand = regexp.MustCompile(`(?i)\b(snmp-server\s+host\s+(?:\S+\s+)*?version\s+(?:1|2c)\s+)\S+`)
+	mikrotikSecret  = regexp.MustCompile(`(?i)\b((?:password|secret|passphrase|(?:wpa2?-|private-)?pre-shared-key|preshared-key|authentication-password|encryption-password|authentication-key|tcp-md5-key|private-key|management-protection-key)=)(?:"(?:[^"\\\r\n]|\\.)+"|[^"\s]\S*)`)
+	privateKeyBlock = regexp.MustCompile(`(?s)-----BEGIN[ A-Z0-9_-]*PRIVATE KEY-----.*?-----END[ A-Z0-9_-]*PRIVATE KEY-----`)
+)
 
 // RedactCommand masks the value of well-known secret-bearing configuration
-// keywords so audit logs can show the exact command structure without
-// leaking the secret. It only changes what is logged, never what is sent.
+// keywords so audit logs and console displays can show the exact command structure
+// without leaking the secret. It only changes what is logged or displayed, never
+// what is sent to devices or saved to raw backup files.
 func RedactCommand(line string) string {
+	if strings.Contains(line, "-----BEGIN") {
+		line = privateKeyBlock.ReplaceAllString(line, "-----BEGIN PRIVATE KEY-----\n<redacted>\n-----END PRIVATE KEY-----")
+	}
+	if strings.Contains(line, "=") {
+		line = mikrotikSecret.ReplaceAllString(line, `${1}"<redacted>"`)
+	}
+	if strings.Contains(line, "snmp-server") {
+		line = snmpHostCommand.ReplaceAllString(line, "${1}<redacted>")
+	}
 	return secretCommand.ReplaceAllString(line, "${1}${2} <redacted>")
 }

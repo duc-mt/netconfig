@@ -249,3 +249,63 @@ func openDevNull(t *testing.T) *os.File {
 	}
 	return f
 }
+
+func TestShowBackupRedactsByDefaultAndRawFlag(t *testing.T) {
+	root := t.TempDir()
+	p := filepath.Join(root, "backup-2026-10-02-0100", "cisco_ios")
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgFile := filepath.Join(p, "sec-sw1.cfg")
+	cfgBody := "hostname sec-sw1\nenable secret 5 $1$superSecretHash\nsnmp-server community secretComm123 RO\n"
+	if err := os.WriteFile(cfgFile, []byte(cfgBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	diffFile := filepath.Join(p, "sec-sw1.diff")
+	diffBody := "+enable secret 5 $1$newDiffSecretHash\n-enable secret 5 $1$oldDiffSecretHash\n"
+	if err := os.WriteFile(diffFile, []byte(diffBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Default config view: redacted
+	code, out, errb := backupShow(t, "-backup-dir", root, "sec-sw1")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errb)
+	}
+	if strings.Contains(out, "$1$superSecretHash") || strings.Contains(out, "secretComm123") {
+		t.Errorf("default show leaked secrets:\n%s", out)
+	}
+	if !strings.Contains(out, "enable secret 5 <REDACTED>") || !strings.Contains(out, "snmp-server community <REDACTED> RO") {
+		t.Errorf("default show missing redactions:\n%s", out)
+	}
+
+	// 2. Raw config view: unredacted
+	code, outRaw, errb := backupShow(t, "-backup-dir", root, "--raw", "sec-sw1")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errb)
+	}
+	if !strings.Contains(outRaw, "$1$superSecretHash") || !strings.Contains(outRaw, "secretComm123") {
+		t.Errorf("--raw show missing actual secret:\n%s", outRaw)
+	}
+
+	// 3. Default diff view: redacted
+	code, outDiff, errb := backupShow(t, "-backup-dir", root, "-d", "sec-sw1")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errb)
+	}
+	if strings.Contains(outDiff, "$1$newDiffSecretHash") || strings.Contains(outDiff, "$1$oldDiffSecretHash") {
+		t.Errorf("default diff show leaked secrets:\n%s", outDiff)
+	}
+	if !strings.Contains(outDiff, "+enable secret 5 <redacted>") {
+		t.Errorf("default diff show missing redactions:\n%s", outDiff)
+	}
+
+	// 4. Raw diff view: unredacted
+	code, outDiffRaw, errb := backupShow(t, "-backup-dir", root, "-d", "--raw", "sec-sw1")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errb)
+	}
+	if !strings.Contains(outDiffRaw, "$1$newDiffSecretHash") {
+		t.Errorf("--raw diff show missing actual secret:\n%s", outDiffRaw)
+	}
+}

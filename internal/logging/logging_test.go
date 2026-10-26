@@ -253,6 +253,7 @@ func TestRedactCommand(t *testing.T) {
 		"service password-encryption":                                      "service password-encryption",
 		"username admin password 0 hunter2":                                "username admin password 0 <redacted>",
 		"username admin secret 5 $1$abcd$xyz":                              "username admin secret 5 <redacted>",
+		"+username admin secret 5 $1$abcd$xyz":                             "+username admin secret 5 <redacted>",
 		"enable secret s3cr3t":                                             "enable secret <redacted>",
 		"snmp-server community public RO":                                  "snmp-server community <redacted> RO",
 		`set system root-authentication encrypted-password "$6$salt$hash"`: "set system root-authentication encrypted-password <redacted>",
@@ -261,10 +262,41 @@ func TestRedactCommand(t *testing.T) {
 		"password 1234":                                                    "password <redacted>",
 		"tacacs-server key 7 secretPass":                                   "tacacs-server key 7 <redacted>",
 		"radius-server key secretPass":                                     "radius-server key <redacted>",
+		"set user admin password-hash $6$rounds=50000$xyz":                 "set user admin password-hash <redacted>",
+		"snmp-server host 10.0.0.1 version 2c SecretComm":                  "snmp-server host 10.0.0.1 version 2c <redacted>",
+		`/user add name=admin password="SuperSecret123"`:                   `/user add name=admin password="<redacted>"`,
+		"-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----": "-----BEGIN PRIVATE KEY-----\n<redacted>\n-----END PRIVATE KEY-----",
 	}
 	for in, want := range cases {
 		if got := RedactCommand(in); got != want {
 			t.Errorf("RedactCommand(%q)\n got  %q\n want %q", in, got, want)
+		}
+	}
+}
+
+func TestLoggerAutoRedactsSecretCommands(t *testing.T) {
+	var console bytes.Buffer
+	l, err := New(Options{Dir: t.TempDir(), Console: &console, Verbose: true, Now: fixedNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l.Infof("sw1", "username admin secret 5 $1$abcd$xyz")
+	l.DiffBlock(LevelInfo, "sw1", "  ", "+enable secret s3cr3t\n-snmp-server community public RO")
+	l.Raw("summary: enable password 1234\n", "summary: enable password 1234\n")
+
+	file := readLog(t, l)
+	for name, text := range map[string]string{"console": console.String(), "file": file} {
+		for _, leaked := range []string{"$1$abcd$xyz", "s3cr3t", "public RO", "1234"} {
+			if strings.Contains(text, leaked) {
+				t.Errorf("%s leaked secret command value %q:\n%s", name, leaked, text)
+			}
+		}
+		if !strings.Contains(text, "username admin secret 5 <redacted>") {
+			t.Errorf("%s missing redacted username secret:\n%s", name, text)
+		}
+		if !strings.Contains(text, "enable secret <redacted>") {
+			t.Errorf("%s missing redacted enable secret:\n%s", name, text)
 		}
 	}
 }
