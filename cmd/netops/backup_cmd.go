@@ -92,7 +92,7 @@ var backupFlagGroups = []flagGroup{
 	{"Backups", []string{"backup-dir", "retention-count", "retention-days", "redact", "save-unchanged", "ignore-volatile", "volatile-patterns", "diff", "keep-banners"}},
 	{"Reports and compliance", []string{"golden-dir", "compliance-rules", "result-table", "html-report", "md-changelog", "json-report", "csv-report"}},
 	{"Connection", []string{"connect-timeout", "command-timeout", "retries", "retry-delay", "dial-jitter", "env-file", "key-file", "host-key-policy", "update-known-hosts", "known-hosts", "insecure-ignore-host-key", "legacy-algorithms", "tcp-mss"}},
-	{"Jump hosts and routing", []string{"jump", "jump-host", "jump-user", "jump-password", "jump-key-file", "mesh-fallback", "memory", "memory-file"}},
+	{"Jump hosts and routing", []string{"jump", "jump-host", "jump-user", "jump-key-file", "mesh-fallback", "memory", "memory-file"}},
 	{"Logging", []string{"log-dir", "log-format", "no-color", "verbose"}},
 }
 
@@ -217,7 +217,6 @@ func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	for name, val := range map[string]string{
 		"NETOPS_KEY_FILE":      o.keyFile,
 		"NETOPS_JUMP_USERNAME": o.jumpUser,
-		"NETOPS_JUMP_PASSWORD": o.jumpPassword,
 		"NETOPS_JUMP_KEY_FILE": o.jumpKeyFile,
 		"NETOPS_JUMP_HOST":     o.jumpHost,
 	} {

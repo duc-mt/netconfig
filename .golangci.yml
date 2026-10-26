@@ -30,6 +30,9 @@ linters-settings:
     rules:
       - name: exported
         severity: warning
+  misspell:
+    ignore-words:
+      - routeros
 
 issues:
   exclude-rules:

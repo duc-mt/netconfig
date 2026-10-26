@@ -43,7 +43,7 @@ var newOpsTransport = func(hostKey sshclient.HostKeyCallback, legacy bool, pool 
 // have no effect on the read-only ones (facts, find, audit).
 type opsFlags struct {
 	inventory, limit, envFile, knownHosts, hostKeyPolicy, logDir, keyFile string
-	jumpHost, jumpUser, jumpPassword, jumpKeyFile, memoryFile             string
+	jumpHost, jumpUser, jumpKeyFile, memoryFile                           string
 	jsonReport, csvReport, backupDir                                      string
 
 	concurrency, maxRetries, tcpMSS, canary, batchSize, maxFailPercent int
@@ -78,7 +78,6 @@ func (o *opsFlags) register(fs *flag.FlagSet) {
 	fs.BoolVar(&o.jump, "jump", true, "enable jump host / bastion routing (false: connect all devices directly)")
 	fs.StringVar(&o.jumpHost, "jump-host", "", "global default bastion host[:port]")
 	fs.StringVar(&o.jumpUser, "jump-user", "", "SSH username for the global jump host (overrides NETOPS_JUMP_USERNAME)")
-	fs.StringVar(&o.jumpPassword, "jump-password", "", "SSH password for the global jump host (overrides NETOPS_JUMP_PASSWORD)")
 	fs.StringVar(&o.jumpKeyFile, "jump-key-file", "", "SSH private key file for the global jump host (overrides NETOPS_JUMP_KEY_FILE)")
 	fs.BoolVar(&o.meshFallback, "mesh-fallback", false, "try SSH jump tunnelling through neighbouring inventory devices if a direct connection fails")
 	fs.IntVar(&o.tcpMSS, "tcp-mss", 1360, "TCP Maximum Segment Size for outgoing SSH sockets (0 = OS default)")
@@ -192,7 +191,7 @@ func newOpsEnv(name string, o *opsFlags, stdin *os.File, stdout, stderr io.Write
 	// ---- credentials -------------------------------------------------------
 	overrides := map[string]string{}
 	for k, v := range map[string]string{
-		"NETOPS_KEY_FILE": o.keyFile, "NETOPS_JUMP_USERNAME": o.jumpUser, "NETOPS_JUMP_PASSWORD": o.jumpPassword,
+		"NETOPS_KEY_FILE": o.keyFile, "NETOPS_JUMP_USERNAME": o.jumpUser,
 		"NETOPS_JUMP_KEY_FILE": o.jumpKeyFile, "NETOPS_JUMP_HOST": o.jumpHost,
 	} {
 		if v != "" {
@@ -209,9 +208,6 @@ func newOpsEnv(name string, o *opsFlags, stdin *os.File, stdout, stderr io.Write
 	e.resolver = &credentials.Resolver{DotEnv: dot.Values, LookupEnv: os.LookupEnv, Overrides: overrides}
 	if credentials.IsTerminal(stdin) {
 		e.resolver.Prompter = &credentials.TerminalPrompter{In: stdin, Out: stderr}
-	}
-	if o.jumpPassword != "" {
-		e.log.AddSecret(o.jumpPassword)
 	}
 
 	// ---- transport ---------------------------------------------------------

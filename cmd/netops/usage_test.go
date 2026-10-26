@@ -137,7 +137,7 @@ func TestSharedFlagsAreTheSameInEveryCommand(t *testing.T) {
 	shared := []string{
 		"inventory", "limit", "concurrency", "connect-timeout", "command-timeout", "env-file", "key-file",
 		"log-dir", "no-color", "known-hosts", "host-key-policy", "update-known-hosts",
-		"legacy-algorithms", "tcp-mss", "jump", "jump-host", "jump-user", "jump-password", "jump-key-file",
+		"legacy-algorithms", "tcp-mss", "jump", "jump-host", "jump-user", "jump-key-file",
 		"mesh-fallback", "memory", "memory-file",
 	}
 	var o backupOpts
@@ -181,4 +181,22 @@ func helpEntry(help, name string) string {
 		}
 	}
 	return ""
+}
+
+func TestHintPasswordFlag(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-password", "secret"}, "passwords are never accepted"},
+		{[]string{"-p=secret"}, "passwords are never accepted"},
+		{[]string{"-jump-password", "secret"}, "jump host passwords are never accepted"},
+		{[]string{"--jump-password=secret"}, "jump host passwords are never accepted"},
+	} {
+		var buf bytes.Buffer
+		hintPasswordFlag(tc.args, &buf)
+		if !strings.Contains(buf.String(), tc.want) {
+			t.Errorf("hintPasswordFlag(%v) = %q, want substring %q", tc.args, buf.String(), tc.want)
+		}
+	}
 }

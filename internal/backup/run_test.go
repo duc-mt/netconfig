@@ -48,12 +48,11 @@ type fakeTransport struct {
 	timeouts []time.Duration
 	closed   atomic.Int32
 
-	delay      time.Duration // how long each Open takes
-	active     atomic.Int32  // sessions currently open
-	maxActive  atomic.Int32
-	byIP       map[string]*atomic.Int32
-	maxPerIP   atomic.Int32
-	trackPerIP bool
+	delay     time.Duration // how long each Open takes
+	active    atomic.Int32  // sessions currently open
+	maxActive atomic.Int32
+	byIP      map[string]*atomic.Int32
+	maxPerIP  atomic.Int32
 }
 
 func newFakeTransport() *fakeTransport {

@@ -177,27 +177,27 @@ func myersOps(a, b []string) ([]editOp, bool) {
 	n, m := len(a), len(b)
 	maxD := min(n+m, maxEditDistance)
 	off := maxD + 1
-	v := make([]int32, 2*maxD+3) // v[off+k]: furthest x on diagonal k
-	trace := make([][]int32, 0, 32)
+	v := make([]int, 2*maxD+3) // v[off+k]: furthest x on diagonal k
+	trace := make([][]int, 0, 32)
 
 	for d := 0; d <= maxD; d++ {
-		snap := make([]int32, 2*d+1) // v as it stood before this round, k in [-d, d]
+		snap := make([]int, 2*d+1) // v as it stood before this round, k in [-d, d]
 		copy(snap, v[off-d:off+d+1])
 		trace = append(trace, snap)
 
 		for k := -d; k <= d; k += 2 {
 			var x int
 			if k == -d || (k != d && v[off+k-1] < v[off+k+1]) {
-				x = int(v[off+k+1]) // add a line (move down)
+				x = v[off+k+1] // add a line (move down)
 			} else {
-				x = int(v[off+k-1]) + 1 // remove a line (move right)
+				x = v[off+k-1] + 1 // remove a line (move right)
 			}
 			y := x - k
 			for x < n && y < m && a[x] == b[y] {
 				x++
 				y++
 			}
-			v[off+k] = int32(x)
+			v[off+k] = x
 			if x == n && y == m {
 				return myersPath(trace, d, n, m), true
 			}
@@ -209,7 +209,7 @@ func myersOps(a, b []string) ([]editOp, bool) {
 // myersPath walks the recorded rounds back from (n, m) to the start and returns
 // the script in forward order, each block of changes listing its removals
 // before its additions.
-func myersPath(trace [][]int32, d, n, m int) []editOp {
+func myersPath(trace [][]int, d, n, m int) []editOp {
 	ops := make([]editOp, 0, n+m)
 	x, y := n, m
 	for ; d > 0; d-- {
@@ -221,7 +221,7 @@ func myersPath(trace [][]int32, d, n, m int) []editOp {
 		} else {
 			prevK = k - 1
 		}
-		prevX := int(snap[prevK+d])
+		prevX := snap[prevK+d]
 		prevY := prevX - prevK
 		for x > prevX && y > prevY {
 			ops = append(ops, opEqual)

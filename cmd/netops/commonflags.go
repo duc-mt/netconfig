@@ -39,7 +39,6 @@ type commonFlags struct {
 	jump         bool
 	jumpHost     string
 	jumpUser     string
-	jumpPassword string
 	jumpKeyFile  string
 	meshFallback bool
 
@@ -70,7 +69,6 @@ func (c *commonFlags) register(fs *flag.FlagSet) {
 	fs.BoolVar(&c.jump, "jump", true, "enable jump host / bastion routing (set false to connect all devices directly, overriding inventory and env config)")
 	fs.StringVar(&c.jumpHost, "jump-host", "", "global default bastion host[:port] for devices not reachable directly (e.g. mgmt-gw.example.com:22)")
 	fs.StringVar(&c.jumpUser, "jump-user", "", "SSH username for the global jump host (overrides NETOPS_JUMP_USERNAME)")
-	fs.StringVar(&c.jumpPassword, "jump-password", "", "SSH password for the global jump host (overrides NETOPS_JUMP_PASSWORD; visible in the process list, prefer the environment)")
 	fs.StringVar(&c.jumpKeyFile, "jump-key-file", "", "SSH private key file for the global jump host (overrides NETOPS_JUMP_KEY_FILE)")
 	fs.BoolVar(&c.meshFallback, "mesh-fallback", false, "attempt SSH jump tunneling through neighboring inventory devices if direct connection fails (disabled by default; it routes credentials through other devices)")
 

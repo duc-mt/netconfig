@@ -168,6 +168,7 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 	}
 
 	var check ssh.HostKeyCallback
+	var checkMu sync.RWMutex
 	if len(readFiles) == 0 {
 		if policy == PolicyStrict {
 			return nil, fmt.Errorf("load known_hosts %q: open %s: no such file or directory (create it, or use -host-key-policy accept-new to enroll devices on first contact)", path, path)
@@ -195,7 +196,9 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 			}
 		}
 		if c, err := knownhosts.New(updatedFiles...); err == nil {
+			checkMu.Lock()
 			check = c
+			checkMu.Unlock()
 		}
 	}
 
@@ -213,7 +216,10 @@ func NewHostKeyCallback(path string, policy HostKeyPolicy) (HostKeyCallback, err
 				effectiveRemote = nil
 			}
 		}
-		err := check(hostname, effectiveRemote, key)
+		checkMu.RLock()
+		currCheck := check
+		checkMu.RUnlock()
+		err := currCheck(hostname, effectiveRemote, key)
 		if err == nil {
 			return nil
 		}

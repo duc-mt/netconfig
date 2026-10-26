@@ -206,6 +206,7 @@ func display(path string, stdin *os.File, stdout, stderr io.Writer) error {
 	if isTerminalWriter(stdout) {
 		_, lessErr := exec.LookPath("less")
 		if argv := pagerCommand(os.Getenv("PAGER"), lessErr == nil); argv != nil {
+			//nolint:gosec // PAGER is an explicit operator terminal preference
 			cmd := exec.Command(argv[0], append(argv[1:], path)...)
 			cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 			err := cmd.Run()

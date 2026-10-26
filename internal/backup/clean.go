@@ -169,14 +169,15 @@ func countUnescapedQuotes(s string) int {
 	backslashCount := 0
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
-		if ch == '\\' {
+		switch ch {
+		case '\\':
 			backslashCount++
-		} else if ch == '"' {
+		case '"':
 			if backslashCount%2 == 0 {
 				count++
 			}
 			backslashCount = 0
-		} else {
+		default:
 			backslashCount = 0
 		}
 	}

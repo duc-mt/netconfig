@@ -532,9 +532,6 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	if cf.jumpUser != "" {
 		overrides["NETOPS_JUMP_USERNAME"] = cf.jumpUser
 	}
-	if cf.jumpPassword != "" {
-		overrides["NETOPS_JUMP_PASSWORD"] = cf.jumpPassword
-	}
 	if cf.jumpKeyFile != "" {
 		overrides["NETOPS_JUMP_KEY_FILE"] = cf.jumpKeyFile
 	}
@@ -831,6 +828,10 @@ func hintPasswordFlag(args []string, w io.Writer) {
 		case "password", "pass", "passwd", "pw", "enable-password", "p":
 			fmt.Fprintln(w, "netops: passwords are never accepted as command-line flags (they would leak through 'ps'); "+
 				"set NETOPS_[<GROUP>_]PASSWORD in .env or the environment, or use the interactive prompt")
+			return
+		case "jump-password":
+			fmt.Fprintln(w, "netops: jump host passwords are never accepted as command-line flags (they would leak through 'ps'); "+
+				"set NETOPS_JUMP_PASSWORD in .env or the environment")
 			return
 		}
 	}

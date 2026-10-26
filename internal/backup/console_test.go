@@ -186,7 +186,11 @@ func TestSummaryCountsAndGroupsFailures(t *testing.T) {
 		}
 	}
 	// roll-up by category, sorted by name (only the block after the totals)
-	rollup := got[strings.Index(got, "---- Totals ----"):]
+	totalsIdx := strings.Index(got, "---- Totals ----")
+	if totalsIdx < 0 {
+		t.Fatalf("totals block not found in summary output:\n%s", got)
+	}
+	rollup := got[totalsIdx:]
 	auth := strings.Index(rollup, "AUTHENTICATION_FAILED")
 	unreach := strings.Index(rollup, "CONNECTION_TIMEOUT_OR_UNREACHABLE")
 	if auth < 0 || unreach < 0 || auth > unreach {

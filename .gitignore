@@ -20,4 +20,6 @@ coverage.out
 
 # Persistent route memory
 .netops_memory*
+.netconfig_memory*
+.*_memory*.json
 
