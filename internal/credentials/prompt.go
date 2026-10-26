@@ -11,6 +11,7 @@
 package credentials
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -51,6 +52,9 @@ func (p *TerminalPrompter) Password(group, username string) (string, error) {
 // ReadSecret prompts on out and reads one line from in with echo disabled.
 // in must be a terminal.
 func ReadSecret(in *os.File, out io.Writer, prompt string) (string, error) {
+	if in == nil {
+		return "", errors.New("nil terminal input stream")
+	}
 	fmt.Fprint(out, prompt)
 	b, err := term.ReadPassword(int(in.Fd()))
 	fmt.Fprintln(out)

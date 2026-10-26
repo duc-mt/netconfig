@@ -183,3 +183,71 @@ func TestAuditReportDryRun(t *testing.T) {
 		t.Errorf("expected CSV to contain DRY_RUN: %s", string(csvData))
 	}
 }
+
+func TestSanitizeCSV(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", ""},
+		{"core-sw01", "core-sw01"},
+		{"10.0.0.1", "10.0.0.1"},
+		{"-", "-"},
+		{"+", "+"},
+		{"-123", "-123"},
+		{"+456", "+456"},
+		{"=SUM(A1:A10)", "'=SUM(A1:A10)"},
+		{"@dangerous", "'@dangerous"},
+		{"+cmd|' /C calc'!A0", "'+cmd|' /C calc'!A0"},
+		{"-cmd|' /C calc'!A0", "'-cmd|' /C calc'!A0"},
+		{"\tmalicious", "'\tmalicious"},
+		{"\rmalicious", "'\rmalicious"},
+	}
+
+	for _, tc := range tests {
+		got := SanitizeCSV(tc.input)
+		if got != tc.expected {
+			t.Errorf("SanitizeCSV(%q) = %q; want %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
+func TestWriteCSVFormulaInjectionPrevention(t *testing.T) {
+	tempDir := t.TempDir()
+	csvPath := filepath.Join(tempDir, "injection_report.csv")
+
+	records := []AuditRecord{
+		{
+			Hostname:      "=cmd|' /C calc'!A0",
+			IPAddress:     "10.0.0.1",
+			Vendor:        "@cisco_ios",
+			Status:        "FAILED",
+			FailureReason: "+AUTH_FAILED",
+			ErrorMessage:  "-error_message",
+		},
+	}
+
+	info := RunInfo{RunName: "test-injection", GeneratedAt: time.Now()}
+	if _, err := WriteCSV(csvPath, info, records); err != nil {
+		t.Fatalf("WriteCSV: %v", err)
+	}
+
+	data, err := os.ReadFile(csvPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "'=cmd|' /C calc'!A0") {
+		t.Errorf("expected sanitized hostname '=cmd... in CSV, got: %s", content)
+	}
+	if !strings.Contains(content, "'@cisco_ios") {
+		t.Errorf("expected sanitized vendor '@cisco_ios in CSV, got: %s", content)
+	}
+	if !strings.Contains(content, "'+AUTH_FAILED") {
+		t.Errorf("expected sanitized reason '+AUTH_FAILED in CSV, got: %s", content)
+	}
+	if !strings.Contains(content, "'-error_message") {
+		t.Errorf("expected sanitized error '-error_message in CSV, got: %s", content)
+	}
+}

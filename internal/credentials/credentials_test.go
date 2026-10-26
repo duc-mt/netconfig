@@ -458,3 +458,27 @@ func TestForJumpHostDirectOverride(t *testing.T) {
 		t.Errorf("ForJumpHost(other-bastion) host = %q, want bastion.example.com:22", other.Host)
 	}
 }
+
+func TestJumpCredentialsGoStringRedaction(t *testing.T) {
+	jc := JumpCredentials{
+		Host:     "bastion:22",
+		Username: "admin",
+		Password: "SuperSecretPassword123!",
+		KeyFile:  "/path/to/key",
+	}
+	s := fmt.Sprintf("%#v", jc)
+	if strings.Contains(s, "SuperSecretPassword123!") {
+		t.Fatalf("%%#v exposed JumpCredentials password: %s", s)
+	}
+	if !strings.Contains(s, "<redacted>") {
+		t.Fatalf("%%#v did not contain <redacted>: %s", s)
+	}
+}
+
+func TestReadSecretNilInput(t *testing.T) {
+	var buf strings.Builder
+	_, err := ReadSecret(nil, &buf, "Password: ")
+	if err == nil {
+		t.Fatal("ReadSecret(nil) expected error, got nil")
+	}
+}

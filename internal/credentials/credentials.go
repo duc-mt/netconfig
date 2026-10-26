@@ -58,6 +58,9 @@ func (j JumpCredentials) String() string {
 	return fmt.Sprintf("JumpCredentials{host=%q, user=%q, keyFile=%q, password=<redacted>}", j.Host, j.Username, j.KeyFile)
 }
 
+// GoString covers %#v so secrets are not exposed via reflection.
+func (j JumpCredentials) GoString() string { return j.String() }
+
 // String redacts the secrets so a Credential can be logged by accident safely.
 func (c Credential) String() string {
 	return fmt.Sprintf("Credential{user=%q, keyFile=%q, password=<redacted>}", c.Username, c.KeyFile)

@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"netops/internal/audit"
+	"netops/internal/report"
 	"netops/internal/task"
 	"netops/internal/vendor"
 )
@@ -225,7 +226,17 @@ func writeAuditReports(dir, stamp string, rows []task.AuditRow) error {
 	_ = cw.Write([]string{"hostname", "ip", "vendor", "check", "title", "severity", "status", "evidence", "remediation"})
 	for _, r := range rows {
 		for _, c := range r.Checks {
-			_ = cw.Write([]string{r.Hostname, r.Address, r.Vendor, c.ID, c.Title, c.Severity, string(c.Status), c.Evidence, c.Remediation})
+			_ = cw.Write([]string{
+				report.SanitizeCSV(r.Hostname),
+				report.SanitizeCSV(r.Address),
+				report.SanitizeCSV(r.Vendor),
+				report.SanitizeCSV(c.ID),
+				report.SanitizeCSV(c.Title),
+				report.SanitizeCSV(c.Severity),
+				report.SanitizeCSV(string(c.Status)),
+				report.SanitizeCSV(c.Evidence),
+				report.SanitizeCSV(c.Remediation),
+			})
 		}
 	}
 	cw.Flush()

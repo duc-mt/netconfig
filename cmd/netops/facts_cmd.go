@@ -16,6 +16,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"netops/internal/report"
 	"netops/internal/task"
 )
 
@@ -38,7 +39,15 @@ Flags:
 var factsHeader = []string{"hostname", "ip", "vendor", "model", "serial", "version", "uptime"}
 
 func factsRecord(r task.FactsRow) []string {
-	return []string{r.Hostname, r.IP, r.Vendor, r.Model, r.Serial, r.Version, r.Uptime}
+	return []string{
+		report.SanitizeCSV(r.Hostname),
+		report.SanitizeCSV(r.IP),
+		report.SanitizeCSV(r.Vendor),
+		report.SanitizeCSV(r.Model),
+		report.SanitizeCSV(r.Serial),
+		report.SanitizeCSV(r.Version),
+		report.SanitizeCSV(r.Uptime),
+	}
 }
 
 // renderTable prints rows as a bordered ASCII table sized to the content.

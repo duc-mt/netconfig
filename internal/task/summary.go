@@ -626,6 +626,24 @@ var csvHeader = []string{
 	"rollback_safety", "verify_passed", "verify_total",
 }
 
+func sanitizeCSV(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	switch s[0] {
+	case '=', '@', '\t', '\r':
+		return "'" + s
+	case '+', '-':
+		if s == "-" || s == "+" {
+			return s
+		}
+		if _, err := strconv.ParseFloat(s, 64); err != nil {
+			return "'" + s
+		}
+	}
+	return s
+}
+
 // WriteCSVReport writes the run results to a CSV file at path, with the
 // same fields as the JSON report (see JSONDeviceResult) so an operator can
 // pick whichever format their tooling (or spreadsheet) prefers. outputDir
@@ -648,21 +666,21 @@ func WriteCSVReport(path string, results []Result, outputDir string) error {
 			outputFile = outputDir + "/" + safeHostFilename(r.Device.Hostname) + ".txt"
 		}
 		row := []string{
-			r.Device.Hostname,
-			r.Device.Endpoint(),
-			r.Device.Vendor,
-			r.Status.String(),
-			string(r.Category),
-			r.Detail,
+			sanitizeCSV(r.Device.Hostname),
+			sanitizeCSV(r.Device.Endpoint()),
+			sanitizeCSV(r.Device.Vendor),
+			sanitizeCSV(r.Status.String()),
+			sanitizeCSV(string(r.Category)),
+			sanitizeCSV(r.Detail),
 			strconv.FormatInt(r.Duration.Milliseconds(), 10),
 			strconv.Itoa(r.CommandsApplied),
 			strconv.Itoa(r.CommandsTotal),
-			r.BackupPath,
-			r.Rollback.String(),
+			sanitizeCSV(r.BackupPath),
+			sanitizeCSV(r.Rollback.String()),
 			strconv.Itoa(r.DiffAdded),
 			strconv.Itoa(r.DiffRemoved),
-			outputFile,
-			r.SafetyRating,
+			sanitizeCSV(outputFile),
+			sanitizeCSV(r.SafetyRating),
 			strconv.Itoa(r.VerifyPassed),
 			strconv.Itoa(r.VerifyTotal),
 		}

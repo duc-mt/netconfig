@@ -74,6 +74,9 @@ Flags:
 // lower-case letter, upper-case letter, digit and symbol, all of them safe to
 // type into a device CLI (see vendor.ValidatePassword).
 func generatePassword(n int) (string, error) {
+	if n < 4 {
+		return "", errors.New("password length must be at least 4 to include all required character classes")
+	}
 	const (
 		lower  = "abcdefghijkmnopqrstuvwxyz"
 		upper  = "ABCDEFGHJKLMNPQRSTUVWXYZ"

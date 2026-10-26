@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -102,8 +103,29 @@ func (p *jumpPool) closeAll() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for addr, c := range p.clients {
-		_ = c.Close()
+		if c != nil && c.Conn != nil {
+			_ = c.Close()
+		}
 		delete(p.clients, addr)
+	}
+}
+
+// evict closes and removes the cached SSH client for addr.
+// If client is non-nil, it only evicts if the cached client matches client,
+// preventing concurrent replacement races.
+func (p *jumpPool) evict(addr string, client *ssh.Client) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if c, ok := p.clients[addr]; ok {
+		if client == nil || c == client {
+			if c != nil && c.Conn != nil {
+				_ = c.Close()
+			}
+			delete(p.clients, addr)
+		}
 	}
 }
 
@@ -165,6 +187,21 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 				err = nil
 			}
 		}
+		if err != nil && isJumpHostDead(err) {
+			t.pool.evict(tgt.JumpCred.Host, jumpClient)
+			// Retry once with a freshly dialed bastion connection in case cached connection died
+			if freshClient, dialErr := t.pool.get(ctx, tgt.JumpCred.Host, jumpUser, jumpPass, jumpKey, tgt.ConnectTimeout); dialErr == nil {
+				if retrySh, retryErr := sshclient.ConnectViaJump(ctx, freshClient, cfg); retryErr == nil {
+					return retrySh, nil
+				} else if !cfg.LegacyAlgorithms && isAlgorithmMismatch(retryErr) {
+					legacyCfg := cfg
+					legacyCfg.LegacyAlgorithms = true
+					if legSh, legErr := sshclient.ConnectViaJump(ctx, freshClient, legacyCfg); legErr == nil {
+						return legSh, nil
+					}
+				}
+			}
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -190,6 +227,9 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 						if err == nil {
 							_ = t.pool.memStore.Record(tgt.Device.Hostname, tgt.Device.Address, cand.Device.Hostname, cand.Device.Endpoint(), "memory-active")
 							return sh, nil
+						}
+						if isJumpHostDead(err) {
+							t.pool.evict(cand.Device.Endpoint(), jumpClient)
 						}
 					}
 					if tgt.Logf != nil {
@@ -275,11 +315,36 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 					}
 					return sh, nil
 				}
+				if isJumpHostDead(err) {
+					t.pool.evict(cand.Device.Endpoint(), jumpClient)
+				}
 			}
 		}
 	}
 
 	return nil, directErr
+}
+
+func isJumpHostDead(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) {
+		return true
+	}
+	var ocErr *ssh.OpenChannelError
+	if errors.As(err, &ocErr) {
+		// OpenChannelError is returned by the bastion when the target host cannot be reached.
+		// The bastion connection itself is alive.
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "client is closed") ||
+		strings.Contains(s, "eof") ||
+		strings.Contains(s, "broken pipe") ||
+		strings.Contains(s, "connection reset") ||
+		strings.Contains(s, "use of closed") ||
+		strings.Contains(s, "network is down")
 }
 
 func isAlgorithmMismatch(err error) bool {

@@ -183,6 +183,30 @@ func WriteJSON(path string, info RunInfo, records []AuditRecord) ([]string, erro
 	return nil, nil
 }
 
+// SanitizeCSV prevents formula injection (CSV Injection) in spreadsheet software
+// by prefixing cells starting with '=', '@', '\t', '\r', or non-numeric '+', '-' with a single quote.
+func SanitizeCSV(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	switch s[0] {
+	case '=', '@', '\t', '\r':
+		return "'" + s
+	case '+', '-':
+		if s == "-" || s == "+" {
+			return s
+		}
+		if _, err := strconv.ParseFloat(s, 64); err != nil {
+			return "'" + s
+		}
+	}
+	return s
+}
+
+func sanitizeCSV(s string) string {
+	return SanitizeCSV(s)
+}
+
 // WriteCSV writes a machine-readable CSV audit summary atomically to path.
 func WriteCSV(path string, info RunInfo, records []AuditRecord) ([]string, error) {
 	dir := filepath.Dir(path)
@@ -222,16 +246,16 @@ func WriteCSV(path string, info RunInfo, records []AuditRecord) ([]string, error
 
 	for _, rec := range records {
 		row := []string{
-			rec.Hostname,
-			rec.IPAddress,
-			rec.Vendor,
-			rec.Status,
+			sanitizeCSV(rec.Hostname),
+			sanitizeCSV(rec.IPAddress),
+			sanitizeCSV(rec.Vendor),
+			sanitizeCSV(rec.Status),
 			strconv.FormatInt(rec.BytesWritten, 10),
 			strconv.FormatInt(rec.DurationMS, 10),
-			rec.Checksum,
-			rec.FailureReason,
-			rec.ErrorMessage,
-			rec.OutputPath,
+			sanitizeCSV(rec.Checksum),
+			sanitizeCSV(rec.FailureReason),
+			sanitizeCSV(rec.ErrorMessage),
+			sanitizeCSV(rec.OutputPath),
 		}
 		if err := w.Write(row); err != nil {
 			return nil, fmt.Errorf("writing CSV row for %s: %w", rec.Hostname, err)
