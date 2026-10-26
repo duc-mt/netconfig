@@ -37,6 +37,7 @@ import (
 	"netops/internal/inventory"
 	"netops/internal/logging"
 	"netops/internal/memory"
+	"netops/internal/notifier"
 	"netops/internal/sshclient"
 	"netops/internal/task"
 	"netops/internal/ui"
@@ -72,6 +73,7 @@ Subcommands:
   find           locate the access switch port an IP or MAC is on (netops find -h)
   audit          audit configurations against a security baseline (netops audit -h)
   diff           preview candidate diff of command file before apply (netops diff -h)
+  telegram-test  test Telegram alert notifications (netops telegram-test -h)
   init           generate sample inventory.csv, commands.txt, and .env templates
   version        display version information
 
@@ -192,6 +194,8 @@ func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return runDiff(args[1:], stdin, stdout, stderr)
 	case "init", "-init":
 		return runInit(stdout, stderr)
+	case "telegram-test":
+		return runTelegramTest(args[1:], stdout, stderr)
 	case "version", "-version", "--version":
 		fmt.Fprintln(stdout, "netops", version)
 		return task.ExitOK
@@ -777,6 +781,13 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		}
 	}
 	log.Infof("", "audit log: %s", log.Path())
+
+	tg := notifier.NewTelegram(notifier.ConfigFromResolver(resolver))
+	if tg != nil {
+		defer tg.Close()
+		tg.SendTaskSummary("config", sum, *dryRun)
+	}
+
 	return task.ExitCode(results)
 }
 
@@ -954,4 +965,52 @@ func isFlagSet(fs *flag.FlagSet, name string) bool {
 		}
 	})
 	return found
+}
+
+func runTelegramTest(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("telegram-test", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	envFile := fs.String("env-file", ".env", "path to .env file")
+	if err := fs.Parse(args); err != nil {
+		return task.ExitFatal
+	}
+
+	dot, err := credentials.LoadDotEnv(*envFile)
+	if err != nil {
+		fmt.Fprintf(stderr, "netops telegram-test: %v\n", err)
+		return task.ExitFatal
+	}
+
+	resolver := &credentials.Resolver{DotEnv: dot.Values, LookupEnv: os.LookupEnv}
+	cfg := notifier.ConfigFromResolver(resolver)
+	if !cfg.Enabled {
+		fmt.Fprintf(stderr, "netops telegram-test: TELEGRAM_ENABLED is not set to true in environment or %s\n", *envFile)
+		return task.ExitFatal
+	}
+	if cfg.BotToken == "" || cfg.ChatID == "" {
+		fmt.Fprintf(stderr, "netops telegram-test: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set\n")
+		return task.ExitFatal
+	}
+
+	tn := notifier.NewTelegram(cfg)
+	if tn == nil {
+		fmt.Fprintf(stderr, "netops telegram-test: failed to initialize Telegram notifier\n")
+		return task.ExitFatal
+	}
+	defer tn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	testMsg := fmt.Sprintf("🔔 <b>[NETOPS TEST] Telegram Alert Verification</b>\n\n• <b>Source:</b> <code>netops</code>\n• <b>Timestamp:</b> %s\n• <b>Status:</b> Telegram notifier initialized successfully!\n• <b>Chat ID:</b> <code>%s</code>",
+		time.Now().Format("2006-01-02 15:04:05 MST"), cfg.ChatID)
+
+	fmt.Fprintf(stdout, "Sending test notification to Telegram chat %s...\n", cfg.ChatID)
+	if err := tn.SendSync(ctx, testMsg); err != nil {
+		fmt.Fprintf(stderr, "netops telegram-test: FAILED: %v\n", err)
+		return task.ExitFatal
+	}
+
+	fmt.Fprintln(stdout, "SUCCESS: Test notification delivered to Telegram.")
+	return task.ExitOK
 }

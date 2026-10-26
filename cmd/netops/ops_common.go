@@ -24,6 +24,7 @@ import (
 	"netops/internal/inventory"
 	"netops/internal/logging"
 	"netops/internal/memory"
+	"netops/internal/notifier"
 	"netops/internal/sshclient"
 	"netops/internal/task"
 	"netops/internal/vendor"
@@ -359,6 +360,13 @@ func (e *opsEnv) finish(results []task.Result) int {
 		}
 	}
 	e.log.Infof("", "audit log: %s", e.log.Path())
+
+	tg := notifier.NewTelegram(notifier.ConfigFromResolver(e.resolver))
+	if tg != nil {
+		defer tg.Close()
+		tg.SendTaskSummary("operation", sum, e.o.dryRun)
+	}
+
 	return task.ExitCode(results)
 }
 

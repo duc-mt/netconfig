@@ -23,6 +23,7 @@ import (
 	"netops/internal/inventory"
 	"netops/internal/logging"
 	"netops/internal/memory"
+	"netops/internal/notifier"
 	"netops/internal/report"
 	"netops/internal/sshclient"
 	"netops/internal/task"
@@ -384,6 +385,45 @@ func runBackup(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		report.FprintSummaryTable(stdout, stderr, rows, color && isTerminalWriter(stdout), total)
 	}
 	writeBackupReports(log, o, cfg.RunName, rows)
+
+	// Send Telegram notification if configured
+	tg := notifier.NewTelegram(notifier.ConfigFromResolver(resolver))
+	if tg != nil {
+		defer tg.Close()
+		var succ, fail, changed, unchanged, drifted int
+		var failDetails []string
+		for _, r := range results {
+			if r.Success {
+				succ++
+				if r.HasDiff {
+					changed++
+				} else if r.Unchanged {
+					unchanged++
+				}
+				if r.Compliance.Checked && len(r.Compliance.Drifts) > 0 {
+					drifted++
+				}
+			} else {
+				fail++
+				errStr := "failed"
+				if r.Err != nil {
+					errStr = r.Err.Error()
+				}
+				failDetails = append(failDetails, fmt.Sprintf("%s: %s", r.Device.Hostname, errStr))
+			}
+		}
+		tg.SendBackupSummary(notifier.BackupSummaryMetrics{
+			TotalDevices: len(results),
+			Succeeded:    succ,
+			Failed:       fail,
+			Changed:      changed,
+			Unchanged:    unchanged,
+			Drifted:      drifted,
+			Duration:     total,
+			DryRun:       o.dryRun,
+			Failures:     failDetails,
+		})
+	}
 
 	if failures > 0 {
 		return task.ExitPartial
