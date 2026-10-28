@@ -111,6 +111,54 @@ func (s *FindSink) ARPHandler(ip string) Handler {
 	}
 }
 
+// MACReverseARPHandler scans each device's full ARP table looking for a
+// specific MAC address, recording all IP addresses bound to that MAC.
+// This is used when the caller has a MAC but no L2 switch to look up.
+func (s *FindSink) MACReverseARPHandler(mac string) Handler {
+	norm, nerr := vendor.NormalizeMAC(mac)
+	wantMAC := vendor.FormatMAC(norm, vendor.MACColon)
+	return func(ctx context.Context, env *HandlerEnv) (string, error) {
+		if nerr != nil {
+			return "", opErrorf(CatSyntaxError, "%v", nerr)
+		}
+		l, ok := env.Job.Profile.Locator()
+		if !ok {
+			return "", opErrorf(CatUnsupportedOp, "no ARP query on %s", env.Job.Profile.Display)
+		}
+		// Use a dummy IP to get the command string; for VyOS "show arp"
+		// has no IP placeholder so the command is always the full table.
+		cmd := l.FindIPCommand("0.0.0.1")
+		if cmd == "" {
+			return "", opErrorf(CatUnsupportedOp, "no ARP query on %s", env.Job.Profile.Display)
+		}
+		out, err := env.Run(ctx, cmd)
+		if err != nil {
+			return "", err
+		}
+		var found []string
+		for _, r := range l.ParseIP(out) {
+			if r.MAC == "" || r.IP == "" {
+				continue
+			}
+			rNorm, e := vendor.NormalizeMAC(r.MAC)
+			if e != nil {
+				continue
+			}
+			if vendor.FormatMAC(rNorm, vendor.MACColon) != wantMAC {
+				continue
+			}
+			s.mu.Lock()
+			s.arp = append(s.arp, ARPMatch{Device: env.Job.Device, Record: r})
+			s.mu.Unlock()
+			found = append(found, fmt.Sprintf("%s on %s", r.IP, dash(r.Interface)))
+		}
+		if len(found) == 0 {
+			return "MAC not in the ARP table", nil
+		}
+		return strings.Join(found, "; "), nil
+	}
+}
+
 // MACHandler looks mac (any notation) up in each device's MAC address table
 // and classifies every entry as an access port or an uplink. CPU and other
 // internal pseudo-ports are dropped.

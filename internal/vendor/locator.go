@@ -94,6 +94,7 @@ type locatorDriver struct {
 	macPost  func([]LocatorRecord) []LocatorRecord
 	ipCmd    string // format with one %s for the IP; "" = no ARP query
 	ipSpec   *rowSpec
+	ipSpecs  []*rowSpec
 	ipPost   func([]LocatorRecord) []LocatorRecord
 	trunkCmd string
 	trunkRe  *regexp.Regexp
@@ -129,10 +130,21 @@ func (d locatorDriver) FindIPCommand(ip string) string {
 }
 
 func (d locatorDriver) ParseIP(output string) []LocatorRecord {
-	if d.ipSpec == nil {
+	var specs []*rowSpec
+	if d.ipSpec != nil {
+		specs = append(specs, d.ipSpec)
+	}
+	specs = append(specs, d.ipSpecs...)
+	if len(specs) == 0 {
 		return nil
 	}
-	recs := parseRows(output, *d.ipSpec)
+	var recs []LocatorRecord
+	for _, spec := range specs {
+		if spec == nil {
+			continue
+		}
+		recs = append(recs, parseRows(output, *spec)...)
+	}
 	if d.ipPost != nil {
 		recs = d.ipPost(recs)
 	}
@@ -228,8 +240,13 @@ var locatorDrivers = map[string]NetworkLocator{
 		trunkRe:  rowRe(`^(\S+)\s+trunk\s+trunking\b`),
 	},
 	VyOS: locatorDriver{
-		ipCmd:  "show arp",
-		ipSpec: &rowSpec{re: rowRe(`^\s*(` + reIPv4 + `)\s+\w+\s+(` + reMACColon + `)\s+\w+\s+(?:\*\s+)?(\S+)\s*$`), ip: 1, mac: 2, iface: 3},
+		ipCmd: "show arp",
+		ipSpecs: []*rowSpec{
+			// Modern VyOS (1.3/1.4): "Address Interface Link layer address State"
+			{re: rowRe(`^\s*(` + reIPv4 + `)\s+(\S+)\s+(` + reMACColon + `)\s+\S+\s*$`), ip: 1, iface: 2, mac: 3},
+			// Legacy VyOS: "Address HWtype HWaddress Flags Mask Iface"
+			{re: rowRe(`^\s*(` + reIPv4 + `)\s+\w+\s+(` + reMACColon + `)\s+\w+\s+(?:\*\s+)?(\S+)\s*$`), ip: 1, mac: 2, iface: 3},
+		},
 	},
 	Ruijie: locatorDriver{
 		style: MACDotted, macCmd: "show mac-address-table address %s",
