@@ -69,6 +69,7 @@ Subcommands:
   facts          collect hardware model, serial, version, uptime (netops facts -h)
   find           locate the access switch port an IP or MAC is on (netops find -h)
   audit          audit configurations against a security baseline (netops audit -h)
+  exec           run operational (show) commands on devices (netops exec -h)
   cve            check software versions against known CVEs, online or from a cache (netops cve -h)
   telegram-test  test Telegram alert notifications (netops telegram-test -h)
   init           generate sample inventory.csv, commands.txt, and .env templates
@@ -224,6 +225,8 @@ func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return runFacts(args[1:], stdin, stdout, stderr)
 	case "find":
 		return runFind(args[1:], stdin, stdout, stderr)
+	case "exec":
+		return runExec(args[1:], stdin, stdout, stderr)
 	case "audit":
 		return runAudit(args[1:], stdin, stdout, stderr)
 	case "cve":

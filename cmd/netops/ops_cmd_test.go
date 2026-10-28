@@ -218,7 +218,7 @@ func (w *opsWS) run(args ...string) (code int, stdout, stderr string) {
 		n++
 	}
 	base := w.base
-	if n > 0 && (args[0] == "facts" || args[0] == "find" || args[0] == "audit") {
+	if n > 0 && (args[0] == "facts" || args[0] == "find" || args[0] == "audit" || args[0] == "exec") {
 		var filtered []string
 		for i := 0; i < len(base); i++ {
 			if base[i] == "-backup-dir" {
@@ -926,6 +926,7 @@ func TestHelpForEverySubcommand(t *testing.T) {
 		{[]string{"facts"}, "netops facts:", "-limit", readOnlyForbidden},
 		{[]string{"find"}, "netops find:", "-limit", readOnlyForbidden},
 		{[]string{"audit"}, "netops audit:", "-limit", readOnlyForbidden},
+		{[]string{"exec"}, "netops exec:", "-limit", readOnlyForbidden},
 		{[]string{"cve"}, "netops cve:", "-limit", nil},
 		{[]string{"diff"}, "netops diff:", "-limit", nil},
 		{[]string{"init"}, "netops init:", "", nil},
