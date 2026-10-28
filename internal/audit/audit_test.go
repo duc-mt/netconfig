@@ -17,6 +17,11 @@ import (
 
 const ciscoGood = `hostname sw1
 !
+service password-encryption
+no ip http server
+ip ssh version 2
+banner motd ^CAuthorised use only^C
+!
 logging host 10.0.0.9
 ntp server 10.0.0.1
 snmp-server community Str0ng RO
@@ -76,7 +81,7 @@ func TestEvaluateCisco(t *testing.T) {
 		}
 	}
 	got := statuses(Evaluate(vendor.Cisco, ciscoBad, rules))
-	for _, id := range []string{"ntp", "syslog", "telnet", "snmp", "session-timeout", "aaa"} {
+	for _, id := range []string{"ntp", "syslog", "telnet", "snmp", "session-timeout", "aaa", "password-encryption", "ssh-version", "login-banner"} {
 		if got[id] != Fail {
 			t.Errorf("non-compliant config: %s = %s, want FAIL", id, got[id])
 		}
@@ -129,9 +134,10 @@ set system services ssh
 set system login class ops idle-timeout 5
 set system tacplus-server 10.0.0.5 secret "$9$x"
 set snmp community Str0ng authorization read-only
+set system login message "authorised use only"
 `
 	for id, st := range statuses(Evaluate(vendor.Junos, good, Defaults())) {
-		if st != Pass {
+		if st == Fail {
 			t.Errorf("junos compliant: %s = %s", id, st)
 		}
 	}
@@ -159,6 +165,7 @@ end
 config system global
     set admintimeout 5
     set admintelnet disable
+    set pre-login-banner enable
 end
 config system snmp community
     edit 1
@@ -172,7 +179,7 @@ config user tacacs+
 end
 `
 	for id, st := range statuses(Evaluate(vendor.Fortinet, good, Defaults())) {
-		if st != Pass {
+		if st == Fail {
 			t.Errorf("fortinet compliant: %s = %s", id, st)
 		}
 	}
@@ -190,9 +197,9 @@ end
 }
 
 func TestEvaluateHuawei(t *testing.T) {
-	good := "sysname SW\n#\nntp-service unicast-server 10.0.0.1\n#\ninfo-center loghost 10.0.0.9\n#\nsnmp-agent community read cipher %^%#abc\n#\nhwtacacs-server template t1\n#\nuser-interface vty 0 4\n authentication-mode aaa\n idle-timeout 5 0\n protocol inbound ssh\n#\nreturn\n"
+	good := "sysname SW\n#\nheader login information \"authorised use only\"\n#\nntp-service unicast-server 10.0.0.1\n#\ninfo-center loghost 10.0.0.9\n#\nsnmp-agent community read cipher %^%#abc\n#\nhwtacacs-server template t1\n#\nuser-interface vty 0 4\n authentication-mode aaa\n idle-timeout 5 0\n protocol inbound ssh\n#\nreturn\n"
 	for id, st := range statuses(Evaluate(vendor.Huawei, good, Defaults())) {
-		if st != Pass {
+		if st == Fail {
 			t.Errorf("huawei compliant: %s = %s", id, st)
 		}
 	}
@@ -215,7 +222,7 @@ func TestNotApplicablePlatforms(t *testing.T) {
 		t.Errorf("paloalto: %v", got)
 	}
 	s := Summarize(Evaluate(vendor.Cisco, ciscoBad, Defaults()))
-	if s.Fail != 6 || s.Pass != 0 || s.NA != 0 {
+	if s.Fail != 9 || s.Pass != 1 || s.NA != 0 {
 		t.Errorf("summary = %+v", s)
 	}
 }
@@ -223,8 +230,8 @@ func TestNotApplicablePlatforms(t *testing.T) {
 func TestEveryVendorEvaluates(t *testing.T) {
 	for _, name := range vendor.Names() {
 		checks := Evaluate(name, "", Defaults())
-		if len(checks) != 6 {
-			t.Errorf("%s: %d checks, want 6", name, len(checks))
+		if len(checks) != 10 {
+			t.Errorf("%s: %d checks, want 10", name, len(checks))
 		}
 	}
 }
@@ -350,3 +357,49 @@ func TestBlocksHelper(t *testing.T) {
 }
 
 func regexpMust(p string) *regexp.Regexp { return regexp.MustCompile(p) }
+
+func TestHardeningChecksCisco(t *testing.T) {
+	rules := Defaults()
+	// plaintext secrets, plain HTTP and SSHv1 each fail their own check
+	cfg := ciscoGood + "enable password 0 hunter2\nip http server\nno ip ssh version 2\n"
+	cfg = strings.Replace(cfg, "ip ssh version 2\n", "", 1)
+	got := statuses(Evaluate(vendor.Cisco, cfg, rules))
+	for _, id := range []string{"password-encryption", "http-server", "ssh-version"} {
+		if got[id] != Fail {
+			t.Errorf("%s = %s, want FAIL", id, got[id])
+		}
+	}
+	if got["login-banner"] != Pass {
+		t.Errorf("login-banner = %s, want PASS", got["login-banner"])
+	}
+	// "no ip http server" must not trip the forbid pattern
+	if got := statuses(Evaluate(vendor.Cisco, ciscoGood, rules))["http-server"]; got != Pass {
+		t.Errorf("no ip http server = %s, want PASS", got)
+	}
+	// an encrypted (type 7) enable password is acceptable
+	enc := ciscoGood + "enable password 7 0822455D0A16\n"
+	if got := statuses(Evaluate(vendor.Cisco, enc, rules))["password-encryption"]; got != Pass {
+		t.Errorf("type 7 password = %s, want PASS", got)
+	}
+}
+
+func TestHardeningChecksOtherVendors(t *testing.T) {
+	rules := Defaults()
+	cases := []struct {
+		vendor, cfg, id string
+		want            Status
+	}{
+		{vendor.Fortinet, "config system interface\n edit port1\n set allowaccess ping https http\n next\nend\n", "http-server", Fail},
+		{vendor.Fortinet, "config system interface\n edit port1\n set allowaccess ping https ssh\n next\nend\n", "http-server", Pass},
+		{vendor.Junos, "set system services ssh protocol-version v1\n", "ssh-version", Fail},
+		{vendor.Huawei, "http server enable\n", "http-server", Fail},
+		{vendor.CiscoASA, "ssh version 2\n", "ssh-version", Pass},
+		{vendor.Arista, "banner login\n", "login-banner", Pass},
+		{vendor.Sophos, "anything", "login-banner", NA},
+	}
+	for _, c := range cases {
+		if got := statuses(Evaluate(c.vendor, c.cfg, rules))[c.id]; got != c.want {
+			t.Errorf("%s %s = %s, want %s", c.vendor, c.id, got, c.want)
+		}
+	}
+}

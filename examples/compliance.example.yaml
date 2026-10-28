@@ -305,3 +305,100 @@ rules:
     vendors: [checkpoint]
     require: '^add aaa (?:radius|tacacs)-servers\b'
     remediation: 'add aaa tacacs-servers priority 1 server <address> key <key>'
+  - id: password-encryption
+    title: 'Passwords encrypted (service password-encryption, no type 0 secrets)'
+    severity: high
+    vendors: [cisco, ruijie]
+    require: '^\s*service password-encryption\s*$'
+    forbid: '^\s*(?:enable password|username\s+\S+\s+password)\s+0\s+\S+'
+    remediation: 'service password-encryption; replace plaintext secrets with: enable secret <secret> / username <name> secret <secret>'
+  - id: http-server
+    title: 'Unencrypted HTTP management server disabled'
+    severity: medium
+    vendors: [cisco, cisco_sb, ruijie]
+    forbid: '^\s*ip http server\s*$'
+    remediation: 'no ip http server (use ip http secure-server if a web UI is needed)'
+  - id: http-server
+    title: 'Unencrypted HTTP management server disabled'
+    severity: medium
+    vendors: [huawei]
+    forbid: '^\s*http server enable\b'
+    remediation: 'undo http server enable'
+  - id: http-server
+    title: 'Unencrypted HTTP management server disabled'
+    severity: medium
+    vendors: [junos]
+    forbid: '^set system services web-management http\b'
+    remediation: 'delete system services web-management http'
+  - id: http-server
+    title: 'Unencrypted HTTP management server disabled'
+    severity: medium
+    vendors: [fortinet]
+    forbid: '^\s*set allowaccess\b.*\bhttp\b'
+    remediation: 'Remove http from set allowaccess on every interface'
+  - id: ssh-version
+    title: 'SSH protocol version 2 only'
+    severity: medium
+    vendors: [cisco, ruijie]
+    require: '^\s*ip ssh version 2\s*$'
+    remediation: 'ip ssh version 2'
+  - id: ssh-version
+    title: 'SSH protocol version 2 only'
+    severity: medium
+    vendors: [cisco_asa]
+    require: '^ssh version 2\s*$'
+    remediation: 'ssh version 2'
+  - id: ssh-version
+    title: 'SSH protocol version 2 only'
+    severity: medium
+    vendors: [huawei]
+    forbid: '^\s*ssh server compatible-ssh1x\s+enable\b'
+    remediation: 'undo ssh server compatible-ssh1x enable'
+  - id: ssh-version
+    title: 'SSH protocol version 2 only'
+    severity: medium
+    vendors: [junos]
+    forbid: '^set system services ssh protocol-version v1\b'
+    remediation: 'delete system services ssh protocol-version v1'
+  - id: ssh-version
+    title: 'SSH protocol version 2 only'
+    severity: medium
+    vendors: [fortinet]
+    forbid: '^\s*set admin-ssh-v1\s+enable\b'
+    remediation: 'config system global / set admin-ssh-v1 disable'
+  - id: login-banner
+    title: 'Login warning banner configured'
+    severity: low
+    vendors: [cisco, cisco_sb, cisco_asa, arista, ruijie, aruba]
+    require: '^\s*banner\s+(?:login|motd|exec)\b'
+    remediation: 'banner login <delimiter> authorised use only <delimiter>'
+  - id: login-banner
+    title: 'Login warning banner configured'
+    severity: low
+    vendors: [huawei]
+    require: '^\s*header\s+(?:login|shell)\b'
+    remediation: 'header login information "authorised use only"'
+  - id: login-banner
+    title: 'Login warning banner configured'
+    severity: low
+    vendors: [junos]
+    require: '^set system login (?:message|announcement)\b'
+    remediation: 'set system login message "authorised use only"'
+  - id: login-banner
+    title: 'Login warning banner configured'
+    severity: low
+    vendors: [fortinet]
+    require: '^\s*set pre-login-banner\s+enable\b'
+    remediation: 'config system global / set pre-login-banner enable'
+  - id: login-banner
+    title: 'Login warning banner configured'
+    severity: low
+    vendors: [vyos]
+    require: '^set system login banner (?:pre|post)-login\b'
+    remediation: 'set system login banner pre-login ''<text>'''
+  - id: login-banner
+    title: 'Login warning banner configured'
+    severity: low
+    vendors: [checkpoint]
+    require: '^set message banner on\b'
+    remediation: 'set message banner on'

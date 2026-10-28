@@ -743,7 +743,8 @@ every failure (highest severity first). `--output-dir DIR` also writes `audit-<t
 
 Built-in checks: NTP server, remote syslog, Telnet disabled (`transport input ssh`), no default SNMP
 community (`public`/`private`), idle timeout of at most 5 minutes (`exec-timeout 5 0` and equivalents)
-and RADIUS/TACACS+. Block-aware: every `line vty` block must comply, and the console line is ignored.
+RADIUS/TACACS+, encrypted passwords (`service password-encryption`, no type 0 secrets), no plain HTTP
+management server, SSH version 2 only, and a login banner. Block-aware: every `line vty` block must comply, and the console line is ignored.
 A platform without a rule for a check is **N/A, never guessed**. A configuration that is empty, an
 error, or visibly truncated fails the device instead of producing a verdict.
 
@@ -752,6 +753,15 @@ error, or visibly truncated fails the device instead of producing a verdict.
 file is a deliberately small **YAML subset** (no third-party parser is linked in): `rules:` followed by
 `- key: value` items with `id, title, severity, vendors, block, require, forbid, remediation`.
 Put regular expressions in 'single quotes'. Unknown keys and bad patterns are rejected with a line number.
+
+**Offline audits** need no inventory, credentials or SSH: `--file router.config --vendor cisco` audits one
+saved configuration (host name = file name) and `--from-backups backups/` audits the `*.config` files of
+a `backup` run (a `backup-<stamp>` directory, or the root holding them: the newest run is used). The
+same empty/truncated checks apply; Junos files must be in `display set` form.
+
+`--generate-fix FILE` (live or offline) writes each failed check's remediation, grouped by device. It is
+review guidance written as comments: the text carries site values (`<address>`, secrets) and some fixes
+span several steps, so it is not an apply-ready script.
 
 Exit codes: **3** = every device audited but a check failed; 2 = a device could not be audited;
 0 = all passed or N/A.

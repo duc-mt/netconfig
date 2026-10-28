@@ -30,15 +30,26 @@ const auditUsageText = `netops audit: check device configurations against a secu
 
 Usage:
   netops audit [--rules compliance.yaml] [--output-dir audit_reports/] [flags]
+  netops audit --file router.config --vendor cisco [flags]
+  netops audit --from-backups backups/ [flags]
   netops audit --print-defaults > compliance.yaml
 
 Reads each device's configuration (read-only: nothing is ever changed) and
 prints a PASS / FAIL / N/A matrix with a remediation for every failure. The
 built-in baseline checks: NTP server, remote syslog, Telnet disabled, no
-default SNMP communities, idle session timeout of at most 5 minutes, and
-RADIUS/TACACS+ configured. A platform a check has no rule for is N/A, never a
+default SNMP communities, idle session timeout of at most 5 minutes,
+RADIUS/TACACS+ configured, encrypted passwords, no plain HTTP management, SSH
+version 2 only, and a login banner. A platform a check has no rule for is N/A, never a
 guess. --rules replaces the built-in baseline with your own file (a small YAML
 subset; --print-defaults writes the built-in rules in that format as a start).
+
+--file audits one saved configuration (--vendor names its platform) and
+--from-backups audits the saved *.config files of a "netops backup" run (a
+backup-<stamp> directory, or the root holding them: the newest run is used).
+Both work offline: no inventory, credentials or SSH are needed.
+
+--generate-fix writes the remediation of every failed check to a file, grouped
+by device. It is review guidance written as comments, not an apply-ready script.
 
 --output-dir additionally writes audit-<time>.{csv,json,txt} there.
 A configuration that is empty, an error, or visibly truncated fails the device
@@ -52,13 +63,17 @@ Flags:
 
 func runAudit(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var o opsFlags
-	var rulesPath, outDir string
+	var rulesPath, outDir, file, vendorName, fromBackups, fixPath string
 	var printDefaults bool
 	fs := flag.NewFlagSet("netops audit", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprint(stderr, auditUsageText); fs.PrintDefaults() }
 	fs.StringVar(&rulesPath, "rules", "", "rules file (YAML subset); default: the built-in baseline")
 	fs.StringVar(&outDir, "output-dir", "", "also write audit-<time>.csv, .json and .txt into this directory")
+	fs.StringVar(&file, "file", "", "audit this saved configuration file offline (needs --vendor)")
+	fs.StringVar(&vendorName, "vendor", "", "platform of --file (e.g. cisco, junos, fortinet)")
+	fs.StringVar(&fromBackups, "from-backups", "", "audit the saved configs of a backup run (or the newest run under this root) offline")
+	fs.StringVar(&fixPath, "generate-fix", "", "write the remediation of every failed check to this file (guidance, as comments)")
 	fs.BoolVar(&printDefaults, "print-defaults", false, "print the built-in rules in the rules-file format and exit")
 	o.register(fs)
 	if len(args) > 0 && isHelpArg(args[0]) {
@@ -100,6 +115,17 @@ func runAudit(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		}
 	}
 
+	switch {
+	case file != "" && fromBackups != "":
+		return fatal("--file and --from-backups are mutually exclusive")
+	case file != "" && vendorName == "":
+		return fatal("--file needs --vendor to pick the rules")
+	case file == "" && vendorName != "":
+		return fatal("--vendor only applies together with --file")
+	case file != "" || fromBackups != "":
+		return auditOfflineRun(rules, file, vendorName, fromBackups, outDir, fixPath, stdout, stderr)
+	}
+
 	env, code := newOpsEnv("audit", &o, stdin, stdout, stderr)
 	if env == nil {
 		return code
@@ -126,6 +152,11 @@ func runAudit(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 			return task.ExitFatal
 		}
 		env.log.Infof("", "audit reports written to %s", outDir)
+	}
+	if fixPath != "" {
+		if err := reportFixScript(fixPath, rows, stderr); err != nil {
+			return task.ExitFatal
+		}
 	}
 	if failures > 0 {
 		return exitNonCompliant

@@ -182,7 +182,7 @@ func TestFindRejectsGarbageMACBeforeAnyCommand(t *testing.T) {
 
 // ---- audit ------------------------------------------------------------------
 
-const auditCiscoGood = "hostname sw1\n!\nlogging host 10.0.0.9\nntp server 10.0.0.1\nsnmp-server community Str0ng RO\ntacacs-server host 10.0.0.5\nline vty 0 4\n exec-timeout 5 0\n transport input ssh\nend\n"
+const auditCiscoGood = "hostname sw1\n!\nservice password-encryption\nip ssh version 2\nbanner motd ^Cauthorised^C\n!\nlogging host 10.0.0.9\nntp server 10.0.0.1\nsnmp-server community Str0ng RO\ntacacs-server host 10.0.0.5\nline vty 0 4\n exec-timeout 5 0\n transport input ssh\nend\n"
 
 func TestAuditSink(t *testing.T) {
 	h, _ := newHarness(t, Options{})
@@ -209,13 +209,13 @@ func TestAuditSink(t *testing.T) {
 	if len(rows) != 2 || rows[0].Hostname != "bad" || rows[1].Hostname != "good" {
 		t.Fatalf("rows = %+v", rows)
 	}
-	if s := audit.Summarize(rows[1].Checks); s.Fail != 0 || s.Pass != 6 {
+	if s := audit.Summarize(rows[1].Checks); s.Fail != 0 || s.Pass != 10 {
 		t.Errorf("good summary = %+v", s)
 	}
-	if s := audit.Summarize(rows[0].Checks); s.Fail != 6 {
+	if s := audit.Summarize(rows[0].Checks); s.Fail != 9 {
 		t.Errorf("bad summary = %+v", s)
 	}
-	if !strings.Contains(byHost["bad"].Detail, "6 failed") {
+	if !strings.Contains(byHost["bad"].Detail, "9 failed") {
 		t.Errorf("detail = %q", byHost["bad"].Detail)
 	}
 }

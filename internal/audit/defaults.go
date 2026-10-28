@@ -31,12 +31,16 @@ const (
 
 func defaultRules() []Rule {
 	const (
-		ntp    = "ntp"
-		syslog = "syslog"
-		telnet = "telnet"
-		snmp   = "snmp"
-		vty    = "session-timeout"
-		aaa    = "aaa"
+		ntp     = "ntp"
+		syslog  = "syslog"
+		telnet  = "telnet"
+		snmp    = "snmp"
+		vty     = "session-timeout"
+		aaa     = "aaa"
+		pwenc   = "password-encryption"
+		httpSrv = "http-server"
+		sshVer  = "ssh-version"
+		banner  = "login-banner"
 
 		tNTP    = "NTP server configured"
 		tSyslog = "Remote syslog host configured"
@@ -44,6 +48,10 @@ func defaultRules() []Rule {
 		tSNMP   = "No default SNMP communities (public/private)"
 		tVTY    = "Idle session timeout of at most 5 minutes"
 		tAAA    = "Centralised AAA (RADIUS/TACACS+) configured"
+		tPwEnc  = "Passwords encrypted (service password-encryption, no type 0 secrets)"
+		tHTTP   = "Unencrypted HTTP management server disabled"
+		tSSH    = "SSH protocol version 2 only"
+		tBanner = "Login warning banner configured"
 	)
 	return []Rule{
 		// ---- NTP ----
@@ -109,6 +117,34 @@ func defaultRules() []Rule {
 		rule(aaa, tAAA, SevMedium, v(vendor.Fortinet), `^config user (?:radius|tacacs\+)`, `^\s*edit\s+`, "", "config user tacacs+ / edit <name> / set server <address>"),
 		rule(aaa, tAAA, SevMedium, v(vendor.VyOS), "", `^set system login (?:radius|tacacs)\b`, "", "set system login radius server <address> key <key>"),
 		rule(aaa, tAAA, SevMedium, v(vendor.CheckPoint), "", `^add aaa (?:radius|tacacs)-servers\b`, "", "add aaa tacacs-servers priority 1 server <address> key <key>"),
+
+		// ---- password storage ----
+		// Only the platforms whose running configuration can hold readable
+		// secrets are covered; the rest store them hashed by design (N/A).
+		{ID: pwenc, Title: tPwEnc, Severity: SevHigh, Vendors: append([]string(nil), ciscoVT...),
+			Require: `^\s*service password-encryption\s*$`, Forbid: `^\s*(?:enable password|username\s+\S+\s+password)\s+0\s+\S+`,
+			Remediation: "service password-encryption; replace plaintext secrets with: enable secret <secret> / username <name> secret <secret>"},
+
+		// ---- plain HTTP management ----
+		rule(httpSrv, tHTTP, SevMedium, v(vendor.Cisco, vendor.CiscoSB, vendor.Ruijie), "", "", `^\s*ip http server\s*$`, "no ip http server (use ip http secure-server if a web UI is needed)"),
+		rule(httpSrv, tHTTP, SevMedium, v(vendor.Huawei), "", "", `^\s*http server enable\b`, "undo http server enable"),
+		rule(httpSrv, tHTTP, SevMedium, v(vendor.Junos), "", "", `^set system services web-management http\b`, "delete system services web-management http"),
+		rule(httpSrv, tHTTP, SevMedium, v(vendor.Fortinet), "", "", `^\s*set allowaccess\b.*\bhttp\b`, "Remove http from set allowaccess on every interface"),
+
+		// ---- SSH protocol version ----
+		rule(sshVer, tSSH, SevMedium, ciscoVT, "", `^\s*ip ssh version 2\s*$`, "", "ip ssh version 2"),
+		rule(sshVer, tSSH, SevMedium, v(vendor.CiscoASA), "", `^ssh version 2\s*$`, "", "ssh version 2"),
+		rule(sshVer, tSSH, SevMedium, v(vendor.Huawei), "", "", `^\s*ssh server compatible-ssh1x\s+enable\b`, "undo ssh server compatible-ssh1x enable"),
+		rule(sshVer, tSSH, SevMedium, v(vendor.Junos), "", "", `^set system services ssh protocol-version v1\b`, "delete system services ssh protocol-version v1"),
+		rule(sshVer, tSSH, SevMedium, v(vendor.Fortinet), "", "", `^\s*set admin-ssh-v1\s+enable\b`, "config system global / set admin-ssh-v1 disable"),
+
+		// ---- legal / login banner ----
+		rule(banner, tBanner, SevLow, v(vendor.Cisco, vendor.CiscoSB, vendor.CiscoASA, vendor.Arista, vendor.Ruijie, vendor.Aruba), "", `^\s*banner\s+(?:login|motd|exec)\b`, "", "banner login <delimiter> authorised use only <delimiter>"),
+		rule(banner, tBanner, SevLow, v(vendor.Huawei), "", `^\s*header\s+(?:login|shell)\b`, "", "header login information \"authorised use only\""),
+		rule(banner, tBanner, SevLow, v(vendor.Junos), "", `^set system login (?:message|announcement)\b`, "", "set system login message \"authorised use only\""),
+		rule(banner, tBanner, SevLow, v(vendor.Fortinet), "", `^\s*set pre-login-banner\s+enable\b`, "", "config system global / set pre-login-banner enable"),
+		rule(banner, tBanner, SevLow, v(vendor.VyOS), "", `^set system login banner (?:pre|post)-login\b`, "", "set system login banner pre-login '<text>'"),
+		rule(banner, tBanner, SevLow, v(vendor.CheckPoint), "", `^set message banner on\b`, "", "set message banner on"),
 	}
 }
 

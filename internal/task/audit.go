@@ -14,6 +14,7 @@ import (
 
 	"netops/internal/audit"
 	"netops/internal/logging"
+	"netops/internal/vendor"
 )
 
 // AuditRow is one device's audit outcome.
@@ -55,24 +56,32 @@ func (s *AuditSink) Handler() Handler {
 		if err != nil {
 			return "", err
 		}
-		if cmd == prof.BackupCommand {
-			if err := prof.ValidateBackup(out); err != nil {
-				return "", opErrorf(CatSyntaxError, "cannot audit: %v", err)
-			}
-		} else if strings.TrimSpace(out) == "" {
-			return "", opErrorf(CatSyntaxError, "cannot audit: %q returned no output", cmd)
-		}
-		if line, bad := prof.FindError(out); bad {
-			return "", opErrorf(CatSyntaxError, "cannot audit: the device rejected %q (%s)", cmd, logging.RedactCommand(line))
-		}
-		checks := audit.Evaluate(prof.Name, out, s.rules)
-		for i := range checks {
-			checks[i].Evidence = oneLine(logging.RedactCommand(checks[i].Evidence), 120)
-		}
-		s.mu.Lock()
-		s.rows = append(s.rows, AuditRow{Hostname: env.Job.Device.Hostname, Address: env.Job.Device.Address, Vendor: prof.Name, Checks: checks})
-		s.mu.Unlock()
-		sum := audit.Summarize(checks)
-		return fmt.Sprintf("%d passed, %d failed, %d n/a", sum.Pass, sum.Fail, sum.NA), nil
+		return s.Add(env.Job.Device.Hostname, env.Job.Device.Address, prof, cmd, out)
 	}
+}
+
+// Add validates out, the output of cmd for one device, and records its audit
+// row. It is shared by the live handler and by offline (saved-file) audits so
+// both apply the same "never judge an incomplete configuration" rules. The
+// returned string is a one-line outcome summary.
+func (s *AuditSink) Add(host, addr string, prof *vendor.Profile, cmd, out string) (string, error) {
+	if cmd == prof.BackupCommand {
+		if err := prof.ValidateBackup(out); err != nil {
+			return "", opErrorf(CatSyntaxError, "cannot audit: %v", err)
+		}
+	} else if strings.TrimSpace(out) == "" {
+		return "", opErrorf(CatSyntaxError, "cannot audit: %q returned no output", cmd)
+	}
+	if line, bad := prof.FindError(out); bad {
+		return "", opErrorf(CatSyntaxError, "cannot audit: the device rejected %q (%s)", cmd, logging.RedactCommand(line))
+	}
+	checks := audit.Evaluate(prof.Name, out, s.rules)
+	for i := range checks {
+		checks[i].Evidence = oneLine(logging.RedactCommand(checks[i].Evidence), 120)
+	}
+	s.mu.Lock()
+	s.rows = append(s.rows, AuditRow{Hostname: host, Address: addr, Vendor: prof.Name, Checks: checks})
+	s.mu.Unlock()
+	sum := audit.Summarize(checks)
+	return fmt.Sprintf("%d passed, %d failed, %d n/a", sum.Pass, sum.Fail, sum.NA), nil
 }

@@ -705,7 +705,7 @@ func TestFindNotFoundAndInputErrors(t *testing.T) {
 
 // ---- audit ------------------------------------------------------------------
 
-const cliCiscoGood = "hostname good\n!\nlogging host 10.0.0.9\nntp server 10.0.0.1\nsnmp-server community Str0ng RO\ntacacs-server host 10.0.0.5\nline vty 0 4\n exec-timeout 5 0\n transport input ssh\nend\n"
+const cliCiscoGood = "hostname good\n!\nservice password-encryption\nip ssh version 2\nbanner motd ^Cauthorised^C\n!\nlogging host 10.0.0.9\nntp server 10.0.0.1\nsnmp-server community Str0ng RO\ntacacs-server host 10.0.0.5\nline vty 0 4\n exec-timeout 5 0\n transport input ssh\nend\n"
 const cliCiscoBad = "hostname bad\n!\nsnmp-server community public RO\nline vty 0 4\n transport input all\nend\n"
 
 func auditWS(t *testing.T) *opsWS {
@@ -741,7 +741,7 @@ func TestAuditMatrixRemediationAndExitCode(t *testing.T) {
 			} `json:"checks"`
 		}
 		data, _ := os.ReadFile(jm[0])
-		if err := json.Unmarshal(data, &rep); err != nil || len(rep) != 2 || len(rep[0].Checks) != 6 {
+		if err := json.Unmarshal(data, &rep); err != nil || len(rep) != 2 || len(rep[0].Checks) != 10 {
 			t.Errorf("json report: %v %s", err, data)
 		}
 	}
