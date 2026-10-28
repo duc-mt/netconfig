@@ -66,8 +66,6 @@ Subcommands:
   diff           preview candidate diff of command file before apply (netops diff -h)
   config         declarative resource operations: user, vlan, passwd (netops config -h)
   backup         archive device configurations, detect changes (netops backup -h)
-  backup show    view, diff or locate saved backups (netops backup show -h)
-  backup redact  mask secrets in saved backup files or directories (netops backup redact -h)
   facts          collect hardware model, serial, version, uptime (netops facts -h)
   find           locate the access switch port an IP or MAC is on (netops find -h)
   audit          audit configurations against a security baseline (netops audit -h)

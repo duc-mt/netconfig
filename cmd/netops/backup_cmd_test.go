@@ -511,15 +511,14 @@ func TestBackupShowIsSelectedByTheFirstArgumentOnly(t *testing.T) {
 	}
 }
 
-// "netops show-backup" no longer exists. Without a hint it would be taken
-// for a commands file called show-backup and fail with a confusing message.
+// "netops show-backup" no longer exists and fails as an unknown subcommand.
 func TestOldShowBackupFormSaysWhatToUseInstead(t *testing.T) {
 	in := openDevNull(t)
 	defer in.Close()
 	for _, args := range [][]string{{"show-backup", "-l"}, {"show-backup", "core-sw1", "-commands", "commands.txt"}} {
 		var out, errb bytes.Buffer
 		code := dispatch(args, in, &out, &errb)
-		if code != task.ExitFatal || !strings.Contains(errb.String(), "netops backup show") || strings.Contains(errb.String(), "commands file") {
+		if code != task.ExitFatal || !strings.Contains(errb.String(), `unknown subcommand "show-backup"`) || strings.Contains(errb.String(), "commands file") {
 			t.Errorf("%v: exit %d\n%s", args, code, errb.String())
 		}
 		if out.Len() != 0 {
@@ -540,8 +539,8 @@ func TestBackupHelpPointsToShow(t *testing.T) {
 	out.Reset()
 	errb.Reset()
 	dispatch([]string{"-h"}, in, &out, &errb)
-	if !strings.Contains(errb.String(), "netops backup show") || strings.Contains(errb.String(), "netops show-backup") {
-		t.Errorf("the top-level help must list the new form only:\n%s", errb.String())
+	if strings.Contains(errb.String(), "netops backup show") || strings.Contains(errb.String(), "netops show-backup") {
+		t.Errorf("the top-level help should not list backup show:\n%s", errb.String())
 	}
 }
 
