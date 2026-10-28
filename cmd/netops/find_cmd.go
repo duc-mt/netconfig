@@ -114,9 +114,14 @@ answer is the access port. Uplink sightings are only shown when nothing better
 was found, or with --all.
 
 Read-only.
-
-Flags:
 `
+
+var findFlagGroups = []flagGroup{
+	{"Host lookup", []string{"mac", "ip", "all"}},
+	{"Inventory and credentials", []string{"inventory", "limit", "env-file", "key-file", "known-hosts", "host-key-policy", "update-known-hosts", "jump", "jump-host", "jump-user", "jump-key-file", "mesh-fallback"}},
+	{"Connection", []string{"concurrency", "max-retries", "connect-timeout", "command-timeout", "timeout", "legacy-algorithms", "tcp-mss", "memory", "memory-file"}},
+	{"Logging and run reports", []string{"log-dir", "verbose", "no-color", "json-report", "csv-report"}},
+}
 
 func runFind(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var o opsFlags
@@ -124,15 +129,14 @@ func runFind(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var all bool
 	fs := flag.NewFlagSet("netops find", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.Usage = func() { fmt.Fprint(stderr, findUsageText); fs.PrintDefaults() }
+	fs.Usage = func() { fmt.Fprint(stderr, findUsageText); printFlagGroups(stderr, fs, findFlagGroups) }
 	fs.StringVar(&mac, "mac", "", "MAC address to locate")
 	fs.StringVar(&ip, "ip", "", "IPv4 address to locate")
 	fs.BoolVar(&all, "all", false, "also list sightings on uplinks (trunks and port-channels)")
 	o.registerReadOnly(fs)
 	if len(args) > 0 && isHelpArg(args[0]) {
 		fmt.Fprint(stdout, findUsageText)
-		fs.SetOutput(stdout)
-		fs.PrintDefaults()
+		printFlagGroups(stdout, fs, findFlagGroups)
 		return task.ExitOK
 	}
 	if err := fs.Parse(args); err != nil {

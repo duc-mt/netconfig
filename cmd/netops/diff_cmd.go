@@ -37,9 +37,15 @@ By default nothing is changed. With --apply, once the previews are shown you are
 asked to confirm (skipped with -yes), and the change is applied to the devices
 that have one through the normal apply path (-backup, -rollback-on-fail,
 -canary, --commit-confirm, ...).
-
-Flags:
 `
+
+var diffFlagGroups = []flagGroup{
+	{"Diff preview", []string{"commands", "apply", "commit-confirm"}},
+	{"Safety and rollback", []string{"dry-run", "yes", "force", "backup", "backup-dir", "rollback-on-fail", "strict-safety", "allow-dangerous", "canary", "batch-size", "max-fail-percent"}},
+	{"Inventory and credentials", []string{"inventory", "limit", "env-file", "key-file", "known-hosts", "host-key-policy", "update-known-hosts", "jump", "jump-host", "jump-user", "jump-key-file", "mesh-fallback"}},
+	{"Connection", []string{"concurrency", "max-retries", "connect-timeout", "command-timeout", "timeout", "legacy-algorithms", "tcp-mss", "memory", "memory-file"}},
+	{"Logging and run reports", []string{"log-dir", "verbose", "no-color", "json-report", "csv-report"}},
+}
 
 // hasNativeDiff reports whether the platform can compare a candidate configuration.
 func hasNativeDiff(p *vendor.Profile) bool {
@@ -58,15 +64,14 @@ func runDiff(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var commitConfirm int
 	fs := flag.NewFlagSet("netops diff", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.Usage = func() { fmt.Fprint(stderr, diffUsageText); fs.PrintDefaults() }
+	fs.Usage = func() { fmt.Fprint(stderr, diffUsageText); printFlagGroups(stderr, fs, diffFlagGroups) }
 	fs.StringVar(&cmdsPath, "commands", "", "plain text file with one configuration command per line")
 	fs.BoolVar(&apply, "apply", false, "after the preview, confirm and apply the change")
 	fs.IntVar(&commitConfirm, "commit-confirm", 0, "with --apply: arm an on-box deadman timer of `minutes` (0 = off)")
 	o.register(fs)
 	if len(args) > 0 && isHelpArg(args[0]) {
 		fmt.Fprint(stdout, diffUsageText)
-		fs.SetOutput(stdout)
-		fs.PrintDefaults()
+		printFlagGroups(stdout, fs, diffFlagGroups)
 		return task.ExitOK
 	}
 	if err := fs.Parse(args); err != nil {

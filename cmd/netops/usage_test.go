@@ -200,3 +200,124 @@ func TestHintPasswordFlag(t *testing.T) {
 		}
 	}
 }
+
+// TestHelpGroupsForSubcommands verifies that each migrated subcommand's help
+// output contains the expected section headers and does NOT fall back to flat
+// "Flags:" or "Other flags:" output.
+func TestHelpGroupsForSubcommands(t *testing.T) {
+	in := openDevNull(t)
+	defer in.Close()
+
+	type tc struct {
+		name    string
+		runFn   func() string // returns help text printed to stdout
+		headers []string
+	}
+
+	tests := []tc{
+		{
+			name: "facts",
+			runFn: func() string {
+				var out bytes.Buffer
+				runFacts([]string{"-h"}, in, &out, &bytes.Buffer{})
+				return out.String()
+			},
+			headers: []string{"Facts and output:", "Inventory and credentials:", "Connection:", "Logging and run reports:"},
+		},
+		{
+			name: "find",
+			runFn: func() string {
+				var out bytes.Buffer
+				runFind([]string{"-h"}, in, &out, &bytes.Buffer{})
+				return out.String()
+			},
+			headers: []string{"Host lookup:", "Inventory and credentials:", "Connection:", "Logging and run reports:"},
+		},
+		{
+			name: "audit",
+			runFn: func() string {
+				var out bytes.Buffer
+				runAudit([]string{"-h"}, in, &out, &bytes.Buffer{})
+				return out.String()
+			},
+			headers: []string{"Audit rules and scope:", "Inventory and credentials:", "Connection:", "Logging and run reports:"},
+		},
+		{
+			name: "diff",
+			runFn: func() string {
+				var out bytes.Buffer
+				runDiff([]string{"-h"}, in, &out, &bytes.Buffer{})
+				return out.String()
+			},
+			headers: []string{"Diff preview:", "Safety and rollback:", "Inventory and credentials:", "Connection:", "Logging and run reports:"},
+		},
+		{
+			name: "config user add",
+			runFn: func() string {
+				// "-h" is consumed by fs.Parse; fs.Usage fires to stderr.
+				var errBuf bytes.Buffer
+				runUser([]string{"add", "-h"}, in, &bytes.Buffer{}, &errBuf)
+				return errBuf.String()
+			},
+			headers: []string{"User configuration:", "Safety and rollback:", "Inventory and credentials:", "Connection:", "Logging and run reports:"},
+		},
+		{
+			name: "config user del",
+			runFn: func() string {
+				var errBuf bytes.Buffer
+				runUser([]string{"del", "-h"}, in, &bytes.Buffer{}, &errBuf)
+				return errBuf.String()
+			},
+			headers: []string{"User configuration:", "Safety and rollback:", "Inventory and credentials:", "Connection:", "Logging and run reports:"},
+		},
+		{
+			name: "config vlan add",
+			runFn: func() string {
+				// "-h" is consumed by fs.Parse; fs.Usage fires to stderr.
+				var errBuf bytes.Buffer
+				runVLAN([]string{"add", "-h"}, in, &bytes.Buffer{}, &errBuf)
+				return errBuf.String()
+			},
+			headers: []string{"VLAN configuration:", "Safety and rollback:", "Inventory and credentials:", "Connection:", "Logging and run reports:"},
+		},
+		{
+			name: "config passwd",
+			runFn: func() string {
+				var out bytes.Buffer
+				runPasswd([]string{"-h"}, in, &out, &bytes.Buffer{})
+				return out.String()
+			},
+			headers: []string{"Password rotation:", "Safety and rollback:", "Inventory and credentials:", "Connection:", "Logging and run reports:"},
+		},
+		{
+			name: "telegram-test",
+			runFn: func() string {
+				var out bytes.Buffer
+				runTelegramTest([]string{"-h"}, &out, &bytes.Buffer{})
+				return out.String()
+			},
+			headers: []string{"Configuration:"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			help := tt.runFn()
+			for _, hdr := range tt.headers {
+				if !strings.Contains(help, hdr) {
+					t.Errorf("%s help missing section %q:\n%s", tt.name, hdr, help)
+				}
+			}
+			if strings.Contains(help, "Other flags:") {
+				t.Errorf("%s help contains \"Other flags:\" — a flag is ungrouped:\n%s", tt.name, help)
+			}
+			// The flat "Flags:" line (old style) must be gone.
+			for _, line := range strings.Split(help, "\n") {
+				if strings.TrimSpace(line) == "Flags:" {
+					t.Errorf("%s help contains bare \"Flags:\" header line (old style):\n%s", tt.name, help)
+					break
+				}
+			}
+		})
+	}
+}

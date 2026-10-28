@@ -32,9 +32,14 @@ CSV by default, JSON with --json (or a .json file name). --json without
 
 A device whose output yields nothing recognisable fails loudly instead of
 producing an empty row.
-
-Flags:
 `
+
+var factsFlagGroups = []flagGroup{
+	{"Facts and output", []string{"output", "json"}},
+	{"Inventory and credentials", []string{"inventory", "limit", "env-file", "key-file", "known-hosts", "host-key-policy", "update-known-hosts", "jump", "jump-host", "jump-user", "jump-key-file", "mesh-fallback"}},
+	{"Connection", []string{"concurrency", "max-retries", "connect-timeout", "command-timeout", "timeout", "legacy-algorithms", "tcp-mss", "memory", "memory-file"}},
+	{"Logging and run reports", []string{"log-dir", "verbose", "no-color", "json-report", "csv-report"}},
+}
 
 var factsHeader = []string{"hostname", "ip", "vendor", "model", "serial", "version", "uptime"}
 
@@ -135,14 +140,13 @@ func runFacts(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var asJSON bool
 	fs := flag.NewFlagSet("netops facts", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.Usage = func() { fmt.Fprint(stderr, factsUsageText); fs.PrintDefaults() }
+	fs.Usage = func() { fmt.Fprint(stderr, factsUsageText); printFlagGroups(stderr, fs, factsFlagGroups) }
 	fs.StringVar(&output, "output", "", "also write the records to this file (CSV, or JSON with --json)")
 	fs.BoolVar(&asJSON, "json", false, "JSON instead of CSV (to --output, or to stdout when --output is not given)")
 	o.registerReadOnly(fs)
 	if len(args) > 0 && isHelpArg(args[0]) {
 		fmt.Fprint(stdout, factsUsageText)
-		fs.SetOutput(stdout)
-		fs.PrintDefaults()
+		printFlagGroups(stdout, fs, factsFlagGroups)
 		return task.ExitOK
 	}
 	if err := fs.Parse(args); err != nil {

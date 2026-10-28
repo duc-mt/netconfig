@@ -34,6 +34,14 @@ model a VLAN as a sub-interface of a parent port or use firmware-dependent
 syntax, so they are skipped and reported.
 `
 
+var vlanFlagGroups = []flagGroup{
+	{"VLAN configuration", []string{"id", "name"}},
+	{"Safety and rollback", []string{"dry-run", "yes", "force", "backup", "backup-dir", "rollback-on-fail", "strict-safety", "allow-dangerous", "canary", "batch-size", "max-fail-percent"}},
+	{"Inventory and credentials", []string{"inventory", "limit", "env-file", "key-file", "known-hosts", "host-key-policy", "update-known-hosts", "jump", "jump-host", "jump-user", "jump-key-file", "mesh-fallback"}},
+	{"Connection", []string{"concurrency", "max-retries", "connect-timeout", "command-timeout", "timeout", "legacy-algorithms", "tcp-mss", "memory", "memory-file"}},
+	{"Logging and run reports", []string{"log-dir", "verbose", "no-color", "json-report", "csv-report"}},
+}
+
 func runVLAN(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, vlanUsageText)
@@ -53,7 +61,7 @@ func runVLAN(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var name string
 	fs := flag.NewFlagSet("netops config vlan "+action, flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.Usage = func() { fmt.Fprintf(stderr, "%s\nFlags:\n", vlanUsageText); fs.PrintDefaults() }
+	fs.Usage = func() { fmt.Fprint(stderr, vlanUsageText); printFlagGroups(stderr, fs, vlanFlagGroups) }
 	fs.IntVar(&id, "id", 0, "VLAN ID (1-4094)")
 	if action == "add" {
 		fs.StringVar(&name, "name", "", "VLAN name (optional; Junos defaults to VLAN<id>)")

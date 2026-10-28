@@ -57,9 +57,14 @@ rather than producing a verdict.
 
 Exit codes: 3 when every device was audited but a check failed; 2 when some
 device could not be audited; 0 when everything passed (or is N/A).
-
-Flags:
 `
+
+var auditFlagGroups = []flagGroup{
+	{"Audit rules and scope", []string{"rules", "file", "vendor", "from-backups", "generate-fix", "print-defaults", "output-dir"}},
+	{"Inventory and credentials", []string{"inventory", "limit", "env-file", "key-file", "known-hosts", "host-key-policy", "update-known-hosts", "jump", "jump-host", "jump-user", "jump-key-file", "mesh-fallback"}},
+	{"Connection", []string{"concurrency", "max-retries", "connect-timeout", "command-timeout", "timeout", "legacy-algorithms", "tcp-mss", "memory", "memory-file"}},
+	{"Logging and run reports", []string{"log-dir", "verbose", "no-color", "json-report", "csv-report"}},
+}
 
 func runAudit(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var o opsFlags
@@ -67,7 +72,7 @@ func runAudit(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var printDefaults bool
 	fs := flag.NewFlagSet("netops audit", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.Usage = func() { fmt.Fprint(stderr, auditUsageText); fs.PrintDefaults() }
+	fs.Usage = func() { fmt.Fprint(stderr, auditUsageText); printFlagGroups(stderr, fs, auditFlagGroups) }
 	fs.StringVar(&rulesPath, "rules", "", "rules file (YAML subset); default: the built-in baseline")
 	fs.StringVar(&outDir, "output-dir", "", "also write audit-<time>.csv, .json and .txt into this directory")
 	fs.StringVar(&file, "file", "", "audit this saved configuration file offline (needs --vendor)")
@@ -78,8 +83,7 @@ func runAudit(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	o.registerReadOnly(fs)
 	if len(args) > 0 && isHelpArg(args[0]) {
 		fmt.Fprint(stdout, auditUsageText)
-		fs.SetOutput(stdout)
-		fs.PrintDefaults()
+		printFlagGroups(stdout, fs, auditFlagGroups)
 		return task.ExitOK
 	}
 	if err := fs.Parse(args); err != nil {

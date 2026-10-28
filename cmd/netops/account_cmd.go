@@ -41,6 +41,14 @@ Platforms with no safe non-interactive account CLI (Check Point, Palo Alto,
 pfSense, Sophos) are skipped and reported, never guessed at.
 `
 
+var userFlagGroups = []flagGroup{
+	{"User configuration", []string{"u", "privilege", "update-password"}},
+	{"Safety and rollback", []string{"dry-run", "yes", "force", "backup", "backup-dir", "rollback-on-fail", "strict-safety", "allow-dangerous", "canary", "batch-size", "max-fail-percent"}},
+	{"Inventory and credentials", []string{"inventory", "limit", "env-file", "key-file", "known-hosts", "host-key-policy", "update-known-hosts", "jump", "jump-host", "jump-user", "jump-key-file", "mesh-fallback"}},
+	{"Connection", []string{"concurrency", "max-retries", "connect-timeout", "command-timeout", "timeout", "legacy-algorithms", "tcp-mss", "memory", "memory-file"}},
+	{"Logging and run reports", []string{"log-dir", "verbose", "no-color", "json-report", "csv-report"}},
+}
+
 const rotateUsageText = `netops config passwd: rotate a local account's password, or the enable secret.
 
 Usage:
@@ -64,9 +72,15 @@ The new password comes from a hidden prompt, or NETOPS_NEW_PASSWORD.
 
 Rotating the account this run logs in with is allowed; remember to update
 NETOPS_PASSWORD afterwards.
-
-Flags:
 `
+
+var passwdFlagGroups = []flagGroup{
+	{"Password rotation", []string{"u", "enable", "auto-generate", "password-file", "commit-confirm"}},
+	{"Safety and rollback", []string{"dry-run", "yes", "force", "backup", "backup-dir", "rollback-on-fail", "strict-safety", "allow-dangerous", "canary", "batch-size", "max-fail-percent"}},
+	{"Inventory and credentials", []string{"inventory", "limit", "env-file", "key-file", "known-hosts", "host-key-policy", "update-known-hosts", "jump", "jump-host", "jump-user", "jump-key-file", "mesh-fallback"}},
+	{"Connection", []string{"concurrency", "max-retries", "connect-timeout", "command-timeout", "timeout", "legacy-algorithms", "tcp-mss", "memory", "memory-file"}},
+	{"Logging and run reports", []string{"log-dir", "verbose", "no-color", "json-report", "csv-report"}},
+}
 
 // generatePassword returns n random characters containing at least one
 // lower-case letter, upper-case letter, digit and symbol, all of them safe to
@@ -178,7 +192,7 @@ func runUser(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var updatePassword bool
 	fs := flag.NewFlagSet("netops config user "+action, flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.Usage = func() { fmt.Fprintf(stderr, "%s\nFlags:\n", userUsageText); fs.PrintDefaults() }
+	fs.Usage = func() { fmt.Fprint(stderr, userUsageText); printFlagGroups(stderr, fs, userFlagGroups) }
 	fs.StringVar(&username, "u", "", "account name")
 	if action == "add" {
 		fs.IntVar(&privilege, "privilege", 15, "privilege level 1-15 (Junos: 15 super-user, 8-14 operator, 1-7 read-only)")
@@ -268,7 +282,7 @@ func runPasswd(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var confirmMinutes int
 	fs := flag.NewFlagSet("netops config passwd", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.Usage = func() { fmt.Fprint(stderr, rotateUsageText); fs.PrintDefaults() }
+	fs.Usage = func() { fmt.Fprint(stderr, rotateUsageText); printFlagGroups(stderr, fs, passwdFlagGroups) }
 	fs.StringVar(&username, "u", "", "local account whose password is rotated")
 	fs.BoolVar(&enable, "enable", false, "rotate the enable secret instead of an account")
 	fs.BoolVar(&autoGenerate, "auto-generate", false, "generate a random password (requires --password-file)")
@@ -277,8 +291,7 @@ func runPasswd(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	o.register(fs)
 	if len(args) > 0 && isHelpArg(args[0]) {
 		fmt.Fprint(stdout, rotateUsageText)
-		fs.SetOutput(stdout)
-		fs.PrintDefaults()
+		printFlagGroups(stdout, fs, passwdFlagGroups)
 		return task.ExitOK
 	}
 	if err := fs.Parse(args); err != nil {

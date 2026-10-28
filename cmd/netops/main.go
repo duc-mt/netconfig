@@ -1017,22 +1017,23 @@ const telegramTestUsageText = `netops telegram-test: test Telegram alert notific
 
 Usage:
   netops telegram-test [flags]
-
-Flags:
 `
+
+var telegramTestFlagGroups = []flagGroup{
+	{"Configuration", []string{"env-file"}},
+}
 
 func runTelegramTest(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("netops telegram-test", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
 		fmt.Fprint(stderr, telegramTestUsageText)
-		fs.PrintDefaults()
+		printFlagGroups(stderr, fs, telegramTestFlagGroups)
 	}
 	envFile := fs.String("env-file", ".env", "path to .env file")
 	if len(args) > 0 && isHelpArg(args[0]) {
 		fmt.Fprint(stdout, telegramTestUsageText)
-		fs.SetOutput(stdout)
-		fs.PrintDefaults()
+		printFlagGroups(stdout, fs, telegramTestFlagGroups)
 		return task.ExitOK
 	}
 	if err := fs.Parse(args); err != nil {
