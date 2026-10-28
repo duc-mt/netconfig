@@ -642,9 +642,9 @@ Taking backups uses `netops backup <flags>`, and browsing backups uses
   * `-mesh-fallback` is **opt-in** to avoid unneeded hops over neighboring management interfaces.
   * Authentication failures, host-key mismatches, and refused commands are **never retried** by `-retries` to avoid account lockouts.
 
-## Operations automation (`user`, `passwd`, `vlan`, `facts`, `find`, `audit`, `diff`)
+## Operations automation (`user`, `passwd`, `vlan`, `facts`, `find`, `audit`, `diff`, `telegram-test`)
 
-Seven subcommands built on the same engine as a configuration run: same `inventory.csv`, `.env`
+Eight subcommands built on the same engine as a configuration run: same `inventory.csv`, `.env`
 credentials, jump hosts, host-key policy, `-limit`, `-concurrency`, `-backup`, `-dry-run`, `-yes`,
 `-canary`, `-rollback-on-fail`, logging and result table. `-timeout` is an alias of
 `-command-timeout`, and every flag may be written `-flag` or `--flag`.
@@ -660,6 +660,7 @@ credentials, jump hosts, host-key policy, `-limit`, `-concurrency`, `-backup`, `
 ./run find --ip 10.1.20.15                       # which switch port is this host on?
 ./run audit --output-dir audit_reports/          # PASS / FAIL matrix against a baseline
 ./run diff -commands commands.txt                # what would this file change?
+./run telegram-test                              # test Telegram alerts and .env credentials
 ./run <subcommand> --help                        # every flag of that subcommand
 ```
 
@@ -949,6 +950,57 @@ Columns: host, address, vendor, status, applied commands, reason, time, detail, 
 
 Exit codes: **0** every selected device succeeded, **1** fatal configuration/usage error (also:
 declined at the prompt, refused to run unattended), **2** at least one device failed or was skipped.
+
+## Telegram notifications
+
+netops natively supports sending real-time operational notifications, configuration summaries, and backup change/drift alerts directly to Telegram channels or groups without third-party CLI dependencies.
+
+### Configuration (`.env`)
+
+Add the following variables to your `.env` (or set them in your process environment):
+
+```dotenv
+# Enable Telegram alerts (true / 1 / yes / on)
+TELEGRAM_ENABLED=true
+
+# Telegram Bot Token from @BotFather
+TELEGRAM_BOT_TOKEN="000000000:AAFg-XXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+# Target Chat ID or Channel ID (e.g. -1001234567890)
+TELEGRAM_CHAT_ID="-1001234567890"
+
+# Optional: Topic / thread ID for supergroups with forum topics enabled
+# TELEGRAM_MESSAGE_THREAD_ID=
+
+# Optional: Deliver messages silently without sound notification (true / false)
+# TELEGRAM_SILENT=false
+
+# Optional: Outbound HTTP / SOCKS5 proxy URL for air-gapped networks
+# TELEGRAM_PROXY_URL="http://proxy.internal:8080"
+
+# Optional: Cooldown duration between messages in seconds
+# TELEGRAM_COOLDOWN_SECONDS=0
+```
+
+### Verification (`netops telegram-test`)
+
+Validate your bot credentials and network routing before starting automation runs:
+
+```sh
+./run telegram-test
+# or specify a custom credentials file:
+./run telegram-test -env-file custom.env
+```
+
+If delivery succeeds, `telegram-test` sends a verification ping to your chat and outputs `SUCCESS: Test notification delivered to Telegram.`
+
+### Automated alert triggers
+
+When `TELEGRAM_ENABLED=true` is set:
+- **`netops config`**: Dispatches a completion report with total devices, succeeded, failed, skipped count, run duration, and categorized error breakdown.
+- **`netops backup`**: Dispatches an alert containing total devices, backup changes detected, golden-config compliance drift, and the list of failed devices.
+- **Operations (`user`, `passwd`, `vlan`, `facts`, `audit`)**: Automatically sends execution summaries upon completion.
+- **Dry-run awareness**: Any dry-run execution (`-dry-run`) is explicitly labeled with `[DRY-RUN]` and a yellow status badge in the message header.
 
 ## Flags
 
