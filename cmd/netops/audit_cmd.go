@@ -75,7 +75,7 @@ func runAudit(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	fs.StringVar(&fromBackups, "from-backups", "", "audit the saved configs of a backup run (or the newest run under this root) offline")
 	fs.StringVar(&fixPath, "generate-fix", "", "write the remediation of every failed check to this file (guidance, as comments)")
 	fs.BoolVar(&printDefaults, "print-defaults", false, "print the built-in rules in the rules-file format and exit")
-	o.register(fs)
+	o.registerReadOnly(fs)
 	if len(args) > 0 && isHelpArg(args[0]) {
 		fmt.Fprint(stdout, auditUsageText)
 		fs.SetOutput(stdout)

@@ -217,7 +217,19 @@ func (w *opsWS) run(args ...string) (code int, stdout, stderr string) {
 	for n < len(args) && !strings.HasPrefix(args[n], "-") {
 		n++
 	}
-	full := append(append(append([]string{}, args[:n]...), w.base...), args[n:]...)
+	base := w.base
+	if n > 0 && (args[0] == "facts" || args[0] == "find" || args[0] == "audit") {
+		var filtered []string
+		for i := 0; i < len(base); i++ {
+			if base[i] == "-backup-dir" {
+				i++
+				continue
+			}
+			filtered = append(filtered, base[i])
+		}
+		base = filtered
+	}
+	full := append(append(append([]string{}, args[:n]...), base...), args[n:]...)
 	code = dispatch(full, in, &out, &errb)
 	return code, out.String(), errb.String()
 }
@@ -895,26 +907,28 @@ func dispatchOut(t *testing.T, args ...string) (int, string, string) {
 }
 
 func TestHelpForEverySubcommand(t *testing.T) {
+	readOnlyForbidden := []string{"  -backup\n", "  -backup ", "  -backup-dir", "  -dry-run", "  -rollback-on-fail", "  -canary", "  -strict-safety", "  -allow-dangerous"}
 	tests := []struct {
-		args      []string
-		want      string
-		wantFlags string
+		args        []string
+		want        string
+		wantFlags   string
+		forbidFlags []string
 	}{
-		{[]string{"apply"}, "netops apply - apply configuration", "-limit"},
-		{[]string{"config"}, "netops config: declarative resource management", ""},
-		{[]string{"config", "user"}, "netops config user:", ""},
-		{[]string{"config", "user", "add"}, "netops config user:", "-limit"},
-		{[]string{"config", "user", "del"}, "netops config user:", "-limit"},
-		{[]string{"config", "passwd"}, "netops config passwd:", "-limit"},
-		{[]string{"config", "vlan"}, "netops config vlan:", ""},
-		{[]string{"config", "vlan", "add"}, "netops config vlan:", "-limit"},
-		{[]string{"config", "vlan", "del"}, "netops config vlan:", "-limit"},
-		{[]string{"facts"}, "netops facts:", "-limit"},
-		{[]string{"find"}, "netops find:", "-limit"},
-		{[]string{"audit"}, "netops audit:", "-limit"},
-		{[]string{"diff"}, "netops diff:", "-limit"},
-		{[]string{"init"}, "netops init:", ""},
-		{[]string{"telegram-test"}, "netops telegram-test:", "-env-file"},
+		{[]string{"apply"}, "netops apply - apply configuration", "-limit", nil},
+		{[]string{"config"}, "netops config: declarative resource management", "", nil},
+		{[]string{"config", "user"}, "netops config user:", "", nil},
+		{[]string{"config", "user", "add"}, "netops config user:", "-limit", nil},
+		{[]string{"config", "user", "del"}, "netops config user:", "-limit", nil},
+		{[]string{"config", "passwd"}, "netops config passwd:", "-limit", nil},
+		{[]string{"config", "vlan"}, "netops config vlan:", "", nil},
+		{[]string{"config", "vlan", "add"}, "netops config vlan:", "-limit", nil},
+		{[]string{"config", "vlan", "del"}, "netops config vlan:", "-limit", nil},
+		{[]string{"facts"}, "netops facts:", "-limit", readOnlyForbidden},
+		{[]string{"find"}, "netops find:", "-limit", readOnlyForbidden},
+		{[]string{"audit"}, "netops audit:", "-limit", readOnlyForbidden},
+		{[]string{"diff"}, "netops diff:", "-limit", nil},
+		{[]string{"init"}, "netops init:", "", nil},
+		{[]string{"telegram-test"}, "netops telegram-test:", "-env-file", nil},
 	}
 	for _, tt := range tests {
 		for _, flagForm := range []string{"--help", "-h"} {
@@ -929,6 +943,11 @@ func TestHelpForEverySubcommand(t *testing.T) {
 			}
 			if tt.wantFlags != "" && !strings.Contains(out, tt.wantFlags) {
 				t.Errorf("%v: help lacks flag %q\nGot:\n%s", callArgs, tt.wantFlags, out)
+			}
+			for _, forbid := range tt.forbidFlags {
+				if strings.Contains(out, forbid) {
+					t.Errorf("%v: help should NOT contain %q\nGot:\n%s", callArgs, forbid, out)
+				}
 			}
 		}
 	}

@@ -36,12 +36,11 @@ var newOpsTransport = func(hostKey sshclient.HostKeyCallback, legacy bool, pool 
 	return sshTransport{hostKey: hostKey, legacy: legacy, autoConfirm: true, pool: pool, autoFallback: autoFallback, tcpMSS: tcpMSS}
 }
 
-// opsFlags is the part of the command line every automation subcommand
-// understands. It mirrors the classic runner's flags of the same name.
-//
-// The change-related flags (-dry-run, -yes, -backup, ...) are accepted by all
-// subcommands so one set of wrapper-script arguments works everywhere; they
-// have no effect on the read-only ones (facts, find, audit).
+// opsFlags contains flags shared across automation subcommands.
+// Read-only subcommands (facts, find, audit) register only targeting, connection,
+// logging, and report flags (registerReadOnly). Change-oriented subcommands
+// (config user/vlan/passwd, diff) additionally register safety and write-control
+// flags (registerChangeSafety).
 type opsFlags struct {
 	inventory, limit, envFile, knownHosts, hostKeyPolicy, logDir, keyFile string
 	jumpHost, jumpUser, jumpKeyFile, memoryFile                           string
@@ -55,8 +54,10 @@ type opsFlags struct {
 	failPercentSet                                                           bool
 }
 
-// register adds the shared flags to fs.
-func (o *opsFlags) register(fs *flag.FlagSet) {
+// registerReadOnly adds the flags that every subcommand (including read-only
+// ones like facts, find and audit) understands: inventory targeting, SSH
+// connection options, logging and reporting.
+func (o *opsFlags) registerReadOnly(fs *flag.FlagSet) {
 	fs.StringVar(&o.inventory, "inventory", "inventory.csv", "inventory CSV: hostname,address,port,vendor,credential_group")
 	fs.StringVar(&o.limit, "limit", "", "only these devices: comma-separated hostname globs, or @group")
 	fs.IntVar(&o.concurrency, "concurrency", 10, "maximum number of devices handled at the same time")
@@ -84,7 +85,11 @@ func (o *opsFlags) register(fs *flag.FlagSet) {
 	fs.IntVar(&o.tcpMSS, "tcp-mss", 1360, "TCP Maximum Segment Size for outgoing SSH sockets (0 = OS default)")
 	fs.BoolVar(&o.memory, "memory", true, "remember learned routing and fallback paths across runs")
 	fs.StringVar(&o.memoryFile, "memory-file", memory.DefaultFile, "persistent memory file for learned device routes")
+}
 
+// registerChangeSafety adds the write/change-control flags that only apply to
+// subcommands that modify device state (config user/vlan/passwd, diff).
+func (o *opsFlags) registerChangeSafety(fs *flag.FlagSet) {
 	fs.BoolVar(&o.dryRun, "dry-run", false, "check and simulate only; never commits or saves anything")
 	fs.BoolVar(&o.yes, "yes", false, "skip the [y/N] confirmation prompt")
 	fs.BoolVar(&o.force, "force", false, "same as -yes; also accepts CRITICAL lockout risks that -strict-safety would block")
@@ -96,6 +101,13 @@ func (o *opsFlags) register(fs *flag.FlagSet) {
 	fs.IntVar(&o.canary, "canary", 0, "apply to N devices first; stop if any canary fails")
 	fs.IntVar(&o.batchSize, "batch-size", 0, "apply to the remaining devices in sequential batches of N (0 = all at once)")
 	fs.IntVar(&o.maxFailPercent, "max-fail-percent", 100, "abort later batches if the cumulative failure rate exceeds this % (0-100)")
+}
+
+// register adds all flags (read-only + change-safety) to fs. Used by
+// subcommands that can modify device state (config user/vlan/passwd, diff).
+func (o *opsFlags) register(fs *flag.FlagSet) {
+	o.registerReadOnly(fs)
+	o.registerChangeSafety(fs)
 }
 
 // noteSetFlags records which flags were given explicitly.

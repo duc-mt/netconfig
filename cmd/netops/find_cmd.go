@@ -113,7 +113,7 @@ are uplinks (port-channels, and trunks on platforms that can list them): the
 answer is the access port. Uplink sightings are only shown when nothing better
 was found, or with --all.
 
-Read-only. -dry-run, -yes and -backup have no effect here.
+Read-only.
 
 Flags:
 `
@@ -128,7 +128,7 @@ func runFind(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	fs.StringVar(&mac, "mac", "", "MAC address to locate")
 	fs.StringVar(&ip, "ip", "", "IPv4 address to locate")
 	fs.BoolVar(&all, "all", false, "also list sightings on uplinks (trunks and port-channels)")
-	o.register(fs)
+	o.registerReadOnly(fs)
 	if len(args) > 0 && isHelpArg(args[0]) {
 		fmt.Fprint(stdout, findUsageText)
 		fs.SetOutput(stdout)

@@ -31,7 +31,7 @@ CSV by default, JSON with --json (or a .json file name). --json without
 --output prints JSON to stdout instead of the table.
 
 A device whose output yields nothing recognisable fails loudly instead of
-producing an empty row. -dry-run, -yes and -backup have no effect here.
+producing an empty row.
 
 Flags:
 `
@@ -138,7 +138,7 @@ func runFacts(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	fs.Usage = func() { fmt.Fprint(stderr, factsUsageText); fs.PrintDefaults() }
 	fs.StringVar(&output, "output", "", "also write the records to this file (CSV, or JSON with --json)")
 	fs.BoolVar(&asJSON, "json", false, "JSON instead of CSV (to --output, or to stdout when --output is not given)")
-	o.register(fs)
+	o.registerReadOnly(fs)
 	if len(args) > 0 && isHelpArg(args[0]) {
 		fmt.Fprint(stdout, factsUsageText)
 		fs.SetOutput(stdout)
