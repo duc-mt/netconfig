@@ -926,6 +926,7 @@ func TestHelpForEverySubcommand(t *testing.T) {
 		{[]string{"facts"}, "netops facts:", "-limit", readOnlyForbidden},
 		{[]string{"find"}, "netops find:", "-limit", readOnlyForbidden},
 		{[]string{"audit"}, "netops audit:", "-limit", readOnlyForbidden},
+		{[]string{"cve"}, "netops cve:", "-limit", nil},
 		{[]string{"diff"}, "netops diff:", "-limit", nil},
 		{[]string{"init"}, "netops init:", "", nil},
 		{[]string{"telegram-test"}, "netops telegram-test:", "-env-file", nil},

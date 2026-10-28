@@ -807,6 +807,92 @@ guessed at, and never stops the rest of the run.
 | pfSense | no | no | no | yes | no / yes | 3 of 6 | no |
 | Sophos | no | no | no | yes | no / no | 0 of 6 | no |
 
+## CVE check (`netops cve`)
+
+Read-only. Checks the software version of a device against known vulnerabilities and lists the CVEs
+that apply, with the release that fixes each. It never changes a device.
+
+```sh
+./run cve -os cisco-ios-xe -version 17.6.1            # one OS and version; no device is contacted
+./run cve -from-facts facts.json                      # a `facts --json` export (CMDB); no device is contacted
+./run cve                                             # collect versions over SSH (like `facts`), then check
+./run cve --notify --output cves.csv                  # also alert Telegram and write a CSV
+./run cve -update-db -os cisco-ios-xe                 # refresh the offline cache (on a connected host)
+./run cve -offline -from-facts facts.json             # answer from the cache only (air-gapped host)
+```
+
+```
+$ ./run cve -os cisco-ios-xe -version 17.06.01
++----------+----+--------------+----------+----------------+----------+------+----------+
+| HOSTNAME | IP | OS           | VERSION  | CVE-ID         | SEVERITY | CVSS | FIXED IN |
++----------+----+--------------+----------+----------------+----------+------+----------+
+| -        | -  | cisco-ios-xe | 17.06.01 | CVE-2023-20198 | CRITICAL | 10.0 | 17.6.6a  |
++----------+----+--------------+----------+----------------+----------+------+----------+
+```
+
+**Platforms.** `-os` takes a platform name as in the inventory's `vendor` column or a specific OS
+name: `cisco-ios-xe`, `cisco-ios`, `cisco-asa`, `cisco-ftd`, `junos`, `fortios`, `eos`, `routeros`,
+`pan-os`, `checkpoint`, `vyos`, `pfsense`, `sophos`. A bare `cisco` (what `facts` reports for both
+IOS and IOS XE) is told apart by the version: `15.2(7)E3` is IOS, `17.06.01` is IOS XE. Platforms
+without a reliable CVE product mapping (`cisco_sb`, `huawei`, `aruba`, `ruijie`) are **reported,
+never guessed**. In inventory mode a device is checked only if `facts` supports its platform (see
+the table above; RouterOS needs `-os`/`-version` or `-from-facts`).
+
+**Sources.** NIST NVD API 2.0 covers every platform and is the baseline. The Cisco PSIRT openVuln
+API covers Cisco platforms and often lists an advisory before NVD analyses it. OSV.dev is queried
+for platforms that map to an OSV package; OSV indexes open-source ecosystems, so none of the
+built-in network platforms do today, and it is wired in for when one is mapped. Advisories found by
+several sources are merged by CVE ID: the highest CVSS score wins, reference URLs are united and
+`source` reads e.g. `NVD+CISCO`.
+
+| `.env` key | Effect |
+|---|---|
+| `NVD_API_KEY` | optional; raises NVD's rate limit (5 requests / 30 s without a key) |
+| `CISCO_PSIRT_CLIENT_ID`, `CISCO_PSIRT_CLIENT_SECRET` | enable Cisco PSIRT (OAuth2 client credentials from the Cisco API Console) |
+| `TELEGRAM_ENABLED`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | used by `--notify` |
+
+Each request has a timeout (`-http-timeout`, default 8 s; NVD answers for large products can be slower, so
+raise it if lookups time out). Rate-limited requests (HTTP 429/503) are retried with exponential backoff.
+
+**Offline cache.** Every successful lookup is stored in `-db` (default `.cve_cache.json.gz`, gzip JSON,
+git-ignored by `.cve_cache*`). The cache holds each product's advisories *with their version ranges*, so
+it answers for any version, not just those looked up before. If a source fails or times out, the cache
+answers instead (advisories are labelled `CACHE` and a warning says why); `-offline` never touches the
+network. To prepare an air-gapped host, run `netops cve -update-db` on a connected one (`-os`,
+`-from-facts` or `-inventory` selects the platforms) and copy the cache file across. NVD data needs no
+version; Cisco PSIRT answers are per version, so they are cached only for the versions that `-version`
+or `-from-facts` name. A cache older than 7 days produces a warning.
+
+> **No data is never "clean".** If neither a live source nor the cache has data for a platform, the
+> device is reported as an error (exit 2), not as a device without CVEs. An empty answer from NVD is
+> treated the same way.
+
+**How matching works, and its limits.** Sources publish the version ranges an advisory affects;
+the device's version is compared against them locally. Versions are compared token by token, so
+`17.06.01` equals `17.6.1`, `17.9.4a` is newer than `17.9.4`, and `20.4R3-S2` is newer than `20.4R3`.
+It is a result about the *software version*, not a proof of exposure:
+
+* hardware and feature qualifiers (a CVE that needs a particular module, or an enabled service) are
+  not evaluated, so a finding means "this version is in an affected range";
+* ranges that span classic IOS trains (`M`, `E`, `S`) compare by their letters, which is approximate;
+  NVD mostly lists classic IOS releases one by one, which are matched exactly;
+* the fix shown is the one for the device's own release train where the source says so.
+
+Check the vendor advisory before acting.
+
+**Output.** `-min-severity` (default `HIGH`) hides lower-rated advisories; advisories that have no
+score yet are always listed, because a fresh disclosure is exactly what must not be hidden.
+`--output cves.csv` writes one row per device and CVE (every field, spreadsheet-formula safe) plus a
+row for each device that could not be checked; `--output cves.json` or `--json` writes JSON, and
+`--json` without `--output` prints JSON to stdout instead of the table. `--notify` sends a Telegram
+summary (HTML, split to Telegram's size limit, listing each device's worst advisories) only when
+there are findings.
+
+Exit codes: **3** = every device was checked and at least one advisory applies; 2 = a device could
+not be checked, or a requested Telegram alert was not delivered; 0 = nothing at or above
+`-min-severity` applies; 1 = usage or setup error. (As with `audit`, 3 is used so a cron job can tell
+"vulnerable" from "could not run"; 2 outranks 3.)
+
 ## Inventory
 
 ```csv
@@ -1067,6 +1153,7 @@ internal/backup          the backup engine: worker pool, change detection, diff,
 internal/redact          masks secrets in configuration text before it is saved
 internal/compliance      golden-config baselines and drift
 internal/audit           security-baseline rules, YAML-subset reader, evaluation (netops audit)
+internal/cve             CVE lookup: NVD / Cisco PSIRT / OSV sources, version matcher, offline cache (netops cve)
 internal/report          HTML report, Markdown changelog, JSON/CSV, result table
 internal/errcat          failure categories used in summaries and reports
 ```

@@ -23,3 +23,7 @@ coverage.out
 .netconfig_memory*
 .*_memory*.json
 
+
+# Offline CVE advisory cache (netops cve)
+.cve_cache*
+cve-cache*
