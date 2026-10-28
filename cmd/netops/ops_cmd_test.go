@@ -896,18 +896,25 @@ func dispatchOut(t *testing.T, args ...string) (int, string, string) {
 
 func TestHelpForEverySubcommand(t *testing.T) {
 	tests := []struct {
-		args []string
-		want string
+		args      []string
+		want      string
+		wantFlags string
 	}{
-		{[]string{"apply"}, "netops apply - apply configuration"},
-		{[]string{"config"}, "netops config: declarative resource management"},
-		{[]string{"config", "user"}, "netops config user:"},
-		{[]string{"config", "passwd"}, "netops config passwd:"},
-		{[]string{"config", "vlan"}, "netops config vlan:"},
-		{[]string{"facts"}, "netops facts:"},
-		{[]string{"find"}, "netops find:"},
-		{[]string{"audit"}, "netops audit:"},
-		{[]string{"diff"}, "netops diff:"},
+		{[]string{"apply"}, "netops apply - apply configuration", "-limit"},
+		{[]string{"config"}, "netops config: declarative resource management", ""},
+		{[]string{"config", "user"}, "netops config user:", ""},
+		{[]string{"config", "user", "add"}, "netops config user:", "-limit"},
+		{[]string{"config", "user", "del"}, "netops config user:", "-limit"},
+		{[]string{"config", "passwd"}, "netops config passwd:", "-limit"},
+		{[]string{"config", "vlan"}, "netops config vlan:", ""},
+		{[]string{"config", "vlan", "add"}, "netops config vlan:", "-limit"},
+		{[]string{"config", "vlan", "del"}, "netops config vlan:", "-limit"},
+		{[]string{"facts"}, "netops facts:", "-limit"},
+		{[]string{"find"}, "netops find:", "-limit"},
+		{[]string{"audit"}, "netops audit:", "-limit"},
+		{[]string{"diff"}, "netops diff:", "-limit"},
+		{[]string{"init"}, "netops init:", ""},
+		{[]string{"telegram-test"}, "netops telegram-test:", "-env-file"},
 	}
 	for _, tt := range tests {
 		for _, flagForm := range []string{"--help", "-h"} {
@@ -916,8 +923,12 @@ func TestHelpForEverySubcommand(t *testing.T) {
 			if code != task.ExitOK {
 				t.Errorf("%v: exit %d", callArgs, code)
 			}
-			if !strings.Contains(stdout+stderr, tt.want) {
+			out := stdout + stderr
+			if !strings.Contains(out, tt.want) {
 				t.Errorf("%v: help lacks %q", callArgs, tt.want)
+			}
+			if tt.wantFlags != "" && !strings.Contains(out, tt.wantFlags) {
+				t.Errorf("%v: help lacks flag %q\nGot:\n%s", callArgs, tt.wantFlags, out)
 			}
 		}
 	}

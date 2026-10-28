@@ -78,6 +78,8 @@ func runAudit(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	o.register(fs)
 	if len(args) > 0 && isHelpArg(args[0]) {
 		fmt.Fprint(stdout, auditUsageText)
+		fs.SetOutput(stdout)
+		fs.PrintDefaults()
 		return task.ExitOK
 	}
 	if err := fs.Parse(args); err != nil {

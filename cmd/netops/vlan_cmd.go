@@ -32,8 +32,6 @@ Only platforms with a global VLAN database are handled: Cisco IOS/IOS-XE,
 Arista, Ruijie, Aruba AOS-CX, Huawei and Junos. Firewalls, VyOS and Cisco SB
 model a VLAN as a sub-interface of a parent port or use firmware-dependent
 syntax, so they are skipped and reported.
-
-Flags:
 `
 
 func runVLAN(args []string, stdin *os.File, stdout, stderr io.Writer) int {
@@ -55,7 +53,7 @@ func runVLAN(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var name string
 	fs := flag.NewFlagSet("netops config vlan "+action, flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.Usage = func() { fmt.Fprint(stderr, vlanUsageText); fs.PrintDefaults() }
+	fs.Usage = func() { fmt.Fprintf(stderr, "%s\nFlags:\n", vlanUsageText); fs.PrintDefaults() }
 	fs.IntVar(&id, "id", 0, "VLAN ID (1-4094)")
 	if action == "add" {
 		fs.StringVar(&name, "name", "", "VLAN name (optional; Junos defaults to VLAN<id>)")

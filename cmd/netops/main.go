@@ -97,8 +97,6 @@ a group-specific variable always overrides the global one.
 
 Exit codes: 0 all devices succeeded, 1 fatal configuration error (or aborted
 at the confirmation prompt), 2 some devices failed or were skipped.
-
-Flags:
 `
 
 const configUsageText = `netops config: declarative resource management across network devices.
@@ -114,7 +112,15 @@ Subcommands:
 Run 'netops config <subcommand> -h' for flags and usage of a specific subcommand.
 `
 
-const usageText = applyUsageText
+var applyFlagGroups = []flagGroup{
+	{"Execution", []string{"commands", "template", "var", "op", "plan", "dry-run", "yes", "force", "auto-confirm"}},
+	{"Safety and Rollback", []string{"strict-safety", "allow-dangerous", "backup", "backup-dir", "rollback-on-fail", "diff", "pre-diff", "confirm-diff", "commit-confirm", "allow-reboot-rollback", "verify-file"}},
+	{"Devices and Batching", []string{"inventory", "limit", "concurrency", "canary", "batch-size", "max-fail-percent"}},
+	{"Connection", []string{"connect-timeout", "command-timeout", "max-retries", "env-file", "key-file", "host-key-policy", "update-known-hosts", "known-hosts", "legacy-algorithms", "tcp-mss"}},
+	{"Jump hosts and routing", []string{"jump", "jump-host", "jump-user", "jump-key-file", "mesh-fallback", "memory", "memory-file", "show-memory", "clear-memory"}},
+	{"Reporting and Output", []string{"log-dir", "output-dir", "json-report", "csv-report", "format", "dashboard", "no-color", "verbose"}},
+	{"General", []string{"init", "version"}},
+}
 
 type stringList []string
 
@@ -224,6 +230,16 @@ func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	case "diff":
 		return runDiff(args[1:], stdin, stdout, stderr)
 	case "init", "-init":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			fmt.Fprint(stdout, `netops init: generate sample configuration and inventory files in current directory.
+
+Usage:
+  netops init
+
+Generates sample inventory.csv, commands.txt, and .env template if they do not already exist.
+`)
+			return task.ExitOK
+		}
 		return runInit(stdout, stderr)
 	case "telegram-test":
 		return runTelegramTest(args[1:], stdout, stderr)
@@ -246,8 +262,8 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	cf := &commonFlags{}
 	cf.register(fs)
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, usageText, strings.Join(vendor.Names(), ", "))
-		fs.PrintDefaults()
+		fmt.Fprintf(stderr, "%s\n", fmt.Sprintf(applyUsageText, strings.Join(vendor.Names(), ", ")))
+		printFlagGroups(stderr, fs, applyFlagGroups)
 	}
 
 	var vars stringList
@@ -994,11 +1010,32 @@ func isFlagSet(fs *flag.FlagSet, name string) bool {
 	return found
 }
 
+const telegramTestUsageText = `netops telegram-test: test Telegram alert notifications.
+
+Usage:
+  netops telegram-test [flags]
+
+Flags:
+`
+
 func runTelegramTest(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("telegram-test", flag.ContinueOnError)
+	fs := flag.NewFlagSet("netops telegram-test", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	fs.Usage = func() {
+		fmt.Fprint(stderr, telegramTestUsageText)
+		fs.PrintDefaults()
+	}
 	envFile := fs.String("env-file", ".env", "path to .env file")
+	if len(args) > 0 && isHelpArg(args[0]) {
+		fmt.Fprint(stdout, telegramTestUsageText)
+		fs.SetOutput(stdout)
+		fs.PrintDefaults()
+		return task.ExitOK
+	}
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return task.ExitOK
+		}
 		return task.ExitFatal
 	}
 

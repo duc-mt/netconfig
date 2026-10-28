@@ -39,8 +39,6 @@ override: log in as a different administrator.
 
 Platforms with no safe non-interactive account CLI (Check Point, Palo Alto,
 pfSense, Sophos) are skipped and reported, never guessed at.
-
-Flags:
 `
 
 const rotateUsageText = `netops config passwd: rotate a local account's password, or the enable secret.
@@ -180,13 +178,17 @@ func runUser(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var updatePassword bool
 	fs := flag.NewFlagSet("netops config user "+action, flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.Usage = func() { fmt.Fprint(stderr, userUsageText); fs.PrintDefaults() }
+	fs.Usage = func() { fmt.Fprintf(stderr, "%s\nFlags:\n", userUsageText); fs.PrintDefaults() }
 	fs.StringVar(&username, "u", "", "account name")
 	if action == "add" {
 		fs.IntVar(&privilege, "privilege", 15, "privilege level 1-15 (Junos: 15 super-user, 8-14 operator, 1-7 read-only)")
 		fs.BoolVar(&updatePassword, "update-password", false, "change the password of an account that already exists instead of skipping it")
 	}
 	o.register(fs)
+	if isHelpArg(action) {
+		fmt.Fprint(stdout, userUsageText)
+		return task.ExitOK
+	}
 	if err := fs.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return task.ExitOK
@@ -260,10 +262,6 @@ func loginConflict(username string, names map[string]string) string {
 func isHelpArg(a string) bool { return a == "-h" || a == "-help" || a == "--help" || a == "help" }
 
 func runPasswd(args []string, stdin *os.File, stdout, stderr io.Writer) int {
-	if len(args) > 0 && isHelpArg(args[0]) {
-		fmt.Fprint(stdout, rotateUsageText)
-		return task.ExitOK
-	}
 	var o opsFlags
 	var username, passwordFile string
 	var enable, autoGenerate bool
@@ -277,6 +275,12 @@ func runPasswd(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	fs.StringVar(&passwordFile, "password-file", "", "file (mode 0600, must not exist) that receives the generated password")
 	fs.IntVar(&confirmMinutes, "commit-confirm", task.DefaultConfirmMinutes, "commit-confirm window in `minutes` on platforms that apply changes at commit")
 	o.register(fs)
+	if len(args) > 0 && isHelpArg(args[0]) {
+		fmt.Fprint(stdout, rotateUsageText)
+		fs.SetOutput(stdout)
+		fs.PrintDefaults()
+		return task.ExitOK
+	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return task.ExitOK
