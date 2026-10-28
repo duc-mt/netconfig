@@ -19,12 +19,12 @@ Supported platforms: Cisco IOS/IOS-XE, Cisco Small Business (SF/SG/CBS), Cisco A
 No matter what device or OS you are using (Linux, macOS, Windows, x86_64, ARM64), you don't need to remember binary names or build steps.
 
 ### Option 1: Universal Auto-Detect Script (Linux / macOS / Windows)
-Simply execute `./run <subcommand>` (or `.\scripts\run.bat <subcommand>` on native Windows CMD). It automatically detects your host OS and CPU architecture and launches the correct pre-built binary. For the `config` subcommand, if no `-commands` or `-template` arguments are passed, it automatically defaults to `-commands commands.txt`:
+Simply execute `./run <subcommand>` (or `.\scripts\run.bat <subcommand>` on native Windows CMD). It automatically detects your host OS and CPU architecture and launches the correct pre-built binary. For the `apply` subcommand, if no `-commands` or `-template` arguments are passed, it automatically defaults to `-commands commands.txt`:
 
 ```bash
 make init                 # 1. Initialize .env, inventory.csv, and commands.txt
-./run config              # 2. Automatically launches config with -commands commands.txt
-./run config -dry-run     # 3. Dry-run mode (safe, validates on device)
+./run apply               # 2. Automatically launches apply with -commands commands.txt
+./run apply -dry-run      # 3. Dry-run mode (safe, validates on device)
 ./run backup              # 4. Take configuration backups
 ```
 
@@ -34,12 +34,12 @@ All builds are automatically compiled and published to GitHub on every commit:
 2. Under **Latest Build**, download the single binary for your target OS (`.exe` for Windows, `linux-amd64` for Linux).
 3. Bring only this binary to any machine (online or air-gapped).
 4. Run `netops.exe init` (or `./netops-linux-amd64 init`) to generate sample `inventory.csv`, `commands.txt`, and `.env` template files instantly!
-5. Run `netops.exe config` (defaults to `commands.txt`, `inventory.csv`, and `.env` automatically).
+5. Run `netops.exe apply` (defaults to `commands.txt`, `inventory.csv`, and `.env` automatically).
 
 ### Option 3: Standard Make / Direct Binary
 - **Initialize config:** `make init`
 - **Build (offline):** `make build` (or `make cross` for all platforms)
-- **Run direct binary:** `./bin/netops config`
+- **Run direct binary:** `./bin/netops apply`
 
 ## Build
 
@@ -94,26 +94,26 @@ Available example files in `examples/`:
 
 ```sh
 # First run: test connectivity and record host keys without touching device config
-./bin/netops config -commands commands.txt -dry-run -host-key-policy accept-new
+./bin/netops apply -commands commands.txt -dry-run -host-key-policy accept-new
 
 # Production run: push commands with automatic pre-change configuration backup
-./bin/netops config -commands commands.txt -backup
+./bin/netops apply -commands commands.txt -backup
 
 # Operational (show) commands — no configure/commit/save triggered
-./bin/netops config -op -commands <(echo "show ip ospf route | match 248") -yes -host-key-policy accept-new
+./bin/netops apply -op -commands <(echo "show ip ospf route | match 248") -yes -host-key-policy accept-new
 
 # Write per-device output files and a JSON run report
-./bin/netops config -op -commands <(echo "show version") -yes \
+./bin/netops apply -op -commands <(echo "show version") -yes \
   -output-dir results/ -json-report run.json -host-key-policy accept-new
 
 # Config change with auto-rollback on failure
-./bin/netops config -commands commands.txt -backup -rollback-on-fail -yes
+./bin/netops apply -commands commands.txt -backup -rollback-on-fail -yes
 ```
 
 Templates (rendered once per device):
 
 ```sh
-./bin/netops config -template examples/config.tmpl -var ntp=10.0.0.1 -var syslog=10.0.0.2 -limit '@dc1' -backup
+./bin/netops apply -template examples/config.tmpl -var ntp=10.0.0.1 -var syslog=10.0.0.2 -limit '@dc1' -backup
 ```
 
 ## Features
@@ -125,7 +125,7 @@ configuration mode. No `configure`, no `commit`, no `save` is issued — the
 command runs directly in the device's operational shell.
 
 ```sh
-./bin/netops -op -commands <(echo "show ip ospf route | match 248") \
+./bin/netops apply -op -commands <(echo "show ip ospf route | match 248") \
   -yes -host-key-policy accept-new
 ```
 
@@ -139,7 +139,7 @@ Save each device's command responses to `<dir>/<hostname>.txt` for easy
 offline review, diffing, or scripting:
 
 ```sh
-./bin/netops -op -commands commands.txt -yes -output-dir results/
+./bin/netops apply -op -commands commands.txt -yes -output-dir results/
 ls results/
 # NHG-HO-GW-01.txt  NHG-TRANSIT-GW-01.txt  ...
 ```
@@ -154,7 +154,7 @@ Write a machine-readable summary of the entire run to a JSON file — useful for
 CI/CD pipelines, dashboards, or post-processing:
 
 ```sh
-./bin/netops config -commands commands.txt -backup -json-report run.json
+./bin/netops apply -commands commands.txt -backup -json-report run.json
 cat run.json
 ```
 
@@ -171,7 +171,7 @@ content as configuration commands, reverting the device to its known-good
 state:
 
 ```sh
-./bin/netops config -commands commands.txt -backup -rollback-on-fail -yes
+./bin/netops apply -commands commands.txt -backup -rollback-on-fail -yes
 ```
 
 Rollback is best-effort: the original failure is still recorded in the result
@@ -304,7 +304,7 @@ Safely roll out configuration updates in staged waves with failure thresholds:
 ```sh
 # Run 1 canary device first; if successful, process remaining devices in batches of 5.
 # Abort immediately if cumulative failures exceed 10%.
-./bin/netops config -commands commands.txt -canary 1 -batch-size 5 -max-fail-percent 10 -backup
+./bin/netops apply -commands commands.txt -canary 1 -batch-size 5 -max-fail-percent 10 -backup
 ```
 
 - **`-canary N`**: executes `N` devices first as a canary wave. If any canary device fails, the entire run halts immediately; all unstarted devices are marked `SKIPPED (CANARY_FAILED)`.
@@ -317,10 +317,10 @@ Inspect exact device-side candidate configuration diffs before committing change
 
 ```sh
 # Inspect candidate diff (Junos "show | compare", VyOS "compare", Arista "show session-config diffs")
-./bin/netops config -commands commands.txt -pre-diff
+./bin/netops apply -commands commands.txt -pre-diff
 
 # Require interactive confirmation before each device's commit
-./bin/netops config -commands commands.txt -confirm-diff
+./bin/netops apply -commands commands.txt -confirm-diff
 ```
 
 - **`-pre-diff`**: stages configuration commands and issues the vendor's native candidate diff command before persisting. The diff is displayed with colored unified diff formatting (`+` additions in green, `-` deletions in red) and stored in `run.json` (`candidate_diff`).
@@ -332,7 +332,7 @@ Extract structured data from operational `show`, `display`, and `get` commands d
 
 ```sh
 # Parse operational commands into structured JSON on stdout
-./bin/netops -op -commands <(echo "show ip interface brief") -format json -yes
+./bin/netops apply -op -commands <(echo "show ip interface brief") -format json -yes
 ```
 
 The structured output parser automatically recognizes and converts command outputs into typed JSON models:
@@ -642,31 +642,31 @@ Taking backups uses `netops backup <flags>`, and browsing backups uses
   * `-mesh-fallback` is **opt-in** to avoid unneeded hops over neighboring management interfaces.
   * Authentication failures, host-key mismatches, and refused commands are **never retried** by `-retries` to avoid account lockouts.
 
-## Operations automation (`user`, `passwd`, `vlan`, `facts`, `find`, `audit`, `diff`, `telegram-test`)
+## Operations automation (`config user`, `config passwd`, `config vlan`, `facts`, `find`, `audit`, `diff`, `telegram-test`)
 
-Eight subcommands built on the same engine as a configuration run: same `inventory.csv`, `.env`
+Eight subcommands built on the same engine as an apply run: same `inventory.csv`, `.env`
 credentials, jump hosts, host-key policy, `-limit`, `-concurrency`, `-backup`, `-dry-run`, `-yes`,
 `-canary`, `-rollback-on-fail`, logging and result table. `-timeout` is an alias of
 `-command-timeout`, and every flag may be written `-flag` or `--flag`.
 
 ```sh
-./run user add -u svc-backup --privilege 15      # create an account where it is missing
-./run user del -u olduser                        # remove it where it exists
-./run passwd -u svc-backup                       # rotate a password, verified before it is kept
-./run passwd --enable                            # rotate the enable secret
-./run vlan add --id 30 --name Servers            # create a VLAN where it is missing
-./run vlan del --id 30
-./run facts --output facts.csv                   # model / serial / version / uptime for a CMDB
-./run find --ip 10.1.20.15                       # which switch port is this host on?
-./run audit --output-dir audit_reports/          # PASS / FAIL matrix against a baseline
-./run diff -commands commands.txt                # what would this file change?
-./run telegram-test                              # test Telegram alerts and .env credentials
-./run <subcommand> --help                        # every flag of that subcommand
+./run config user add -u svc-backup --privilege 15      # create an account where it is missing
+./run config user del -u olduser                        # remove it where it exists
+./run config passwd -u svc-backup                       # rotate a password, verified before it is kept
+./run config passwd --enable                            # rotate the enable secret
+./run config vlan add --id 30 --name Servers            # create a VLAN where it is missing
+./run config vlan del --id 30
+./run facts --output facts.csv                          # model / serial / version / uptime for a CMDB
+./run find --ip 10.1.20.15                              # which switch port is this host on?
+./run audit --output-dir audit_reports/                 # PASS / FAIL matrix against a baseline
+./run diff -commands commands.txt                       # what would this file change?
+./run telegram-test                                     # test Telegram alerts and .env credentials
+./run <subcommand> --help                               # every flag of that subcommand
 ```
 
 On Windows use `.\scripts\run.bat <subcommand>` with the same arguments.
 
-### How changes are made (`user`, `passwd`, `vlan`)
+### How changes are made (`config user`, `config passwd`, `config vlan`)
 
 Each device is **read first** and changed only where it differs, then the change goes through the
 normal apply path (backup, dry-run, canary/batch, rollback, summary). So every run is idempotent:
@@ -689,17 +689,17 @@ sw2   OK       skipped: user "alice" already exists        <- never touched, nev
 * The pre-flight lint (`-strict-safety`) also runs on the generated commands, and a change needs the
   usual `[y/N]` confirmation (`-yes` for unattended use).
 
-### Passwords (`user add`, `passwd`)
+### Passwords (`config user add`, `config passwd`)
 
 Credentials are never accepted as command-line flags to prevent leaking secrets into `ps` process lists
 and shell history. The new password comes from a **hidden prompt** (asked twice), `NETOPS_NEW_PASSWORD`,
 or automated file generation:
 
-`passwd --auto-generate --password-file FILE` creates a random 20-character password and writes it
+`config passwd --auto-generate --password-file FILE` creates a random 20-character password and writes it
 to `FILE` (mode `0600`, must not already exist). It is **never printed**. Passwords are masked in the
 console, the audit log and reports; commands that carry them are redacted wherever they are shown.
 
-### Verified rotation (`passwd`)
+### Verified rotation (`config passwd`)
 
 The new credentials are tested with a **fresh SSH login** before the change is kept, and the old state
 is restored if the test fails:
@@ -997,9 +997,9 @@ If delivery succeeds, `telegram-test` sends a verification ping to your chat and
 ### Automated alert triggers
 
 When `TELEGRAM_ENABLED=true` is set:
-- **`netops config`**: Dispatches a completion report with total devices, succeeded, failed, skipped count, run duration, and categorized error breakdown.
+- **`netops apply`**: Dispatches a completion report with total devices, succeeded, failed, skipped count, run duration, and categorized error breakdown.
 - **`netops backup`**: Dispatches an alert containing total devices, backup changes detected, golden-config compliance drift, and the list of failed devices.
-- **Operations (`user`, `passwd`, `vlan`, `facts`, `audit`)**: Automatically sends execution summaries upon completion.
+- **Operations (`config user`, `config passwd`, `config vlan`, `facts`, `audit`)**: Automatically sends execution summaries upon completion.
 - **Dry-run awareness**: Any dry-run execution (`-dry-run`) is explicitly labeled with `[DRY-RUN]` and a yellow status badge in the message header.
 
 ## Flags

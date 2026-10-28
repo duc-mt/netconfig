@@ -77,10 +77,10 @@ else
     fi
 fi
 
-# A subcommand is strictly required. For the "config" subcommand, default to
+# A subcommand is strictly required. For the "apply" subcommand, default to
 # -commands commands.txt unless explicit commands/template or help flags are given.
 case "$1" in
-    config)
+    apply)
         HAS_CMDS_FLAG=0
         for arg in "$@"; do
             case "$arg" in

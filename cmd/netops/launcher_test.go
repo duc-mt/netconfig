@@ -74,15 +74,19 @@ func TestLauncherRoutesSubcommandsWithoutAppendingCommands(t *testing.T) {
 		{"backup redact help", []string{"backup", "redact", "--help"}, []string{"backup", "redact", "--help"}},
 		{"backup redact file", []string{"backup", "redact", "sw1.cfg"}, []string{"backup", "redact", "sw1.cfg"}},
 
-		// the config subcommand defaults to commands.txt
-		{"config without flags", []string{"config"}, []string{"config", "-commands", "commands.txt"}},
-		{"config flags only", []string{"config", "-limit", "core-*", "-dry-run"}, []string{"config", "-limit", "core-*", "-dry-run", "-commands", "commands.txt"}},
-		{"config explicit commands", []string{"config", "-commands", "my.txt"}, []string{"config", "-commands", "my.txt"}},
-		{"config explicit commands=", []string{"config", "-commands=my.txt", "-yes"}, []string{"config", "-commands=my.txt", "-yes"}},
-		{"config template", []string{"config", "-template", "t.tmpl", "-var", "a=b"}, []string{"config", "-template", "t.tmpl", "-var", "a=b"}},
-		{"config help", []string{"config", "-h"}, []string{"config", "-h"}},
+		// the apply subcommand defaults to commands.txt
+		{"apply without flags", []string{"apply"}, []string{"apply", "-commands", "commands.txt"}},
+		{"apply flags only", []string{"apply", "-limit", "core-*", "-dry-run"}, []string{"apply", "-limit", "core-*", "-dry-run", "-commands", "commands.txt"}},
+		{"apply explicit commands", []string{"apply", "-commands", "my.txt"}, []string{"apply", "-commands", "my.txt"}},
+		{"apply explicit commands=", []string{"apply", "-commands=my.txt", "-yes"}, []string{"apply", "-commands=my.txt", "-yes"}},
+		{"apply template", []string{"apply", "-template", "t.tmpl", "-var", "a=b"}, []string{"apply", "-template", "t.tmpl", "-var", "a=b"}},
+		{"apply help", []string{"apply", "-h"}, []string{"apply", "-h"}},
 
-		// retired spelling is passed through to binary for rename hint
+		// config subcommands pass through
+		{"config user add", []string{"config", "user", "add", "-u", "alice"}, []string{"config", "user", "add", "-u", "alice"}},
+		{"config vlan add", []string{"config", "vlan", "add", "--id", "100"}, []string{"config", "vlan", "add", "--id", "100"}},
+
+		// retired spelling is passed through to binary
 		{"old show-backup", []string{"show-backup", "-l"}, []string{"show-backup", "-l"}},
 
 		// strict subcommand enforcement: arguments without subcommand pass straight through to binary
@@ -92,8 +96,8 @@ func TestLauncherRoutesSubcommandsWithoutAppendingCommands(t *testing.T) {
 		{"version", []string{"-version"}, []string{"-version"}},
 
 		// only the FIRST argument selects a subcommand
-		{"a flag value that looks like a subcommand", []string{"-limit", "config"}, []string{"-limit", "config"}},
-		{"subcommand name later", []string{"-inventory", "x.csv", "config"}, []string{"-inventory", "x.csv", "config"}},
+		{"a flag value that looks like a subcommand", []string{"-limit", "apply"}, []string{"-limit", "apply"}},
+		{"subcommand name later", []string{"-inventory", "x.csv", "apply"}, []string{"-inventory", "x.csv", "apply"}},
 	}
 	for _, tt := range tests {
 		if got := launch(t, root, filepath.Join("scripts", "run.sh"), tt.args...); strings.Join(got, "\x00") != strings.Join(tt.want, "\x00") {

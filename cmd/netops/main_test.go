@@ -367,10 +367,29 @@ func TestStrictSubcommandDispatch(t *testing.T) {
 		t.Fatalf("help must exit OK with root usage, got code=%d:\n%s", code, stderr)
 	}
 
-	// 5. Config subcommand help
-	code, _, stderr = runDispatch("config", "-h")
-	if code != task.ExitOK || !strings.Contains(stderr, "netops config - apply configuration") {
-		t.Fatalf("config -h must exit OK with config usage, got code=%d:\n%s", code, stderr)
+	// 5. Apply subcommand help
+	code, _, stderr = runDispatch("apply", "-h")
+	if code != task.ExitOK || !strings.Contains(stderr, "netops apply - apply configuration") {
+		t.Fatalf("apply -h must exit OK with apply usage, got code=%d:\n%s", code, stderr)
+	}
+
+	// 6. Config subcommand help and missing subcommand
+	code, stdout, _ := runDispatch("config", "-h")
+	if code != task.ExitOK || !strings.Contains(stdout, "netops config: declarative resource management") {
+		t.Fatalf("config -h must exit OK with config usage, got code=%d:\n%s", code, stdout)
+	}
+
+	code, _, stderr = runDispatch("config")
+	if code != task.ExitFatal || !strings.Contains(stderr, "netops config: missing subcommand") {
+		t.Fatalf("config without args must exit fatal, got code=%d:\n%s", code, stderr)
+	}
+
+	// 7. Former top-level subcommands and retired commands must fail as unknown
+	for _, retired := range []string{"user", "vlan", "passwd", "show-backup"} {
+		code, _, stderr = runDispatch(retired)
+		if code != task.ExitFatal || !strings.Contains(stderr, `unknown subcommand "`+retired+`"`) {
+			t.Fatalf("retired subcommand %q must exit fatal as unknown subcommand, got code=%d:\n%s", retired, code, stderr)
+		}
 	}
 }
 

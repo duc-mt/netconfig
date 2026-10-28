@@ -159,7 +159,7 @@ func indexOf(events []string, prefix string) int {
 func TestPasswdOverRealSSHTestsNewCredentialsBeforeSaving(t *testing.T) {
 	w, dev := sshWS(t)
 	t.Setenv("NETOPS_NEW_PASSWORD", "N3wPassw0rd")
-	code, _, stderr := w.run("passwd", "-u", "bob", "-yes")
+	code, _, stderr := w.run("config", "passwd", "-u", "bob", "-yes")
 	if code != task.ExitOK {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}
@@ -183,7 +183,7 @@ func TestPasswdOverRealSSHRollsBackWhenTheNewLoginIsDenied(t *testing.T) {
 	dev.reject["bob"] = "N3wPassw0rd" // the config line is accepted but the account cannot log in
 	before := dev.users["bob"]
 	t.Setenv("NETOPS_NEW_PASSWORD", "N3wPassw0rd")
-	code, _, stderr := w.run("passwd", "-u", "bob", "-yes")
+	code, _, stderr := w.run("config", "passwd", "-u", "bob", "-yes")
 	if code != task.ExitPartial {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}
@@ -207,10 +207,10 @@ func TestPasswdOverRealSSHRollsBackWhenTheNewLoginIsDenied(t *testing.T) {
 func TestUserAddAndVLANOverRealSSH(t *testing.T) {
 	w, dev := sshWS(t)
 	t.Setenv("NETOPS_NEW_PASSWORD", "S3cretPass")
-	if code, _, stderr := w.run("user", "add", "-u", "alice", "-yes"); code != task.ExitOK {
+	if code, _, stderr := w.run("config", "user", "add", "-u", "alice", "-yes"); code != task.ExitOK {
 		t.Fatalf("user add: exit %d\n%s", code, stderr)
 	}
-	if code, _, stderr := w.run("vlan", "add", "--id", "30", "--name", "Servers", "-yes"); code != task.ExitOK {
+	if code, _, stderr := w.run("config", "vlan", "add", "--id", "30", "--name", "Servers", "-yes"); code != task.ExitOK {
 		t.Fatalf("vlan add: exit %d\n%s", code, stderr)
 	}
 	if dev.users["alice"] != opsHash("S3cretPass") || dev.vlans[30] != "Servers" || dev.writes != 2 {
@@ -218,14 +218,14 @@ func TestUserAddAndVLANOverRealSSH(t *testing.T) {
 	}
 	// second pass over SSH is a no-op
 	writes := dev.writes
-	if code, _, _ := w.run("user", "add", "-u", "alice", "-yes"); code != task.ExitOK || dev.writes != writes {
+	if code, _, _ := w.run("config", "user", "add", "-u", "alice", "-yes"); code != task.ExitOK || dev.writes != writes {
 		t.Errorf("not idempotent over SSH: writes %d -> %d", writes, dev.writes)
 	}
 	// a wrong login is reported as an authentication failure, not a hang
 	if err := os.WriteFile(filepath.Join(w.dir, ".env"), []byte("NETOPS_USERNAME=admin\nNETOPS_PASSWORD=wrong\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, _, stderr := w.run("user", "add", "-u", "zed", "-yes")
+	code, _, stderr := w.run("config", "user", "add", "-u", "zed", "-yes")
 	if code != task.ExitPartial {
 		t.Errorf("bad login: exit %d", code)
 	}

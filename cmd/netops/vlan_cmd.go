@@ -1,6 +1,6 @@
 // ==============================================================================
 // File name:     vlan_cmd.go
-// Description:   "netops vlan add|del".
+// Description:   "netops config vlan add|del".
 // License:       MIT
 // ==============================================================================
 package main
@@ -17,11 +17,11 @@ import (
 	"netops/internal/vendor"
 )
 
-const vlanUsageText = `netops vlan: create or remove a VLAN on many switches, idempotently.
+const vlanUsageText = `netops config vlan: create or remove a VLAN on many switches, idempotently.
 
 Usage:
-  netops vlan add --id <1-4094> [--name <name>] [flags]
-  netops vlan del --id <2-4094> [flags]
+  netops config vlan add --id <1-4094> [--name <name>] [flags]
+  netops config vlan del --id <2-4094> [flags]
 
 "add" skips switches that already have the VLAN (an existing VLAN is never
 renamed; a different requested name is reported). "del" skips switches that do
@@ -47,13 +47,13 @@ func runVLAN(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 	action := args[0]
 	if action != "add" && action != "del" {
-		fmt.Fprintf(stderr, "netops vlan: unknown action %q (use add or del)\n\n%s", action, vlanUsageText)
+		fmt.Fprintf(stderr, "netops config vlan: unknown action %q (use add or del)\n\n%s", action, vlanUsageText)
 		return task.ExitFatal
 	}
 	var o opsFlags
 	var id int
 	var name string
-	fs := flag.NewFlagSet("netops vlan "+action, flag.ContinueOnError)
+	fs := flag.NewFlagSet("netops config vlan "+action, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprint(stderr, vlanUsageText); fs.PrintDefaults() }
 	fs.IntVar(&id, "id", 0, "VLAN ID (1-4094)")
@@ -70,7 +70,7 @@ func runVLAN(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 	o.noteSetFlags(fs)
 	fatal := func(format string, a ...any) int {
-		fmt.Fprintf(stderr, "netops vlan %s: "+format+"\n", append([]any{action}, a...)...)
+		fmt.Fprintf(stderr, "netops config vlan %s: "+format+"\n", append([]any{action}, a...)...)
 		return task.ExitFatal
 	}
 	if fs.NArg() > 0 {

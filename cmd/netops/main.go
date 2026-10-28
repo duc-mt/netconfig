@@ -62,17 +62,15 @@ Usage:
   netops <subcommand> [flags]
 
 Subcommands:
-  config         apply configuration commands to network devices (netops config -h)
+  apply          apply configuration commands to network devices (netops apply -h)
+  diff           preview candidate diff of command file before apply (netops diff -h)
+  config         declarative resource operations: user, vlan, passwd (netops config -h)
   backup         archive device configurations, detect changes (netops backup -h)
   backup show    view, diff or locate saved backups (netops backup show -h)
   backup redact  mask secrets in saved backup files or directories (netops backup redact -h)
-  user           create or remove a local account on devices (netops user -h)
-  passwd         rotate a local account's password or enable secret (netops passwd -h)
-  vlan           create or remove an L2 VLAN on devices (netops vlan -h)
   facts          collect hardware model, serial, version, uptime (netops facts -h)
   find           locate the access switch port an IP or MAC is on (netops find -h)
   audit          audit configurations against a security baseline (netops audit -h)
-  diff           preview candidate diff of command file before apply (netops diff -h)
   telegram-test  test Telegram alert notifications (netops telegram-test -h)
   init           generate sample inventory.csv, commands.txt, and .env templates
   version        display version information
@@ -80,12 +78,12 @@ Subcommands:
 Run 'netops <subcommand> -h' for flags and usage of a specific subcommand.
 `
 
-const configUsageText = `netops config - apply configuration commands to many network devices over SSH
+const applyUsageText = `netops apply - apply configuration commands to many network devices over SSH
 
 Usage:
-  netops config -commands commands.txt [flags]
-  netops config -template config.tmpl -var ntp=10.0.0.1 [flags]
-  netops config -op -commands <(echo "show ip ospf route") [flags]
+  netops apply -commands commands.txt [flags]
+  netops apply -template config.tmpl -var ntp=10.0.0.1 [flags]
+  netops apply -op -commands <(echo "show ip ospf route") [flags]
 
 Supported vendors: %s
 
@@ -103,7 +101,20 @@ at the confirmation prompt), 2 some devices failed or were skipped.
 Flags:
 `
 
-const usageText = configUsageText
+const configUsageText = `netops config: declarative resource management across network devices.
+
+Usage:
+  netops config <subcommand> [flags]
+
+Subcommands:
+  user           create or remove a local account on devices (netops config user -h)
+  passwd         rotate a local account's password or enable secret (netops config passwd -h)
+  vlan           create or remove an L2 VLAN on devices (netops config vlan -h)
+
+Run 'netops config <subcommand> -h' for flags and usage of a specific subcommand.
+`
+
+const usageText = applyUsageText
 
 type stringList []string
 
@@ -164,7 +175,31 @@ func runInit(stdout, stderr io.Writer) int {
 	return task.ExitOK
 }
 
-// dispatch routes arguments to subcommands ("config", "backup", "init", "version").
+func runConfig(args []string, stdin *os.File, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "netops config: missing subcommand")
+		fmt.Fprintln(stderr)
+		fmt.Fprint(stderr, configUsageText)
+		return task.ExitFatal
+	}
+	switch args[0] {
+	case "user":
+		return runUser(args[1:], stdin, stdout, stderr)
+	case "vlan":
+		return runVLAN(args[1:], stdin, stdout, stderr)
+	case "passwd":
+		return runPasswd(args[1:], stdin, stdout, stderr)
+	case "-h", "--help", "help":
+		fmt.Fprint(stdout, configUsageText)
+		return task.ExitOK
+	default:
+		fmt.Fprintf(stderr, "netops config: unknown subcommand %q\n\n", args[0])
+		fmt.Fprint(stderr, configUsageText)
+		return task.ExitFatal
+	}
+}
+
+// dispatch routes arguments to subcommands ("apply", "diff", "config", "backup", "init", "version").
 // Invoking netops without a subcommand or with an invalid subcommand is fatal.
 func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -174,16 +209,12 @@ func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return task.ExitFatal
 	}
 	switch args[0] {
-	case "config":
+	case "apply":
 		return run(args[1:], stdin, stdout, stderr)
+	case "config":
+		return runConfig(args[1:], stdin, stdout, stderr)
 	case "backup":
 		return runBackup(args[1:], stdin, stdout, stderr)
-	case "user":
-		return runUser(args[1:], stdin, stdout, stderr)
-	case "passwd":
-		return runPasswd(args[1:], stdin, stdout, stderr)
-	case "vlan":
-		return runVLAN(args[1:], stdin, stdout, stderr)
 	case "facts":
 		return runFacts(args[1:], stdin, stdout, stderr)
 	case "find":
@@ -202,10 +233,6 @@ func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	case "-h", "--help", "help":
 		printRootUsage(stderr)
 		return task.ExitOK
-	case "show-backup":
-		// retired spelling: without this it would be read as an unknown subcommand
-		fmt.Fprintln(stderr, "netops: 'show-backup' is now 'netops backup show' (same flags)")
-		return task.ExitFatal
 	default:
 		fmt.Fprintf(stderr, "netops: unknown subcommand %q\n\n", args[0])
 		printRootUsage(stderr)
@@ -214,7 +241,7 @@ func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 }
 
 func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("netops config", flag.ContinueOnError)
+	fs := flag.NewFlagSet("netops apply", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	cf := &commonFlags{}
 	cf.register(fs)
@@ -785,7 +812,7 @@ func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	tg := notifier.NewTelegram(notifier.ConfigFromResolver(resolver))
 	if tg != nil {
 		defer tg.Close()
-		tg.SendTaskSummary("config", sum, *dryRun)
+		tg.SendTaskSummary("apply", sum, *dryRun)
 	}
 
 	return task.ExitCode(results)

@@ -8,7 +8,7 @@ rem Version:       1.0.0
 rem License:       MIT
 rem ==============================================================================
 rem Usage:         run.bat <subcommand> [options]
-rem                (subcommands: config, backup, user, passwd, vlan, facts, find, audit, diff)
+rem                (subcommands: apply, diff, config, backup, facts, find, audit)
 rem Notes:         every argument, including a leading subcommand, is passed to the binary as is
 rem ==============================================================================
 

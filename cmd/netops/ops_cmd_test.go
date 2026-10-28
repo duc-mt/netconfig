@@ -272,7 +272,7 @@ func TestUserAddEndToEnd(t *testing.T) {
 	w.dev("sw2").users["alice"] = opsHash("kept")
 	t.Setenv("NETOPS_NEW_PASSWORD", "S3cretPass")
 
-	code, _, stderr := w.run("user", "add", "-u", "alice", "-yes")
+	code, _, stderr := w.run("config", "user", "add", "-u", "alice", "-yes")
 	if code != task.ExitOK {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}
@@ -288,7 +288,7 @@ func TestUserAddEndToEnd(t *testing.T) {
 
 	// idempotent: the second run changes nothing
 	writes := w.dev("sw1").writes
-	if code, _, stderr := w.run("user", "add", "-u", "alice", "-yes"); code != task.ExitOK || w.dev("sw1").writes != writes {
+	if code, _, stderr := w.run("config", "user", "add", "-u", "alice", "-yes"); code != task.ExitOK || w.dev("sw1").writes != writes {
 		t.Errorf("second run: exit %d writes %d\n%s", code, w.dev("sw1").writes, stderr)
 	}
 }
@@ -296,7 +296,7 @@ func TestUserAddEndToEnd(t *testing.T) {
 func TestUserAddPasswordFromEnvironment(t *testing.T) {
 	w := newOpsWS(t, twoSwitches, "sw1", "sw2")
 	t.Setenv("NETOPS_NEW_PASSWORD", "EnvPassw0rd")
-	code, _, stderr := w.run("user", "add", "-u", "carol", "-yes")
+	code, _, stderr := w.run("config", "user", "add", "-u", "carol", "-yes")
 	if code != task.ExitOK || w.dev("sw1").users["carol"] != opsHash("EnvPassw0rd") {
 		t.Fatalf("exit %d users=%v\n%s", code, w.dev("sw1").users, stderr)
 	}
@@ -306,7 +306,7 @@ func TestUserAddPasswordFromEnvironment(t *testing.T) {
 
 func TestUserAddNeedsAPasswordSource(t *testing.T) {
 	w := newOpsWS(t, oneSwitch, "sw1")
-	code, _, stderr := w.run("user", "add", "-u", "alice", "-yes")
+	code, _, stderr := w.run("config", "user", "add", "-u", "alice", "-yes")
 	if code != task.ExitFatal || w.totalOpens() != 0 {
 		t.Fatalf("exit %d opens %d", code, w.totalOpens())
 	}
@@ -320,13 +320,13 @@ func TestUserInputValidationHappensBeforeAnyConnection(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"user", "add", "-u", "bad name", "-yes"}, "invalid username"},
-		{[]string{"user", "add", "-u", "bob;reload", "-yes"}, "invalid username"},
-		{[]string{"user", "add", "-u", "alice", "--privilege", "16", "-yes"}, "out of range"},
-		{[]string{"user", "add", "-yes"}, "invalid username"},
-		{[]string{"user", "add", "-u", "alice", "-p", "S3cretPass", "-yes"}, "passwords are never accepted as command-line flags"},
-		{[]string{"user", "frobnicate"}, "unknown action"},
-		{[]string{"user"}, "netops user:"},
+		{[]string{"config", "user", "add", "-u", "bad name", "-yes"}, "invalid username"},
+		{[]string{"config", "user", "add", "-u", "bob;reload", "-yes"}, "invalid username"},
+		{[]string{"config", "user", "add", "-u", "alice", "--privilege", "16", "-yes"}, "out of range"},
+		{[]string{"config", "user", "add", "-yes"}, "invalid username"},
+		{[]string{"config", "user", "add", "-u", "alice", "-p", "S3cretPass", "-yes"}, "passwords are never accepted as command-line flags"},
+		{[]string{"config", "user", "frobnicate"}, "unknown action"},
+		{[]string{"config", "user"}, "netops config user:"},
 	} {
 		code, _, stderr := w.run(tt.args...)
 		if code != task.ExitFatal {
@@ -342,7 +342,7 @@ func TestUserInputValidationHappensBeforeAnyConnection(t *testing.T) {
 		{"has space", "printable ASCII"},
 	} {
 		t.Setenv("NETOPS_NEW_PASSWORD", badPw.pw)
-		code, _, stderr := w.run("user", "add", "-u", "alice", "-yes")
+		code, _, stderr := w.run("config", "user", "add", "-u", "alice", "-yes")
 		if code != task.ExitFatal {
 			t.Errorf("%v: exit %d", badPw.pw, code)
 		}
@@ -357,7 +357,7 @@ func TestUserDelRefusesTheLoginAccountBeforeConnecting(t *testing.T) {
 	w := newOpsWS(t, twoSwitches, "sw1", "sw2")
 	// the account named in .env, whatever its case, and even with -force
 	for _, name := range []string{opsLoginUser, "ADMIN"} {
-		code, _, stderr := w.run("user", "del", "-u", name, "-yes", "-force")
+		code, _, stderr := w.run("config", "user", "del", "-u", name, "-yes", "-force")
 		if code != task.ExitFatal {
 			t.Errorf("%s: exit %d", name, code)
 		}
@@ -371,7 +371,7 @@ func TestUserDelRefusesTheLoginAccountBeforeConnecting(t *testing.T) {
 	}
 	// NETOPS_USERNAME from the environment counts too, even when .env names someone else
 	t.Setenv("NETOPS_USERNAME", "bob")
-	if code, _, stderr := w.run("user", "del", "-u", "bob", "-yes"); code != task.ExitFatal || w.totalOpens() != 0 {
+	if code, _, stderr := w.run("config", "user", "del", "-u", "bob", "-yes"); code != task.ExitFatal || w.totalOpens() != 0 {
 		t.Errorf("NETOPS_USERNAME guard: exit %d opens %d\n%s", code, w.totalOpens(), stderr)
 	}
 }
@@ -379,7 +379,7 @@ func TestUserDelRefusesTheLoginAccountBeforeConnecting(t *testing.T) {
 func TestUserDelEndToEnd(t *testing.T) {
 	w := newOpsWS(t, twoSwitches, "sw1", "sw2")
 	delete(w.dev("sw2").users, "bob")
-	code, _, stderr := w.run("user", "del", "-u", "bob", "-yes")
+	code, _, stderr := w.run("config", "user", "del", "-u", "bob", "-yes")
 	if code != task.ExitOK {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}
@@ -395,7 +395,7 @@ func TestUserDelEndToEnd(t *testing.T) {
 func TestChangesNeedConfirmationWhenUnattended(t *testing.T) {
 	w := newOpsWS(t, oneSwitch, "sw1")
 	t.Setenv("NETOPS_NEW_PASSWORD", "S3cretPass")
-	code, _, stderr := w.run("user", "add", "-u", "alice")
+	code, _, stderr := w.run("config", "user", "add", "-u", "alice")
 	if code != task.ExitFatal {
 		t.Fatalf("exit %d", code)
 	}
@@ -408,7 +408,7 @@ func TestChangesNeedConfirmationWhenUnattended(t *testing.T) {
 func TestDryRunChangesNothing(t *testing.T) {
 	w := newOpsWS(t, oneSwitch, "sw1")
 	t.Setenv("NETOPS_NEW_PASSWORD", "S3cretPass")
-	code, _, stderr := w.run("user", "add", "-u", "alice", "-dry-run")
+	code, _, stderr := w.run("config", "user", "add", "-u", "alice", "-dry-run")
 	if code != task.ExitOK {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}
@@ -420,7 +420,7 @@ func TestDryRunChangesNothing(t *testing.T) {
 func TestUnsupportedPlatformsAreSkippedAndExitPartial(t *testing.T) {
 	w := newOpsWS(t, "hostname,address,port,vendor,credential_group\nsw1,10.0.0.1,22,cisco,\nfw1,10.0.0.9,22,paloalto,\n", "sw1")
 	t.Setenv("NETOPS_NEW_PASSWORD", "S3cretPass")
-	code, _, stderr := w.run("user", "add", "-u", "alice", "-yes")
+	code, _, stderr := w.run("config", "user", "add", "-u", "alice", "-yes")
 	if code != task.ExitPartial {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}
@@ -438,7 +438,7 @@ func TestUnsupportedPlatformsAreSkippedAndExitPartial(t *testing.T) {
 func TestPasswdEndToEnd(t *testing.T) {
 	w := newOpsWS(t, twoSwitches, "sw1", "sw2")
 	t.Setenv("NETOPS_NEW_PASSWORD", "N3wPassw0rd")
-	code, _, stderr := w.run("passwd", "-u", "bob", "-yes")
+	code, _, stderr := w.run("config", "passwd", "-u", "bob", "-yes")
 	if code != task.ExitOK {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}
@@ -454,7 +454,7 @@ func TestPasswdEndToEnd(t *testing.T) {
 func TestPasswdOfTheLoginAccountWarns(t *testing.T) {
 	w := newOpsWS(t, oneSwitch, "sw1")
 	t.Setenv("NETOPS_NEW_PASSWORD", "N3wPassw0rd")
-	code, _, stderr := w.run("passwd", "-u", opsLoginUser, "-yes")
+	code, _, stderr := w.run("config", "passwd", "-u", opsLoginUser, "-yes")
 	if code != task.ExitOK {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}
@@ -464,7 +464,7 @@ func TestPasswdOfTheLoginAccountWarns(t *testing.T) {
 func TestPasswdAutoGenerateWritesAPrivateFileAndNeverPrintsIt(t *testing.T) {
 	w := newOpsWS(t, oneSwitch, "sw1")
 	pwFile := filepath.Join(w.dir, "new-password.txt")
-	code, stdout, stderr := w.run("passwd", "-u", "bob", "--auto-generate", "--password-file", pwFile, "-yes")
+	code, stdout, stderr := w.run("config", "passwd", "-u", "bob", "--auto-generate", "--password-file", pwFile, "-yes")
 	if code != task.ExitOK {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}
@@ -488,7 +488,7 @@ func TestPasswdAutoGenerateWritesAPrivateFileAndNeverPrintsIt(t *testing.T) {
 
 	// an existing file is never overwritten
 	before := w.dev("sw1").users["bob"]
-	code, _, stderr = w.run("passwd", "-u", "bob", "--auto-generate", "--password-file", pwFile, "-yes")
+	code, _, stderr = w.run("config", "passwd", "-u", "bob", "--auto-generate", "--password-file", pwFile, "-yes")
 	if code != task.ExitFatal || w.dev("sw1").users["bob"] != before {
 		t.Errorf("reusing the file: exit %d", code)
 	}
@@ -502,12 +502,12 @@ func TestPasswdFlagValidation(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"passwd", "-yes"}, "-u <name> (or --enable) is required"},
-		{[]string{"passwd", "-u", "bob", "--enable"}, "either -u or --enable"},
-		{[]string{"passwd", "-u", "bob", "--auto-generate"}, "needs --password-file"},
-		{[]string{"passwd", "-u", "bob", "--password-file", "f"}, "only used with --auto-generate"},
-		{[]string{"passwd", "-u", "bob", "--commit-confirm", "0"}, "between 1 and 60"},
-		{[]string{"passwd", "-u", "bob", "-p", "S3cretPass"}, "passwords are never accepted as command-line flags"},
+		{[]string{"config", "passwd", "-yes"}, "-u <name> (or --enable) is required"},
+		{[]string{"config", "passwd", "-u", "bob", "--enable"}, "either -u or --enable"},
+		{[]string{"config", "passwd", "-u", "bob", "--auto-generate"}, "needs --password-file"},
+		{[]string{"config", "passwd", "-u", "bob", "--password-file", "f"}, "only used with --auto-generate"},
+		{[]string{"config", "passwd", "-u", "bob", "--commit-confirm", "0"}, "between 1 and 60"},
+		{[]string{"config", "passwd", "-u", "bob", "-p", "S3cretPass"}, "passwords are never accepted as command-line flags"},
 	} {
 		code, _, stderr := w.run(tt.args...)
 		if code != task.ExitFatal {
@@ -516,7 +516,7 @@ func TestPasswdFlagValidation(t *testing.T) {
 		mustContain(t, fmt.Sprint(tt.args), stderr, tt.want)
 	}
 	t.Setenv("NETOPS_NEW_PASSWORD", "bad pass")
-	code, _, stderr := w.run("passwd", "-u", "bob", "-yes")
+	code, _, stderr := w.run("config", "passwd", "-u", "bob", "-yes")
 	if code != task.ExitFatal {
 		t.Errorf("bad pass: exit %d", code)
 	}
@@ -529,7 +529,7 @@ func TestPasswdFlagValidation(t *testing.T) {
 func TestPasswdDeviceWithoutRollbackIsSkipped(t *testing.T) {
 	w := newOpsWS(t, "hostname,address,port,vendor,credential_group\nsw1,10.0.0.1,22,cisco,\ncp1,10.0.0.7,22,checkpoint,\n", "sw1")
 	t.Setenv("NETOPS_NEW_PASSWORD", "N3wPassw0rd")
-	code, _, stderr := w.run("passwd", "-u", "bob", "-yes")
+	code, _, stderr := w.run("config", "passwd", "-u", "bob", "-yes")
 	if code != task.ExitPartial || w.tr.opens["cp1"] != 0 {
 		t.Fatalf("exit %d opens(cp1)=%d\n%s", code, w.tr.opens["cp1"], stderr)
 	}
@@ -541,7 +541,7 @@ func TestPasswdDeviceWithoutRollbackIsSkipped(t *testing.T) {
 func TestVLANEndToEnd(t *testing.T) {
 	w := newOpsWS(t, twoSwitches, "sw1", "sw2")
 	w.dev("sw2").vlans[30] = "Other"
-	code, _, stderr := w.run("vlan", "add", "--id", "30", "--name", "Servers", "-yes")
+	code, _, stderr := w.run("config", "vlan", "add", "--id", "30", "--name", "Servers", "-yes")
 	if code != task.ExitOK {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}
@@ -553,7 +553,7 @@ func TestVLANEndToEnd(t *testing.T) {
 	}
 	mustContain(t, "stderr", stderr, "already exists", "not applied")
 
-	if code, _, stderr = w.run("vlan", "del", "--id", "30", "-yes"); code != task.ExitOK {
+	if code, _, stderr = w.run("config", "vlan", "del", "--id", "30", "-yes"); code != task.ExitOK {
 		t.Fatalf("del exit %d\n%s", code, stderr)
 	}
 	if _, ok := w.dev("sw1").vlans[30]; ok {
@@ -567,13 +567,13 @@ func TestVLANValidation(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"vlan", "add", "-yes"}, "--id is required"},
-		{[]string{"vlan", "add", "--id", "0", "-yes"}, "--id is required"},
-		{[]string{"vlan", "add", "--id", "4095", "-yes"}, "out of range"},
-		{[]string{"vlan", "add", "--id", "-5", "-yes"}, "out of range"},
-		{[]string{"vlan", "add", "--id", "30", "--name", "two words", "-yes"}, "invalid VLAN name"},
-		{[]string{"vlan", "del", "--id", "1", "-yes"}, "cannot be deleted"},
-		{[]string{"vlan", "purge"}, "unknown action"},
+		{[]string{"config", "vlan", "add", "-yes"}, "--id is required"},
+		{[]string{"config", "vlan", "add", "--id", "0", "-yes"}, "--id is required"},
+		{[]string{"config", "vlan", "add", "--id", "4095", "-yes"}, "out of range"},
+		{[]string{"config", "vlan", "add", "--id", "-5", "-yes"}, "out of range"},
+		{[]string{"config", "vlan", "add", "--id", "30", "--name", "two words", "-yes"}, "invalid VLAN name"},
+		{[]string{"config", "vlan", "del", "--id", "1", "-yes"}, "cannot be deleted"},
+		{[]string{"config", "vlan", "purge"}, "unknown action"},
 	} {
 		code, _, stderr := w.run(tt.args...)
 		if code != task.ExitFatal {
@@ -895,17 +895,29 @@ func dispatchOut(t *testing.T, args ...string) (int, string, string) {
 }
 
 func TestHelpForEverySubcommand(t *testing.T) {
-	for sub, want := range map[string]string{
-		"user": "netops user:", "passwd": "netops passwd:", "vlan": "netops vlan:",
-		"facts": "netops facts:", "find": "netops find:", "audit": "netops audit:", "diff": "netops diff:",
-	} {
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"apply"}, "netops apply - apply configuration"},
+		{[]string{"config"}, "netops config: declarative resource management"},
+		{[]string{"config", "user"}, "netops config user:"},
+		{[]string{"config", "passwd"}, "netops config passwd:"},
+		{[]string{"config", "vlan"}, "netops config vlan:"},
+		{[]string{"facts"}, "netops facts:"},
+		{[]string{"find"}, "netops find:"},
+		{[]string{"audit"}, "netops audit:"},
+		{[]string{"diff"}, "netops diff:"},
+	}
+	for _, tt := range tests {
 		for _, flagForm := range []string{"--help", "-h"} {
-			code, stdout, stderr := dispatchOut(t, sub, flagForm)
+			callArgs := append(append([]string{}, tt.args...), flagForm)
+			code, stdout, stderr := dispatchOut(t, callArgs...)
 			if code != task.ExitOK {
-				t.Errorf("%s %s: exit %d", sub, flagForm, code)
+				t.Errorf("%v: exit %d", callArgs, code)
 			}
-			if !strings.Contains(stdout+stderr, want) {
-				t.Errorf("%s %s: help lacks %q", sub, flagForm, want)
+			if !strings.Contains(stdout+stderr, tt.want) {
+				t.Errorf("%v: help lacks %q", callArgs, tt.want)
 			}
 		}
 	}
@@ -925,8 +937,8 @@ func TestTimeoutIsAnAliasOfCommandTimeout(t *testing.T) {
 	}
 }
 
-func TestConfigRunnerAndPasswordFlagsStillRefused(t *testing.T) {
-	code, _, stderr := dispatchOut(t, "config", "-password", "x")
+func TestApplyRunnerAndPasswordFlagsStillRefused(t *testing.T) {
+	code, _, stderr := dispatchOut(t, "apply", "-password", "x")
 	if code != task.ExitFatal {
 		t.Errorf("exit %d", code)
 	}

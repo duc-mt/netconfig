@@ -1,6 +1,6 @@
 // ==============================================================================
 // File name:     account_cmd.go
-// Description:   "netops user add|del" and "netops passwd".
+// Description:   "netops config user add|del" and "netops config passwd".
 // License:       MIT
 // ==============================================================================
 package main
@@ -20,11 +20,11 @@ import (
 	"netops/internal/vendor"
 )
 
-const userUsageText = `netops user: create or remove a local account on many devices, idempotently.
+const userUsageText = `netops config user: create or remove a local account on many devices, idempotently.
 
 Usage:
-  netops user add -u <name> [--privilege 15] [--update-password] [flags]
-  netops user del -u <name> [flags]
+  netops config user add -u <name> [--privilege 15] [--update-password] [flags]
+  netops config user del -u <name> [flags]
 
 "add" skips devices where the account already exists (unless --update-password
 changes its password); "del" skips devices where it does not exist. Each device
@@ -43,11 +43,11 @@ pfSense, Sophos) are skipped and reported, never guessed at.
 Flags:
 `
 
-const rotateUsageText = `netops passwd: rotate a local account's password, or the enable secret.
+const rotateUsageText = `netops config passwd: rotate a local account's password, or the enable secret.
 
 Usage:
-  netops passwd -u <name> [--auto-generate --password-file <f>] [flags]
-  netops passwd --enable [--auto-generate --password-file <f>] [flags]
+  netops config passwd -u <name> [--auto-generate --password-file <f>] [flags]
+  netops config passwd --enable [--auto-generate --password-file <f>] [flags]
 
 Every device is verified before the change is kept: the new credentials are
 tested with a fresh SSH login while the old state can still be restored.
@@ -170,7 +170,7 @@ func runUser(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 	action := args[0]
 	if action != "add" && action != "del" {
-		fmt.Fprintf(stderr, "netops user: unknown action %q (use add or del)\n\n%s", action, userUsageText)
+		fmt.Fprintf(stderr, "netops config user: unknown action %q (use add or del)\n\n%s", action, userUsageText)
 		return task.ExitFatal
 	}
 
@@ -178,7 +178,7 @@ func runUser(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var username string
 	var privilege int
 	var updatePassword bool
-	fs := flag.NewFlagSet("netops user "+action, flag.ContinueOnError)
+	fs := flag.NewFlagSet("netops config user "+action, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprint(stderr, userUsageText); fs.PrintDefaults() }
 	fs.StringVar(&username, "u", "", "account name")
@@ -196,7 +196,7 @@ func runUser(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 	o.noteSetFlags(fs)
 	fatal := func(format string, a ...any) int {
-		fmt.Fprintf(stderr, "netops user %s: "+format+"\n", append([]any{action}, a...)...)
+		fmt.Fprintf(stderr, "netops config user %s: "+format+"\n", append([]any{action}, a...)...)
 		return task.ExitFatal
 	}
 	if fs.NArg() > 0 {
@@ -268,7 +268,7 @@ func runPasswd(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	var username, passwordFile string
 	var enable, autoGenerate bool
 	var confirmMinutes int
-	fs := flag.NewFlagSet("netops passwd", flag.ContinueOnError)
+	fs := flag.NewFlagSet("netops config passwd", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprint(stderr, rotateUsageText); fs.PrintDefaults() }
 	fs.StringVar(&username, "u", "", "local account whose password is rotated")
@@ -286,7 +286,7 @@ func runPasswd(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 	o.noteSetFlags(fs)
 	fatal := func(format string, a ...any) int {
-		fmt.Fprintf(stderr, "netops passwd: "+format+"\n", a...)
+		fmt.Fprintf(stderr, "netops config passwd: "+format+"\n", a...)
 		return task.ExitFatal
 	}
 	switch {
