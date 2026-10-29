@@ -143,6 +143,8 @@ var builtinRiskSpecs = []riskSpec{
 		`\bospf(v3)?\b|^network\s+\S+\s+\S+\s+area\s+\S+|^area\s+\S+\s+(stub|nssa|virtual-link|range|authentication|default-cost)\b`},
 	{RiskWarning, "ROUTING", "static route changed",
 		`^(no\s+)?(ip|ipv6)\s+route\b|^(no\s+)?ip\s+route-static\b|^set\s+protocols\s+static\b|^set\s+routing-options\s+(static|rib)\b|^config\s+router\s+static\b|^static-route\b`},
+	{RiskWarning, "ROUTING", "prefix-list or route-map policy changed",
+		`\b(prefix-list|route-map)\b|^set\s+policy\s+(prefix-list|route-map)\b`},
 	{RiskWarning, "INTERFACE", "interface shutdown / no shutdown",
 		`^(no\s+|undo\s+)?shutdown$|^set\s+interfaces\s+.*\bdisable\b`},
 	{RiskWarning, "VLAN", "VLAN configuration changed",
