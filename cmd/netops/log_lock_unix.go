@@ -18,18 +18,18 @@ import (
 	"syscall"
 )
 
-// lockLogDataDir takes an exclusive, non-blocking flock on <dir>/.netlog.lock and
+// lockLogDataDir takes an exclusive, non-blocking flock on <dir>/.netops_log.lock and
 // returns the function that releases it. The kernel drops the lock if the
 // process dies, so a crashed run never leaves the directory locked.
 func lockLogDataDir(dir string) (func(), error) {
-	return lockLogFile(filepath.Join(dir, ".netlog.lock"))
+	return lockLogFile(filepath.Join(dir, ".netops_log.lock"))
 }
 
 // lockLogListener is the same for "netops log listen", on its own lock file: one
 // listener per data directory, but a listener and a collect/monitor run may
 // share it (they append whole batches to the daily JSONL files).
 func lockLogListener(dir string) (func(), error) {
-	return lockLogFile(filepath.Join(dir, ".netlog-listen.lock"))
+	return lockLogFile(filepath.Join(dir, ".netops_log_listen.lock"))
 }
 
 func lockLogFile(path string) (func(), error) {

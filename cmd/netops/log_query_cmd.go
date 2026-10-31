@@ -29,7 +29,7 @@ const (
 	logQueryUsageText = `Usage: netops log query [flags]
 
 Searches the stored events (newest first). --limit takes comma-separated
-hostname substrings or globs (case-insensitive); --host is an alias.
+hostname globs, as in the other netops commands.
 `
 	logTimelineUsageText = `Usage: netops log timeline [flags]
 
@@ -56,12 +56,6 @@ which are reachable but silent, and which nothing has tried to poll. With --fail
 it exits 1 when any device is not OK, for cron and monitoring.
 `
 )
-
-// logStatusStaleAfter is the default --stale-after of "netops log status": a
-// device nothing has tried to poll for an hour is reported as STALE, which is
-// what a monitor running every few minutes (or an hourly cron job) wants.
-// "netops log top" and the report digest keep store.DefaultStaleAfter.
-const logStatusStaleAfter = time.Hour
 
 var (
 	logQueryFlagGroups = []flagGroup{
@@ -137,11 +131,10 @@ func runLogQuery(args []string, stdout, stderr io.Writer) int {
 	if *severity != "" && !logOneOf(*severity, logValidSeverities) {
 		return logFail(stderr, "query", "--severity must be one of %s", strings.Join(logValidSeverities, ", "))
 	}
-	outFormat, ok := normalizeLogFormat(*format)
-	if !ok {
+	if !validLogFormat(*format) {
 		return logFail(stderr, "query", "--format must be table or json")
 	}
-	matchHost, err := logHostMatcher(limit)
+	matchHost, err := logLimitFilter(limit)
 	if err != nil {
 		return logFail(stderr, "query", "%v", err)
 	}
@@ -160,7 +153,7 @@ func runLogQuery(args []string, stdout, stderr io.Writer) int {
 	entries = logFilterEntries(entries, matchHost)
 	query.SortNewestFirst(entries)
 
-	if outFormat == "json" {
+	if *format == "json" {
 		err = query.WriteJSON(stdout, entries)
 	} else {
 		err = query.WriteTable(stdout, entries, query.Style{Color: logColorEnabled(stdout, *noColor)})
@@ -193,7 +186,7 @@ func runLogTimeline(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 
-	matchHost, err := logHostMatcher(limit)
+	matchHost, err := logLimitFilter(limit)
 	if err != nil {
 		return logFail(stderr, "timeline", "%v", err)
 	}
@@ -246,8 +239,7 @@ func runLogIncidents(args []string, stdout, stderr io.Writer) int {
 	if code, ok := logNoArgs(fs, stderr, "incidents"); !ok {
 		return code
 	}
-	outFormat, ok := normalizeLogFormat(*format)
-	if !ok {
+	if !validLogFormat(*format) {
 		return logFail(stderr, "incidents", "--format must be table or json")
 	}
 	dir := store.IncidentsDir(*dataDir)
@@ -257,7 +249,7 @@ func runLogIncidents(args []string, stdout, stderr io.Writer) int {
 		if err != nil {
 			return logFail(stderr, "incidents", "%v", err)
 		}
-		if outFormat == "json" {
+		if *format == "json" {
 			err = query.WriteIncidentJSON(stdout, report)
 		} else {
 			err = query.WriteIncidentDetail(stdout, report, query.Style{Color: logColorEnabled(stdout, *noColor)})
@@ -276,7 +268,7 @@ func runLogIncidents(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return logFail(stderr, "incidents", "%v", err)
 	}
-	if outFormat == "json" {
+	if *format == "json" {
 		if reports == nil {
 			reports = []collector.IncidentReport{}
 		}
@@ -302,7 +294,7 @@ func runLogReport(args []string, stdout, stderr io.Writer) int {
 		since   = fs.String("since", "7d", "time window: 30m, 2h, 24h, 7d, or today")
 		top     = fs.Int("top", report.DefaultTop, "rows shown in the noisy-device and watchlist rankings")
 		compare = fs.Bool("compare", false, "force the week-over-week delta on or off (default: on only when --since is exactly 7d)")
-		format  = fs.String("format", "table", "output format: table | json")
+		format  = logFormatFlag(fs, "table")
 		dataDir = fs.String("data-dir", "data", "netops log data directory")
 		noColor = fs.Bool("no-color", false, "disable coloured output")
 	)
@@ -312,7 +304,7 @@ func runLogReport(args []string, stdout, stderr io.Writer) int {
 	if code, ok := logNoArgs(fs, stderr, "report"); !ok {
 		return code
 	}
-	if *format != "table" && *format != "json" {
+	if !validLogFormat(*format) {
 		return logFail(stderr, "report", "--format must be table or json")
 	}
 	if *top < 1 {
@@ -420,9 +412,9 @@ func runLogStatus(args []string, stdout, stderr io.Writer) int {
 	var (
 		invPath     = fs.String("inventory", "inventory.csv", "path to the device inventory CSV (devices in it that were never polled are listed)")
 		dataDir     = fs.String("data-dir", "data", "netops log data directory")
-		staleAfter  = fs.Duration("stale-after", logStatusStaleAfter, "report a device as STALE when nothing has tried to poll it for this long")
+		staleAfter  = fs.Duration("stale-after", store.DefaultStaleAfter, "report a device as STALE when nothing has tried to poll it for this long")
 		silentAfter = fs.Duration("silent-after", store.DefaultSilentAfter, "report a device as SILENT when it is reachable but has produced no new log line for this long")
-		format      = fs.String("format", "table", "output format: table | json")
+		format      = logFormatFlag(fs, "table")
 		failOnBad   = fs.Bool("fail", false, "exit 1 when any device is not OK (for cron and monitoring)")
 		noColor     = fs.Bool("no-color", false, "disable coloured output")
 	)
@@ -432,7 +424,7 @@ func runLogStatus(args []string, stdout, stderr io.Writer) int {
 	if fs.NArg() > 0 {
 		return logFail(stderr, "status", "unexpected argument %q", fs.Arg(0))
 	}
-	if *format != "table" && *format != "json" {
+	if !validLogFormat(*format) {
 		return logFail(stderr, "status", "--format must be table or json")
 	}
 	if *staleAfter <= 0 || *silentAfter <= 0 {

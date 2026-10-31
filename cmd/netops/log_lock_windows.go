@@ -19,18 +19,18 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// lockLogDataDir takes an exclusive, non-blocking lock on <dir>/.netlog.lock via
+// lockLogDataDir takes an exclusive, non-blocking lock on <dir>/.netops_log.lock via
 // LockFileEx and returns the function that releases it. The Windows kernel
 // automatically releases file locks if the process dies or exits.
 func lockLogDataDir(dir string) (func(), error) {
-	return lockLogFile(filepath.Join(dir, ".netlog.lock"))
+	return lockLogFile(filepath.Join(dir, ".netops_log.lock"))
 }
 
 // lockLogListener is the same for "netops log listen", on its own lock file: one
 // listener per data directory, but a listener and a collect/monitor run may
 // share it (they append whole batches to the daily JSONL files).
 func lockLogListener(dir string) (func(), error) {
-	return lockLogFile(filepath.Join(dir, ".netlog-listen.lock"))
+	return lockLogFile(filepath.Join(dir, ".netops_log_listen.lock"))
 }
 
 func lockLogFile(p string) (func(), error) {

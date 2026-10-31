@@ -10,12 +10,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -238,7 +238,7 @@ func (e logEnv) incidents(t *testing.T) []collector.IncidentReport {
 // logged but never open an SSH session of their own.
 func TestLogCollectNoConfigDiffFlag(t *testing.T) {
 	dev, host, port := startLogFakeIOS(t)
-	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco_ios,default,\n", host, port))
+	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco,default,\n", host, port))
 	if stderr, code := e.collectWith(t, "--no-config-diff"); code != 0 {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}
@@ -258,7 +258,7 @@ func TestLogCollectNoConfigDiffFlag(t *testing.T) {
 
 func TestLogCollectEndToEnd(t *testing.T) {
 	dev, host, port := startLogFakeIOS(t)
-	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco_ios,default,\n", host, port))
+	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco,default,\n", host, port))
 
 	// ---- first poll: ingest, classify, correct skew, triage ----
 	stderr, code := e.collect(t)
@@ -379,7 +379,7 @@ func TestLogCollectEndToEnd(t *testing.T) {
 
 func TestLogCollectExitCodes(t *testing.T) {
 	// A device that cannot be reached: the run completes but nothing was polled.
-	e := newLogEnv(t, "DEAD,127.0.0.1,1,cisco_ios,default,\n")
+	e := newLogEnv(t, "DEAD,127.0.0.1,1,cisco,default,\n")
 	stderr, code := e.collect(t)
 	if code != task.ExitFatal || !strings.Contains(stderr, "no device could be polled") {
 		t.Errorf("all devices failing must exit 1, got %d\n%s", code, stderr)
@@ -387,7 +387,7 @@ func TestLogCollectExitCodes(t *testing.T) {
 
 	// An unsupported vendor alongside a healthy device: partial failure is still success.
 	_, host, port := startLogFakeIOS(t)
-	e = newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco_ios,default,\nPF,%s,%d,sophos,default,\n", host, port, host, port))
+	e = newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco,default,\nPF,%s,%d,sophos,default,\n", host, port, host, port))
 	stderr, code = e.collect(t)
 	if code != 0 {
 		t.Errorf("partial failure must exit 0, got %d\n%s", code, stderr)
@@ -430,7 +430,7 @@ func TestLogCollectExitCodes(t *testing.T) {
 // every cycle (monitor mode runs a cycle every couple of minutes).
 func TestLogFailureLoggingIsDeduplicated(t *testing.T) {
 	_, host, port := startLogFakeIOS(t)
-	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco_ios,default,\nDEAD,127.0.0.1,1,cisco_ios,default,\n", host, port))
+	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco,default,\nDEAD,127.0.0.1,1,cisco,default,\n", host, port))
 
 	var stderr bytes.Buffer
 	log := &logLogger{w: &stderr}
@@ -467,7 +467,7 @@ func TestLogSecondCollectorOnSameDataDirIsRefused(t *testing.T) {
 		t.Skip("no data-directory lock on Windows")
 	}
 	_, host, port := startLogFakeIOS(t)
-	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco_ios,default,\n", host, port))
+	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco,default,\n", host, port))
 	o := e.opts(1, time.Second, 0)
 	var sink bytes.Buffer
 	first, err := newLogApp(o, nil, io.Discard, &logLogger{w: &sink})
@@ -512,7 +512,7 @@ func TestLogWarnEveryRateLimits(t *testing.T) {
 
 func TestLogCollectDryRun(t *testing.T) {
 	_, host, port := startLogFakeIOS(t)
-	e := newLogEnv(t, fmt.Sprintf("SW-DRY,%s,%d,cisco_ios,default,\n", host, port))
+	e := newLogEnv(t, fmt.Sprintf("SW-DRY,%s,%d,cisco,default,\n", host, port))
 	dataDir := filepath.Join(e.dir, "data")
 
 	// Run with --dry-run: should exit 0 and print the audit table to stdout.
@@ -549,7 +549,7 @@ func TestLogCollectDryRun(t *testing.T) {
 
 func TestLogCollectDryRunAllFail(t *testing.T) {
 	// An unreachable device: dry-run must exit 1 when every device fails.
-	e := newLogEnv(t, "DEAD,127.0.0.1,1,cisco_ios,default,\n")
+	e := newLogEnv(t, "DEAD,127.0.0.1,1,cisco,default,\n")
 	_, stderr, code := e.run(t, append([]string{"collect", "--dry-run"}, e.args...)...)
 	if code != task.ExitFatal {
 		t.Errorf("all-fail dry-run must exit 1, got %d\nstderr: %s", code, stderr)
@@ -635,7 +635,7 @@ func seedLogReportHistory(t *testing.T, dataDir string) {
 
 func TestLogReportEndToEnd(t *testing.T) {
 	_, host, port := startLogFakeIOS(t)
-	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco_ios,default,\n", host, port))
+	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco,default,\n", host, port))
 	dataDir := filepath.Join(e.dir, "data")
 
 	// ---- nothing collected yet: exit 0 and "no data" lines, never an error ----
@@ -730,7 +730,7 @@ func TestLogReportEndToEnd(t *testing.T) {
 	match(logReportSection(t, out, "Device Health"), `All 1 devices healthy\.`)
 	// Every collected line was classified except the banner-free few the fake
 	// device prints; coverage is reported per vendor.
-	match(logReportSection(t, out, "Classification Coverage"), `cisco_ios\s*│\s*\d+\s*│\s*\d+\s*│\s*\d+\.\d%`)
+	match(logReportSection(t, out, "Classification Coverage"), `cisco\s*│\s*\d+\s*│\s*\d+\s*│\s*\d+\.\d%`)
 	match(logReportSection(t, out, "Outages"), `No outages\.|Outages: \d+`)
 
 	// ---- json ----
@@ -819,8 +819,8 @@ func TestLogReportEndToEnd(t *testing.T) {
 // "netops log report".
 func TestLogStatusEndToEnd(t *testing.T) {
 	_, host, port := startLogFakeIOS(t)
-	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco_ios,default,\n"+
-		"DEAD,127.0.0.1,1,cisco_ios,default,\n"+ // connection refused, instantly
+	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco,default,\n"+
+		"DEAD,127.0.0.1,1,cisco,default,\n"+ // connection refused, instantly
 		"PF,%s,%d,sophos,default,\n", host, port, host, port))
 	dataDir := filepath.Join(e.dir, "data")
 	inv := filepath.Join(e.dir, "inventory.csv")
@@ -987,8 +987,8 @@ func TestLogOutagesEndToEnd(t *testing.T) {
 	cls := pipeline.NewClassifier(time.UTC)
 	var entries []collector.LogEntry
 	for host, raw := range map[string]string{"R1": iosLines, "R2": ospfLines} {
-		dev := inventory.Device{Hostname: host, Address: "10.0.0.1", Vendor: "cisco_ios"}
-		got := parser.Parse("cisco_ios", raw, dev, parser.Options{Ref: now, Location: time.UTC})
+		dev := inventory.Device{Hostname: host, Address: "10.0.0.1", Vendor: "cisco"}
+		got := parser.Parse("cisco", raw, dev, parser.Options{Ref: now, Location: time.UTC})
 		for i := range got {
 			got[i].Timestamp = got[i].DeviceTS
 		}
@@ -1229,7 +1229,7 @@ func TestLogTopFlagsAndNonInteractiveRefusal(t *testing.T) {
 
 func TestLogDiagnoseProbeAndJSONFlags(t *testing.T) {
 	_, host, port := startLogFakeIOS(t)
-	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco_ios,default,\n", host, port))
+	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco,default,\n", host, port))
 	args := func(extra ...string) []string {
 		// diagnose has no --data-dir; the flag package stops at the first
 		// positional argument, so the device comes last.
@@ -1278,7 +1278,7 @@ func TestLogDiagnoseProbeAndJSONFlags(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &rep); err != nil {
 		t.Fatalf("--json output is not JSON: %v\n%s\nstderr: %s", err, out, stderr)
 	}
-	if rep.Hostname != "SW-LAB" || rep.Vendor != "cisco_ios" || rep.Probe == nil || rep.Probe.Name != "Path & Reachability Probe" ||
+	if rep.Hostname != "SW-LAB" || rep.Vendor != "cisco" || rep.Probe == nil || rep.Probe.Name != "Path & Reachability Probe" ||
 		rep.PoE == nil || len(rep.Sections) == 0 {
 		t.Errorf("JSON report: %+v\n%s", rep, out)
 	}
@@ -1315,7 +1315,7 @@ func TestLogBareInvocationIsAUsageError(t *testing.T) {
 }
 
 func TestLogHelpGoesToStdout(t *testing.T) {
-	for _, arg := range []string{"-h", "--help", "help", "-help"} {
+	for _, arg := range []string{"-h", "--help", "help"} {
 		var out, errb bytes.Buffer
 		if code := runLog([]string{arg}, nil, &out, &errb); code != task.ExitOK {
 			t.Errorf("netops log %s: exit %d, want %d", arg, code, task.ExitOK)
@@ -1333,7 +1333,7 @@ func TestLogHelpGoesToStdout(t *testing.T) {
 
 // init, telegram-test and version are root commands; the merge must not
 // duplicate them under "netops log".
-func TestLogRejectsUnknownAndMovedSubcommands(t *testing.T) {
+func TestLogRejectsUnknownSubcommands(t *testing.T) {
 	for _, name := range []string{"bogus", "init", "telegram-test", "version", "-version", ""} {
 		var out, errb bytes.Buffer
 		if code := runLog([]string{name}, nil, &out, &errb); code != task.ExitFatal {
@@ -1380,8 +1380,7 @@ func TestRootHelpListsTheLogSubcommand(t *testing.T) {
 	}
 }
 
-// Every subcommand parses its flags and documents them; the help names the
-// harmonised netops flags rather than the pre-merge netlog ones.
+// Every subcommand parses its flags and documents them, in groups.
 func TestLogEverySubcommandDocumentsItsFlags(t *testing.T) {
 	conn := []string{"connect-timeout", "command-timeout", "inventory", "env-file", "host-key-policy", "known-hosts", "legacy-algorithms", "jump", "jump-host"}
 	want := map[string][]string{
@@ -1415,11 +1414,6 @@ func TestLogEverySubcommandDocumentsItsFlags(t *testing.T) {
 		for _, flagName := range want[name] {
 			if !strings.Contains(help, "  -"+flagName) {
 				t.Errorf("netops log %s -h does not document -%s", name, flagName)
-			}
-		}
-		for _, gone := range []string{"known-hosts-policy", "insecure-ignore-host-key", "netlog", "NETLOG"} {
-			if strings.Contains(help, gone) {
-				t.Errorf("netops log %s -h still mentions %q:\n%s", name, gone, help)
 			}
 		}
 	}
@@ -1499,35 +1493,6 @@ func TestLogConnectionFlagsMatchNetopsDefaults(t *testing.T) {
 	}
 }
 
-func TestLogHostMatcher(t *testing.T) {
-	cases := []struct {
-		limit string
-		host  string
-		want  bool
-	}{
-		{"", "anything", true},
-		{"core", "CORE-GW-1", true}, // case-insensitive substring, as "netlog query --host" always was
-		{"core", "edge-1", false},
-		{"core-*", "core-gw-1", true},    // globs
-		{"core-*", "edge-core-1", false}, // a glob must match the whole name
-		{"edge-?", "edge-1", true},
-		{"edge, dist", "dist-3", true}, // comma-separated list
-		{"edge, dist", "core-1", false},
-	}
-	for _, c := range cases {
-		match, err := logHostMatcher(c.limit)
-		if err != nil {
-			t.Fatalf("%q: %v", c.limit, err)
-		}
-		if got := match(c.host); got != c.want {
-			t.Errorf("limit %q vs %q = %v, want %v", c.limit, c.host, got, c.want)
-		}
-	}
-	if _, err := logHostMatcher("bad[pattern"); err == nil {
-		t.Error("an invalid glob must be an error")
-	}
-}
-
 // seedLogEvents stores one recent event per hostname.
 func seedLogEvents(t *testing.T, dataDir string, hosts ...string) {
 	t.Helper()
@@ -1541,55 +1506,12 @@ func seedLogEvents(t *testing.T, dataDir string, hosts ...string) {
 		ts := time.Now().UTC().Add(-time.Duration(i+1) * time.Minute)
 		entries = append(entries, collector.LogEntry{
 			ID: fmt.Sprintf("seed-%d", i), Timestamp: ts, DeviceTS: ts, Hostname: h, IP: "10.0.0." + strconv.Itoa(i+1),
-			Vendor: "cisco_ios", Category: "FAULT", Severity: "ERROR", Event: "LINK_DOWN",
+			Vendor: "cisco", Category: "FAULT", Severity: "ERROR", Event: "LINK_DOWN",
 			Summary: "Interface Gi0/1 down on " + h, Raw: "%LINK-3-UPDOWN: Interface Gi0/1 on " + h,
 		})
 	}
 	if err := w.Append(entries); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// --limit filters query and timeline by hostname, and --host is its alias.
-func TestLogLimitAndHostAliasFilterQueryAndTimeline(t *testing.T) {
-	dataDir := filepath.Join(t.TempDir(), "data")
-	seedLogEvents(t, dataDir, "core-gw-1", "edge-1", "dist-3")
-	e := logEnv{}
-
-	hostsIn := func(out string) []string {
-		var got []string
-		for _, h := range []string{"core-gw-1", "edge-1", "dist-3"} {
-			if strings.Contains(out, h) {
-				got = append(got, h)
-			}
-		}
-		return got
-	}
-	for _, cmd := range []string{"query", "timeline"} {
-		for _, flagName := range []string{"--limit", "--host", "-limit", "-host"} {
-			args := []string{cmd, "--data-dir", dataDir, "--no-color", flagName, "edge,dist-*"}
-			if cmd == "timeline" {
-				args = append(args, "--from", time.Now().Add(-time.Hour).Format("2006-01-02 15:04:05"))
-			}
-			out, stderr, code := e.run(t, args...)
-			if code != task.ExitOK {
-				t.Fatalf("%v: exit %d, stderr %q", args, code, stderr)
-			}
-			if got := hostsIn(out); len(got) != 2 || got[0] != "edge-1" || got[1] != "dist-3" {
-				t.Errorf("%v shows %v, want exactly edge-1 and dist-3:\n%s", args, got, out)
-			}
-		}
-		// no limit: everything
-		args := []string{cmd, "--data-dir", dataDir, "--no-color"}
-		if cmd == "timeline" {
-			args = append(args, "--from", time.Now().Add(-time.Hour).Format("2006-01-02 15:04:05"))
-		}
-		if out, _, _ := e.run(t, args...); len(hostsIn(out)) != 3 {
-			t.Errorf("%s without --limit should list all three devices:\n%s", cmd, out)
-		}
-	}
-	if _, stderr, code := e.run(t, "query", "--data-dir", dataDir, "--limit", "bad[glob"); code != task.ExitFatal || !strings.Contains(stderr, "--limit") {
-		t.Errorf("a malformed --limit must be refused: exit %d stderr %q", code, stderr)
 	}
 }
 
@@ -1613,10 +1535,6 @@ func TestLogFormatTableAndJSON(t *testing.T) {
 	if out, _, code := e.run(t, "query", "--data-dir", dataDir, "--format", "table", "--no-color"); code != task.ExitOK || !strings.Contains(out, "core-gw-1") {
 		t.Errorf("query --format table: exit %d out %q", code, out)
 	}
-	// "text" is the pre-merge spelling of the table format and stays accepted.
-	if _, _, code := e.run(t, "query", "--data-dir", dataDir, "--format", "text"); code != task.ExitOK {
-		t.Errorf("query --format text: exit %d", code)
-	}
 
 	out, stderr, code = e.run(t, "incidents", "--data-dir", dataDir, "--format", "json")
 	var reports []collector.IncidentReport
@@ -1635,42 +1553,12 @@ func TestLogFormatTableAndJSON(t *testing.T) {
 	}
 
 	for _, cmd := range []string{"query", "incidents", "report", "status"} {
-		if _, stderr, code := e.run(t, cmd, "--data-dir", dataDir, "--format", "yaml"); code != task.ExitFatal || !strings.Contains(stderr, "--format must be") {
-			t.Errorf("%s --format yaml: exit %d stderr %q", cmd, code, stderr)
+		for _, bad := range []string{"yaml", "text", "TABLE"} {
+			if _, stderr, code := e.run(t, cmd, "--data-dir", dataDir, "--format", bad); code != task.ExitFatal || !strings.Contains(stderr, "--format must be table or json") {
+				t.Errorf("%s --format %s: exit %d stderr %q", cmd, bad, code, stderr)
+			}
 		}
 	}
-}
-
-// Credentials resolve through NETOPS_* only: the old NETLOG_* variables are not
-// consulted, so a device whose only credentials are NETLOG_* cannot log in.
-func TestLogDoesNotReadNetlogEnvironmentVariables(t *testing.T) {
-	_, host, port := startLogFakeIOS(t)
-	e := newLogEnv(t, fmt.Sprintf("SW-LAB,%s,%d,cisco_ios,default,\n", host, port))
-	t.Setenv("NETOPS_USERNAME", "")
-	t.Setenv("NETOPS_PASSWORD", "")
-	t.Setenv("NETLOG_USERNAME", "u")
-	t.Setenv("NETLOG_PASSWORD", "p")
-
-	stderr, code := e.collect(t)
-	if code != task.ExitFatal || !strings.Contains(stderr, "no device could be polled") {
-		t.Fatalf("NETLOG_* credentials must not be honoured: exit %d\n%s", code, stderr)
-	}
-	if _, found := e.logEntriesOrNil(); found {
-		t.Error("nothing may be collected without NETOPS_* credentials")
-	}
-
-	// The same run with NETOPS_* set succeeds.
-	t.Setenv("NETOPS_USERNAME", "u")
-	t.Setenv("NETOPS_PASSWORD", "p")
-	if stderr, code := e.collect(t); code != task.ExitOK {
-		t.Fatalf("with NETOPS_* credentials: exit %d\n%s", code, stderr)
-	}
-}
-
-// logEntriesOrNil reports whether any log file exists, without failing the test.
-func (e logEnv) logEntriesOrNil() ([]string, bool) {
-	files, _ := filepath.Glob(filepath.Join(e.dir, "data", "logs", "*.jsonl"))
-	return files, len(files) > 0
 }
 
 // The --jump-host flag becomes NETOPS_JUMP_HOST for the credential resolver, and
@@ -1693,35 +1581,6 @@ func TestLogJumpHostFlagFeedsTheResolver(t *testing.T) {
 	}
 }
 
-func TestLogMulticallArgs(t *testing.T) {
-	cases := []struct {
-		exec string
-		args []string
-		want []string
-	}{
-		{"netops", []string{"status"}, []string{"status"}},
-		{"netops", nil, nil},
-		{"netlog", nil, []string{"log"}},
-		{"netlog", []string{"status"}, []string{"log", "status"}},
-		{"netlog", []string{"query", "--since", "1h"}, []string{"log", "query", "--since", "1h"}},
-		{"netlog", []string{"-h"}, []string{"log", "-h"}},
-		{"netlog", []string{"init"}, []string{"init"}},
-		{"netlog", []string{"telegram-test", "-h"}, []string{"telegram-test", "-h"}},
-		{"netlog", []string{"version"}, []string{"version"}},
-		{"netlog", []string{"--version"}, []string{"--version"}},
-		{"netlog", []string{"-v"}, []string{"version"}},
-		{"netlog-1.0", []string{"collect"}, []string{"log", "collect"}},
-		{"netlog.exe", []string{"top"}, []string{"log", "top"}},
-		{"NETLOG.EXE", []string{"top"}, []string{"log", "top"}},
-		{"netlogger", []string{"status"}, []string{"status"}}, // only "netlog" and "netlog-*" are aliases
-	}
-	for _, c := range cases {
-		if got := multicallArgs(c.exec, c.args); !slices.Equal(got, c.want) {
-			t.Errorf("multicallArgs(%q, %v) = %v, want %v", c.exec, c.args, got, c.want)
-		}
-	}
-}
-
 // The log subcommands never accept stray positional arguments, except
 // diagnose which takes exactly one device.
 func TestLogRejectsStrayArguments(t *testing.T) {
@@ -1733,14 +1592,34 @@ func TestLogRejectsStrayArguments(t *testing.T) {
 	}
 }
 
-// "netops log status" flags a device as STALE after an hour by default.
-func TestLogStatusStaleAfterDefaultsToOneHour(t *testing.T) {
-	var out, errb bytes.Buffer
-	if code := runLog([]string{"status", "-h"}, nil, &out, &errb); code != task.ExitOK {
-		t.Fatalf("status -h: exit %d", code)
+// status, top and the report share one set of thresholds: STALE after an hour
+// without a poll attempt, SILENT after a day without a new log line.
+func TestLogStatusAndTopShareTheSameThresholds(t *testing.T) {
+	if store.DefaultStaleAfter != time.Hour || store.DefaultSilentAfter != 24*time.Hour {
+		t.Fatalf("thresholds = %s/%s, want 1h/24h", store.DefaultStaleAfter, store.DefaultSilentAfter)
 	}
-	if !strings.Contains(errb.String(), "(default 1h0m0s)") || logStatusStaleAfter != time.Hour {
-		t.Errorf("status --stale-after must default to 1h:\n%s", errb.String())
+	defaults := func(cmd string) map[string]string {
+		t.Helper()
+		var out, errb bytes.Buffer
+		if code := runLog([]string{cmd, "-h"}, nil, &out, &errb); code != task.ExitOK {
+			t.Fatalf("%s -h: exit %d", cmd, code)
+		}
+		got := map[string]string{}
+		for _, name := range []string{"stale-after", "silent-after"} {
+			m := regexp.MustCompile(`(?s)-` + name + ` duration.*?\(default ([0-9hms]+)\)`).FindStringSubmatch(errb.String())
+			if m == nil {
+				t.Fatalf("%s -h shows no default for -%s:\n%s", cmd, name, errb.String())
+			}
+			got[name] = m[1]
+		}
+		return got
+	}
+	status, top := defaults("status"), defaults("top")
+	if status["stale-after"] != "1h0m0s" || status["silent-after"] != "24h0m0s" {
+		t.Errorf("status defaults = %v", status)
+	}
+	if !maps.Equal(status, top) {
+		t.Errorf("status defaults %v differ from top defaults %v", status, top)
 	}
 }
 
@@ -1768,5 +1647,109 @@ func TestLogDiagnoseMissingInventoryMessage(t *testing.T) {
 	errb.Reset()
 	if code := runLog([]string{"diagnose", "sw1", "--inventory", empty}, nil, &out, &errb); code != task.ExitFatal || !strings.Contains(errb.String(), "contains no devices") || strings.Contains(errb.String(), "netops init") {
 		t.Errorf("empty inventory: exit %d, stderr:\n%s", code, errb.String())
+	}
+}
+
+// --limit is the one hostname filter, with the glob semantics of every netops
+// -limit: whole-name, case-insensitive, comma-separated.
+func TestLogLimitFilter(t *testing.T) {
+	cases := []struct {
+		limit string
+		host  string
+		want  bool
+	}{
+		{"", "anything", true},
+		{"core-*", "core-gw-1", true},
+		{"CORE-*", "core-gw-1", true}, // case-insensitive
+		{"core-*", "edge-core-1", false},
+		{"core", "core-gw-1", false}, // a bare word is a whole name, not a substring
+		{"core-gw-1", "core-gw-1", true},
+		{"edge-?", "edge-1", true},
+		{"edge-*, dist-*", "dist-3", true}, // comma-separated
+		{"edge-*, dist-*", "core-1", false},
+	}
+	for _, c := range cases {
+		match, err := logLimitFilter(c.limit)
+		if err != nil {
+			t.Fatalf("%q: %v", c.limit, err)
+		}
+		if got := match(c.host); got != c.want {
+			t.Errorf("limit %q vs %q = %v, want %v", c.limit, c.host, got, c.want)
+		}
+	}
+	for _, bad := range []string{"bad[glob", "@dc1", "core-*,@dc1"} {
+		if _, err := logLimitFilter(bad); err == nil || !strings.Contains(err.Error(), "--limit") {
+			t.Errorf("--limit %q must be refused, got %v", bad, err)
+		}
+	}
+}
+
+// --limit filters query and timeline by hostname; --host is not a flag.
+func TestLogLimitFiltersQueryAndTimeline(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "data")
+	seedLogEvents(t, dataDir, "core-gw-1", "edge-1", "dist-3")
+	e := logEnv{}
+
+	hostsIn := func(out string) []string {
+		var got []string
+		for _, h := range []string{"core-gw-1", "edge-1", "dist-3"} {
+			if strings.Contains(out, h) {
+				got = append(got, h)
+			}
+		}
+		return got
+	}
+	window := func(cmd string, args ...string) []string {
+		args = append([]string{cmd, "--data-dir", dataDir, "--no-color"}, args...)
+		if cmd == "timeline" {
+			args = append(args, "--from", time.Now().Add(-time.Hour).Format("2006-01-02 15:04:05"))
+		}
+		return args
+	}
+	for _, cmd := range []string{"query", "timeline"} {
+		for _, flagName := range []string{"--limit", "-limit"} {
+			args := window(cmd, flagName, "edge-*,dist-*")
+			out, stderr, code := e.run(t, args...)
+			if code != task.ExitOK {
+				t.Fatalf("%v: exit %d, stderr %q", args, code, stderr)
+			}
+			if got := hostsIn(out); len(got) != 2 || got[0] != "edge-1" || got[1] != "dist-3" {
+				t.Errorf("%v shows %v, want exactly edge-1 and dist-3:\n%s", args, got, out)
+			}
+		}
+		if out, _, _ := e.run(t, window(cmd)...); len(hostsIn(out)) != 3 {
+			t.Errorf("%s without --limit should list all three devices:\n%s", cmd, out)
+		}
+		// no alias: --host is rejected like any unknown flag
+		if _, stderr, code := e.run(t, window(cmd, "--host", "edge-1")...); code != task.ExitFatal || !strings.Contains(stderr, "flag provided but not defined: -host") {
+			t.Errorf("%s --host must not exist: exit %d stderr %q", cmd, code, stderr)
+		}
+		if _, stderr, code := e.run(t, window(cmd, "--limit", "bad[glob")...); code != task.ExitFatal || !strings.Contains(stderr, "--limit") {
+			t.Errorf("%s: a malformed --limit must be refused: exit %d stderr %q", cmd, code, stderr)
+		}
+	}
+}
+
+// Flags have one spelling each: no subcommand declares an alias, and the
+// pre-standard spellings are plain unknown flags.
+func TestLogFlagsHaveNoAliases(t *testing.T) {
+	for _, name := range logSubcommands {
+		var out, errb bytes.Buffer
+		runLog([]string{name, "-h"}, nil, &out, &errb)
+		if strings.Contains(errb.String(), "alias for") {
+			t.Errorf("netops log %s declares an alias flag:\n%s", name, errb.String())
+		}
+	}
+	for _, c := range [][]string{
+		{"query", "--host", "x"},
+		{"timeline", "--host", "x"},
+		{"collect", "--known-hosts-policy", "strict"},
+		{"collect", "--insecure-ignore-host-key"},
+		{"diagnose", "sw1", "--insecure-ignore-host-key"},
+	} {
+		var out, errb bytes.Buffer
+		if code := runLog(c, nil, &out, &errb); code != task.ExitFatal || !strings.Contains(errb.String(), "flag provided but not defined") {
+			t.Errorf("netops log %v: exit %d stderr %q, want an unknown-flag error", c, code, errb.String())
+		}
 	}
 }

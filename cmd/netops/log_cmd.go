@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -107,7 +106,7 @@ func runLog(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return runLogTop(rest, stdin, stdout, stderr)
 	case "diagnose":
 		return runLogDiagnose(rest, stdin, stdout, stderr)
-	case "-h", "-help", "--help", "help":
+	case "-h", "--help", "help":
 		fmt.Fprint(stdout, logUsageText)
 		return task.ExitOK
 	default:
@@ -165,55 +164,30 @@ func logFormatFlag(fs *flag.FlagSet, def string) *string {
 	return fs.String("format", def, "output format: table | json")
 }
 
-// normalizeLogFormat maps the accepted --format spellings to "table" or "json".
-// "text" is the pre-merge name of the table format and stays accepted.
-func normalizeLogFormat(v string) (string, bool) {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "table", "text":
-		return "table", true
-	case "json":
-		return "json", true
-	}
-	return "", false
-}
+// validLogFormat reports whether v is a supported --format value.
+func validLogFormat(v string) bool { return v == "table" || v == "json" }
 
-// registerLimit declares --limit and its --host alias onto dst.
+// registerLimit declares --limit with the meaning it has in every netops
+// command: comma-separated hostname globs.
 func registerLimit(fs *flag.FlagSet, dst *string) {
-	fs.StringVar(dst, "limit", "", "only these devices: comma-separated hostname substrings or globs (case-insensitive)")
-	fs.StringVar(dst, "host", "", "alias for -limit")
+	fs.StringVar(dst, "limit", "", "only these devices: comma-separated hostname globs (stored events carry no credential group, so @group is not available)")
 }
 
-// logHostMatcher builds the --limit filter: a comma-separated list of
-// hostname patterns, each a glob (when it contains * ? or [) or otherwise a
-// case-insensitive substring, which is what "netlog query --host" always did.
-// An empty limit matches everything.
-func logHostMatcher(limit string) (func(host string) bool, error) {
-	var pats []string
-	for _, p := range strings.Split(limit, ",") {
-		if p = strings.ToLower(strings.TrimSpace(p)); p != "" {
-			if strings.ContainsAny(p, "*?[") {
-				if _, err := path.Match(p, ""); err != nil {
-					return nil, fmt.Errorf("invalid pattern %q in --limit: %w", p, err)
-				}
-			}
-			pats = append(pats, p)
-		}
+// logLimitFilter builds the --limit filter over stored events: it keeps the
+// events whose hostname matches one of the globs, with the matching rules of
+// inventory.Filter. An empty limit keeps everything.
+func logLimitFilter(limit string) (func(host string) bool, error) {
+	pats, err := inventory.ParseLimit(limit)
+	if err != nil {
+		return nil, fmt.Errorf("--limit: %w", err)
 	}
-	if len(pats) == 0 {
-		return func(string) bool { return true }, nil
+	for _, p := range pats {
+		if strings.HasPrefix(p, "@") {
+			return nil, fmt.Errorf("--limit: %q selects a credential group, which stored events do not carry; use hostname globs", p)
+		}
 	}
 	return func(host string) bool {
-		host = strings.ToLower(host)
-		for _, p := range pats {
-			if strings.ContainsAny(p, "*?[") {
-				if ok, _ := path.Match(p, host); ok {
-					return true
-				}
-			} else if strings.Contains(host, p) {
-				return true
-			}
-		}
-		return false
+		return inventory.MatchesAny(inventory.Device{Hostname: host}, pats)
 	}, nil
 }
 
@@ -284,7 +258,7 @@ type logTransport struct {
 
 // transport loads the credentials (the .env file, the NETOPS_* environment and,
 // on a terminal, prompts) and builds the SSH options, including the host key
-// verifier. It never reads NETLOG_* variables.
+// verifier.
 func (c *logConn) transport(stdin *os.File, stderr io.Writer, log *logLogger) (*logTransport, error) {
 	policy, err := sshclient.ParsePolicy(c.hostKeyPolicy)
 	if err != nil {
