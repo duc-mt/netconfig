@@ -27,10 +27,18 @@ import (
 	"netops/internal/task"
 )
 
+// jumpDial represents an in-flight dial to a bastion.
+type jumpDial struct {
+	done chan struct{}
+	c    *ssh.Client
+	err  error
+}
+
 // jumpPool maintains lazily-initialised, shared *ssh.Client bastions and route memory.
 type jumpPool struct {
 	mu          sync.Mutex
 	clients     map[string]*ssh.Client
+	dials       map[string]*jumpDial
 	badBastions map[string]bool // hosts that failed direct connection (cannot serve as bastions)
 	memStore    *memory.Store
 	hostKey     sshclient.HostKeyCallback
@@ -40,6 +48,7 @@ type jumpPool struct {
 func newJumpPool(hk sshclient.HostKeyCallback, legacy bool, memStore *memory.Store) *jumpPool {
 	return &jumpPool{
 		clients:     make(map[string]*ssh.Client),
+		dials:       make(map[string]*jumpDial),
 		badBastions: make(map[string]bool),
 		memStore:    memStore,
 		hostKey:     hk,
@@ -71,6 +80,23 @@ func (p *jumpPool) get(ctx context.Context, addr, username, password, keyFile st
 		p.mu.Unlock()
 		return c, nil
 	}
+
+	// If another goroutine is already dialing this bastion, wait for its completion.
+	if d, ok := p.dials[addr]; ok {
+		p.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-d.done:
+			return d.c, d.err
+		}
+	}
+
+	d := &jumpDial{done: make(chan struct{})}
+	if p.dials == nil {
+		p.dials = make(map[string]*jumpDial)
+	}
+	p.dials[addr] = d
 	p.mu.Unlock()
 
 	// Ensure port is present
@@ -82,18 +108,18 @@ func (p *jumpPool) get(ctx context.Context, addr, username, password, keyFile st
 	formattedAddr := net.JoinHostPort(host, portStr)
 
 	c, err := sshclient.ConnectJumpHost(ctx, formattedAddr, username, password, keyFile, timeout, p.hostKey, p.legacy)
-	if err != nil {
-		return nil, err
-	}
 
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if existing, ok := p.clients[addr]; ok {
-		_ = c.Close()
-		return existing, nil
+	delete(p.dials, addr)
+	d.c = c
+	d.err = err
+	if err == nil {
+		p.clients[addr] = c
 	}
-	p.clients[addr] = c
-	return c, nil
+	close(d.done)
+	p.mu.Unlock()
+
+	return c, err
 }
 
 func (p *jumpPool) closeAll() {
@@ -154,7 +180,8 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 		ConnectTimeout:   tgt.ConnectTimeout,
 		LoginTimeout:     tgt.LoginTimeout,
 		HostKey:          t.hostKey,
-		LegacyAlgorithms: t.legacy,
+		LegacyAlgorithms: t.legacy || (tgt.Profile != nil && tgt.Profile.Name == "cisco_sb") || tgt.Device.Vendor == "cisco_sb",
+		NoRSASHA2:        (tgt.Profile != nil && tgt.Profile.Name == "cisco_sb") || tgt.Device.Vendor == "cisco_sb",
 		AutoConfirm:      t.autoConfirm,
 		Logf:             tgt.Logf,
 		TCPMSS:           mss,
@@ -179,9 +206,12 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 			return nil, fmt.Errorf("bastion %s: %w", tgt.JumpCred.Host, err)
 		}
 		sh, err := sshclient.ConnectViaJump(ctx, jumpClient, cfg)
-		if err != nil && !cfg.LegacyAlgorithms && isAlgorithmMismatch(err) {
+		if err != nil && ((!cfg.LegacyAlgorithms && isAlgorithmMismatch(err)) || (!cfg.NoRSASHA2 && isPacketTooLarge(err))) {
 			legacyCfg := cfg
 			legacyCfg.LegacyAlgorithms = true
+			if isPacketTooLarge(err) {
+				legacyCfg.NoRSASHA2 = true
+			}
 			if retrySh, retryErr := sshclient.ConnectViaJump(ctx, jumpClient, legacyCfg); retryErr == nil {
 				sh = retrySh
 				err = nil
@@ -193,9 +223,12 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 			if freshClient, dialErr := t.pool.get(ctx, tgt.JumpCred.Host, jumpUser, jumpPass, jumpKey, tgt.ConnectTimeout); dialErr == nil {
 				if retrySh, retryErr := sshclient.ConnectViaJump(ctx, freshClient, cfg); retryErr == nil {
 					return retrySh, nil
-				} else if !cfg.LegacyAlgorithms && isAlgorithmMismatch(retryErr) {
+				} else if (!cfg.LegacyAlgorithms && isAlgorithmMismatch(retryErr)) || (!cfg.NoRSASHA2 && isPacketTooLarge(retryErr)) {
 					legacyCfg := cfg
 					legacyCfg.LegacyAlgorithms = true
+					if isPacketTooLarge(retryErr) {
+						legacyCfg.NoRSASHA2 = true
+					}
 					if legSh, legErr := sshclient.ConnectViaJump(ctx, freshClient, legacyCfg); legErr == nil {
 						return legSh, nil
 					}
@@ -219,9 +252,12 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 					jumpClient, err := t.pool.get(ctx, cand.Device.Endpoint(), cand.Cred.Username, cand.Cred.Password, cand.Cred.KeyFile, tgt.ConnectTimeout)
 					if err == nil {
 						sh, err := sshclient.ConnectViaJump(ctx, jumpClient, cfg)
-						if err != nil && !cfg.LegacyAlgorithms && isAlgorithmMismatch(err) {
+						if err != nil && ((!cfg.LegacyAlgorithms && isAlgorithmMismatch(err)) || (!cfg.NoRSASHA2 && isPacketTooLarge(err))) {
 							legacyCfg := cfg
 							legacyCfg.LegacyAlgorithms = true
+							if isPacketTooLarge(err) {
+								legacyCfg.NoRSASHA2 = true
+							}
 							sh, err = sshclient.ConnectViaJump(ctx, jumpClient, legacyCfg)
 						}
 						if err == nil {
@@ -243,9 +279,12 @@ func (t sshTransport) Open(ctx context.Context, tgt task.Target) (task.Session, 
 
 	// 3. Direct connection
 	sh, directErr := sshclient.Connect(ctx, cfg)
-	if directErr != nil && !cfg.LegacyAlgorithms && isAlgorithmMismatch(directErr) {
+	if directErr != nil && ((!cfg.LegacyAlgorithms && isAlgorithmMismatch(directErr)) || (!cfg.NoRSASHA2 && isPacketTooLarge(directErr))) {
 		legacyCfg := cfg
 		legacyCfg.LegacyAlgorithms = true
+		if isPacketTooLarge(directErr) {
+			legacyCfg.NoRSASHA2 = true
+		}
 		if retrySh, retryErr := sshclient.Connect(ctx, legacyCfg); retryErr == nil {
 			sh = retrySh
 			directErr = nil
@@ -354,5 +393,16 @@ func isAlgorithmMismatch(err error) bool {
 	s := strings.ToLower(err.Error())
 	return strings.Contains(s, "no common algorithm") ||
 		strings.Contains(s, "handshake failed: eof") ||
-		strings.Contains(s, "no matching")
+		strings.Contains(s, "no matching") ||
+		strings.Contains(s, "packet too large") ||
+		strings.Contains(s, "invalid packet length") ||
+		strings.Contains(s, "legacy algorithms")
+}
+
+func isPacketTooLarge(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "packet too large") || strings.Contains(s, "invalid packet length")
 }

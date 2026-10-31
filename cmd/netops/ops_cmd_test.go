@@ -218,7 +218,7 @@ func (w *opsWS) run(args ...string) (code int, stdout, stderr string) {
 		n++
 	}
 	base := w.base
-	if n > 0 && (args[0] == "facts" || args[0] == "find" || args[0] == "audit" || args[0] == "exec") {
+	if n > 0 && (args[0] == "facts" || args[0] == "find" || args[0] == "audit" || args[0] == "exec" || args[0] == "diag") {
 		var filtered []string
 		for i := 0; i < len(base); i++ {
 			if base[i] == "-backup-dir" {
