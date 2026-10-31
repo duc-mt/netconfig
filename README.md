@@ -898,15 +898,15 @@ not be checked, or a requested Telegram alert was not delivered; 0 = nothing at 
 
 ## Network Log Monitoring & Auto-Triage (`netops log`)
 
-`netops log` is the former standalone `netlog` tool, merged into netops the same way `netbackup`
-became `netops backup`. It reads each device's log buffer over SSH (or receives syslog), normalises
-the vendor formats into one event schema, classifies them (CONFIG, AUTH, FAULT, SECURITY, SYSTEM),
-detects anomalies (link flaps, login bursts, config changes, BGP/OSPF drops) and, when one fires,
-captures diagnostics from the device. **It never changes a device**: everything it sends is a
-`show`/`display` command, enforced by an allow-list that triage and `diagnose` cannot bypass.
+`netops log` watches the network's logs. It reads each device's log buffer over SSH (or receives
+syslog), normalises the vendor formats into one event schema, classifies them (CONFIG, AUTH, FAULT,
+SECURITY, SYSTEM), detects anomalies (link flaps, login bursts, config changes, BGP/OSPF drops) and,
+when one fires, captures diagnostics from the device. **It never changes a device**: everything it
+sends is a `show`/`display` command, enforced by an allow-list that triage and `diagnose` cannot
+bypass.
 
-It shares the inventory, credentials, host key policy, jump hosts and Telegram settings of the other
-netops commands; there is nothing separate to configure.
+It shares the inventory, vendor names, credentials, host key policy, jump hosts and Telegram settings
+of the other netops commands; there is nothing separate to configure.
 
 ### Quick start
 
@@ -919,7 +919,7 @@ netops log monitor --tui                        # poll and watch the live dashbo
 netops log listen --port 5514                   # passive syslog receiver (UDP+TCP; ports below 1024 need root)
 
 netops log query --category CONFIG --since 24h  # who changed what
-netops log query --limit 'core-*,dist' --severity CRITICAL --since today --format json | jq .
+netops log query --limit 'core-*,dist-*' --severity CRITICAL --since today --format json | jq .
 netops log timeline --from "2026-10-20 10:10:00" --to "2026-10-20 10:25:00"
 netops log incidents --since 24h                # auto-triage reports; --id <prefix> shows one in full
 netops log report                               # noisy devices, changes, watchlist, week-over-week trend, MTTR
@@ -935,33 +935,41 @@ netops log diagnose core-gw-1 --raw             # one-shot, read-only health che
 | `collect` | Poll every device once, store new events, auto-triage anomalies, exit. Exits 1 if no device could be polled. | `--dry-run`, `--concurrency`, `--retention-days`, `--no-config-diff`, `--no-peer-triage` |
 | `monitor` | `collect` in a loop; drains in-flight polls and triage on SIGINT/SIGTERM and exits 0. | `--interval` (2m, min 10s), `--tui` |
 | `listen` | Passive syslog receiver (RFC 3164/5424, UDP and TCP). Never connects to a device. | `--bind`, `--port` (514), `--proto`, `--udp-port`, `--tcp-port`, `--accept-unknown`, `--drop-unclassified` |
-| `query` | Search stored events, newest first. | `--limit` (alias `--host`), `--user`, `--category`, `--severity`, `--event`, `--since` (24h), `--format` |
-| `timeline` | Cross-device chronological stream with likely-cause annotation. | `--from`, `--to`, `--limit` (alias `--host`) |
+| `query` | Search stored events, newest first. | `--limit`, `--user`, `--category`, `--severity`, `--event`, `--since` (24h), `--format` |
+| `timeline` | Cross-device chronological stream with likely-cause annotation. | `--from`, `--to`, `--limit` |
 | `incidents` | List auto-triage reports or show one. | `--id`, `--since` (24h), `--format` |
 | `report` | Digest: noisy devices, change accountability, security watchlist, trends, MTTR. | `--since` (7d), `--top` (10), `--compare`, `--format` |
-| `status` | Per-device collection health: failing, silent, stale. | `--stale-after` (1h), `--silent-after` (24h), `--fail`, `--format` |
-| `top` | Live terminal dashboard over the stored data. | `--refresh` (1s, min 100ms), `--inventory`, `--stale-after` |
+| `status` | Per-device collection health: failing, silent, stale. | `--stale-after`, `--silent-after`, `--fail`, `--format` |
+| `top` | Live terminal dashboard over the stored data. | `--refresh` (1s, min 100ms), `--inventory`, `--stale-after`, `--silent-after` |
 | `diagnose <device>` | Reachability probe, SSH login, alarms, BGP/OSPF, CRC errors, optical DDM, PoE. | `--interface`, `--raw`, `--fail`, `--no-probe`, `--json` |
 
 `netops log -h` lists the subcommands (stdout, exit 0); a bare `netops log` prints
 `netops log: missing subcommand` and the usage to stderr and exits 1. `netops log <subcommand> -h`
-shows the flags, grouped. `init`, `telegram-test` and `version` are the root commands of the same
-name; there is no `netops log init`.
+shows the flags, grouped. `init`, `telegram-test` and `version` are root commands; there is no
+`netops log init`.
 
-### Flags shared with the other commands
+### Flags
 
-`collect`, `monitor` and `diagnose` take the usual connection flags with the usual defaults:
-`--inventory`, `--env-file`, `--connect-timeout` (10s), `--command-timeout` (30s),
-`--host-key-policy` (`update`; also `strict`, `accept-new`, `insecure`), `--known-hosts`
-(`known_hosts`), `--legacy-algorithms` (on), `--jump` (on) and `--jump-host`. `--limit` takes
-comma-separated hostname substrings or globs, case-insensitively. `--format` is `table` or `json`;
-JSON goes to stdout with nothing else mixed in, diagnostics go to stderr. `--no-color` and `NO_COLOR`
-are honoured.
+Every flag has one spelling and the meaning it has in the other netops commands.
+
+* **Connection** (`collect`, `monitor`, `diagnose`): `--inventory`, `--env-file`, `--connect-timeout`
+  (10s), `--command-timeout` (30s), `--host-key-policy` (`update`; also `strict`, `accept-new`,
+  `insecure`), `--known-hosts` (`known_hosts`), `--legacy-algorithms` (on), `--jump` (on) and
+  `--jump-host`.
+* **`--limit`** (`query`, `timeline`): comma-separated hostname globs, matched against the whole name
+  and case-insensitively, as for `-limit` everywhere else (`core-*,dist-1`). Stored events carry no
+  credential group, so `@group` is not available here.
+* **`--format`** is `table` or `json`. JSON goes to stdout with nothing else mixed in; diagnostics go
+  to stderr.
+* **Thresholds**: `status`, `top` and the report share one definition. A device is **STALE** when
+  nothing has tried to poll it for `--stale-after` (1h), and **SILENT** when it is reachable but has
+  produced no new log line for `--silent-after` (24h). Raise `--stale-after` when polling from a
+  cron job that runs less often than hourly.
+* `--no-color` and `NO_COLOR` are honoured.
 
 ### Credentials
 
-Exactly the variables the other commands read, from `.env` or the environment; **`NETLOG_*`
-variables are not read**:
+The variables the other commands read, from `.env` or the environment:
 
 ```
 NETOPS_USERNAME / NETOPS_PASSWORD                  all devices
@@ -978,45 +986,21 @@ Telegram alerts for incidents and for devices that stop (or resume) answering ar
 
 ### Platforms
 
-`vendor` in the inventory selects the log commands, parser and triage playbook. The netops vendor
-names (`cisco`, `junos`, `fortinet`, ...) and the older netlog keys (`cisco_ios`, `juniper_junos`,
-`fortigate`, ...) are both accepted. Supported: Cisco IOS/IOS-XE, Cisco Small Business, Cisco ASA,
-Huawei VRP, Juniper Junos, Aruba, Ruijie, FortiGate, Check Point Gaia, pfSense, VyOS, Arista EOS,
-MikroTik, Cumulus, Palo Alto and Sophos. Inventory rows are read leniently: only `hostname,address`
-are required, and a malformed row is reported and skipped instead of stopping the run.
+`vendor` in the inventory is the same netops vendor name as everywhere else (`cisco`, `cisco_sb`,
+`cisco_asa`, `junos`, `huawei`, `fortinet`, `arista`, `vyos`, `ruijie`, `aruba`, `checkpoint`,
+`paloalto`, `pfsense`, `sophos`, `mikrotik`, with the aliases listed under [Inventory](#inventory)),
+plus two log-only platforms: `cumulus` (NVIDIA / Cumulus Linux) and `generic` (any RFC 3164/5424
+syslog source, used when the vendor is left out). The vendor selects the log commands, the parser and
+the triage playbook. Inventory rows are read leniently: only `hostname,address` are required, and a
+malformed row is reported and skipped instead of stopping the run.
 
 ### Data directory
 
 Everything lives under `--data-dir` (default `data/`, ignored by git): `logs/YYYY-MM-DD.jsonl` (the
-events), `incidents/*.json` (triage reports), the watermarks, health, counters and cooldown state
-(`.netlog_*.json`) and, with `monitor --tui`, `monitor.log`. The on-disk formats are unchanged from
-`netlog`, so an existing data directory keeps working. One collector (`collect`/`monitor`) and one
-`listen` process may use a data directory at the same time (advisory file locks); `query`, `report`,
-`status`, `top` and the others only read, and can run alongside them.
-
-### The `netlog` name
-
-The binary also answers to its old name. `make build-netlog` (or `ln -s netops netlog`) gives:
-
-```bash
-netlog                 # = netops log          (usage, exit 1)
-netlog status --fail   # = netops log status --fail
-netlog init            # = netops init
-netlog version         # = netops version
-```
-
-### Migrating from standalone `netlog`
-
-| Before | Now |
-| :--- | :--- |
-| `NETLOG_USERNAME`, `NETLOG_PASSWORD`, `NETLOG_JUMP_*`, `NETLOG_AFTER_HOURS_*` | the `NETOPS_*` equivalents (no fallback) |
-| `--known-hosts-policy accept-new` (default) | `--host-key-policy` (default `update`; `accept-new` still available) |
-| `--insecure-ignore-host-key` | `--host-key-policy insecure` |
-| `--connect-timeout 5s`, `--command-timeout 20s` (defaults) | 10s and 30s, like every netops command |
-| `query --host`, `--format text` | `--limit` (`--host` still works), `--format table` (`text` still works) |
-| `netlog init`, `telegram-test`, `version` | `netops init`, `telegram-test`, `version` |
-| `status --stale-after` defaulted to 24h | defaults to 1h (`top` and `report` keep 24h) |
-| exit 2 for a usage error | exit 1, like every netops command (2 means "some devices failed") |
+events), `incidents/*.json` (triage reports), the watermark, health, counters and cooldown state
+(`.netops_log_*.json`) and, with `monitor --tui`, `monitor.log`. One collector (`collect`/`monitor`)
+and one `listen` process may use a data directory at the same time (advisory file locks);
+`query`, `report`, `status`, `top` and the others only read, and can run alongside them.
 
 ## Inventory
 

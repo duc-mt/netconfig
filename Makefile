@@ -2,18 +2,11 @@ BINARY  := netops
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: build build-netlog test test-race vet fmt lint vendor cross clean init
+.PHONY: build test test-race vet fmt lint vendor cross clean init
 
 # Single static binary, no cgo, dependencies taken from ./vendor (works offline).
 build:
 	CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags '$(LDFLAGS)' -o bin/$(BINARY) ./cmd/netops
-
-# "netlog" is the pre-merge name of "netops log". It is the same binary under a
-# second name: invoked as netlog (or netlog-*), netops routes "netlog status" to
-# "netops log status", and netlog init / telegram-test / version to the root
-# commands (see multicallArgs in cmd/netops/main.go).
-build-netlog: build
-	ln -sf $(BINARY) bin/netlog
 
 test:
 	CGO_ENABLED=0 go test -mod=vendor ./...

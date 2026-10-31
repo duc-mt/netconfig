@@ -25,7 +25,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -70,6 +69,7 @@ Subcommands:
   facts          collect hardware model, serial, version, uptime (netops facts -h)
   find           locate the access switch port an IP or MAC is on (netops find -h)
   audit          audit configurations against a security baseline (netops audit -h)
+  diag           automated multi-vendor operational diagnostics & health harvesting (netops diag -h)
   exec           run operational (show) commands on devices (netops exec -h)
   cve            check software versions against known CVEs, online or from a cache (netops cve -h)
   log            network log monitor and auto-triage (netops log -h)
@@ -134,34 +134,7 @@ func (s *stringList) Set(v string) error {
 }
 
 func main() {
-	os.Exit(dispatch(multicallArgs(filepath.Base(os.Args[0]), os.Args[1:]), os.Stdin, os.Stdout, os.Stderr))
-}
-
-// multicallArgs implements the BusyBox-style alias: the binary invoked as
-// "netlog" (a symlink or a copy, optionally "netlog-<anything>" or with a
-// ".exe" suffix) behaves like the standalone tool this command replaced.
-//
-//   - bare "netlog" is "netops log" (the log usage and an error exit)
-//   - "netlog init", "telegram-test" and "version" are the root commands of the
-//     same name, which the merge moved out from under the log subcommands
-//   - anything else is a log subcommand: "netlog status" is "netops log status"
-//
-// Under any other name the arguments are returned unchanged.
-func multicallArgs(execName string, args []string) []string {
-	name := strings.TrimSuffix(strings.ToLower(execName), ".exe")
-	if name != "netlog" && !strings.HasPrefix(name, "netlog-") {
-		return args
-	}
-	if len(args) == 0 {
-		return []string{"log"}
-	}
-	switch args[0] {
-	case "init", "-init", "--init", "telegram-test", "version", "-version", "--version":
-		return args
-	case "-v":
-		return append([]string{"version"}, args[1:]...)
-	}
-	return append([]string{"log"}, args...)
+	os.Exit(dispatch(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
 func printRootUsage(w io.Writer) {
@@ -254,6 +227,8 @@ func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return runFacts(args[1:], stdin, stdout, stderr)
 	case "find":
 		return runFind(args[1:], stdin, stdout, stderr)
+	case "diag", "diagnose", "health":
+		return runDiag(args[1:], stdin, stdout, stderr)
 	case "exec":
 		return runExec(args[1:], stdin, stdout, stderr)
 	case "audit":
