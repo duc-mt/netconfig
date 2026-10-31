@@ -8,6 +8,9 @@ The same binary also archives configurations and watches them for change and dri
 [`netops backup`](#backup-change-detection-and-drift-netops-backup) and `netops backup show`,
 and automates the routine operations around them: [accounts, passwords, VLANs, asset facts, MAC/IP location, compliance audits
 and change previews](#operations-automation-user-passwd-vlan-facts-find-audit-diff).
+It also watches the network's logs: [`netops log`](#network-log-monitoring--auto-triage-netops-log)
+collects device logs over SSH or as syslog, classifies and correlates the events and captures read-only
+diagnostics when something breaks.
 
 Supported platforms: Cisco IOS/IOS-XE, Cisco Small Business (SF/SG/CBS), Cisco ASA, Juniper Junos, Huawei VRP, Fortinet FortiOS, Arista EOS, VyOS, Ruijie RGOS, Aruba AOS-CX/AOS-S, Check Point Gaia, Palo Alto PAN-OS, pfSense, Sophos, MikroTik RouterOS.
 
@@ -893,6 +896,128 @@ not be checked, or a requested Telegram alert was not delivered; 0 = nothing at 
 `-min-severity` applies; 1 = usage or setup error. (As with `audit`, 3 is used so a cron job can tell
 "vulnerable" from "could not run"; 2 outranks 3.)
 
+## Network Log Monitoring & Auto-Triage (`netops log`)
+
+`netops log` is the former standalone `netlog` tool, merged into netops the same way `netbackup`
+became `netops backup`. It reads each device's log buffer over SSH (or receives syslog), normalises
+the vendor formats into one event schema, classifies them (CONFIG, AUTH, FAULT, SECURITY, SYSTEM),
+detects anomalies (link flaps, login bursts, config changes, BGP/OSPF drops) and, when one fires,
+captures diagnostics from the device. **It never changes a device**: everything it sends is a
+`show`/`display` command, enforced by an allow-list that triage and `diagnose` cannot bypass.
+
+It shares the inventory, credentials, host key policy, jump hosts and Telegram settings of the other
+netops commands; there is nothing separate to configure.
+
+### Quick start
+
+```bash
+netops init                                     # sample inventory.csv and .env (shared with every command)
+netops log collect --dry-run                    # test connectivity, login and clock skew; stores nothing
+netops log collect                              # poll every device once, store, triage, exit (cron-friendly)
+netops log monitor --interval 2m                # the same in a loop until SIGINT/SIGTERM (systemd-friendly)
+netops log monitor --tui                        # poll and watch the live dashboard in one terminal
+netops log listen --port 5514                   # passive syslog receiver (UDP+TCP; ports below 1024 need root)
+
+netops log query --category CONFIG --since 24h  # who changed what
+netops log query --limit 'core-*,dist' --severity CRITICAL --since today --format json | jq .
+netops log timeline --from "2026-10-20 10:10:00" --to "2026-10-20 10:25:00"
+netops log incidents --since 24h                # auto-triage reports; --id <prefix> shows one in full
+netops log report                               # noisy devices, changes, watchlist, week-over-week trend, MTTR
+netops log status --fail                        # per-device collection health; exit 1 if anything needs attention
+netops log top                                  # live terminal dashboard (q quits)
+netops log diagnose core-gw-1 --raw             # one-shot, read-only health check of one device
+```
+
+### Subcommands
+
+| Subcommand | What it does | Notable flags |
+| :--- | :--- | :--- |
+| `collect` | Poll every device once, store new events, auto-triage anomalies, exit. Exits 1 if no device could be polled. | `--dry-run`, `--concurrency`, `--retention-days`, `--no-config-diff`, `--no-peer-triage` |
+| `monitor` | `collect` in a loop; drains in-flight polls and triage on SIGINT/SIGTERM and exits 0. | `--interval` (2m, min 10s), `--tui` |
+| `listen` | Passive syslog receiver (RFC 3164/5424, UDP and TCP). Never connects to a device. | `--bind`, `--port` (514), `--proto`, `--udp-port`, `--tcp-port`, `--accept-unknown`, `--drop-unclassified` |
+| `query` | Search stored events, newest first. | `--limit` (alias `--host`), `--user`, `--category`, `--severity`, `--event`, `--since` (24h), `--format` |
+| `timeline` | Cross-device chronological stream with likely-cause annotation. | `--from`, `--to`, `--limit` (alias `--host`) |
+| `incidents` | List auto-triage reports or show one. | `--id`, `--since` (24h), `--format` |
+| `report` | Digest: noisy devices, change accountability, security watchlist, trends, MTTR. | `--since` (7d), `--top` (10), `--compare`, `--format` |
+| `status` | Per-device collection health: failing, silent, stale. | `--stale-after` (1h), `--silent-after` (24h), `--fail`, `--format` |
+| `top` | Live terminal dashboard over the stored data. | `--refresh` (1s, min 100ms), `--inventory`, `--stale-after` |
+| `diagnose <device>` | Reachability probe, SSH login, alarms, BGP/OSPF, CRC errors, optical DDM, PoE. | `--interface`, `--raw`, `--fail`, `--no-probe`, `--json` |
+
+`netops log -h` lists the subcommands (stdout, exit 0); a bare `netops log` prints
+`netops log: missing subcommand` and the usage to stderr and exits 1. `netops log <subcommand> -h`
+shows the flags, grouped. `init`, `telegram-test` and `version` are the root commands of the same
+name; there is no `netops log init`.
+
+### Flags shared with the other commands
+
+`collect`, `monitor` and `diagnose` take the usual connection flags with the usual defaults:
+`--inventory`, `--env-file`, `--connect-timeout` (10s), `--command-timeout` (30s),
+`--host-key-policy` (`update`; also `strict`, `accept-new`, `insecure`), `--known-hosts`
+(`known_hosts`), `--legacy-algorithms` (on), `--jump` (on) and `--jump-host`. `--limit` takes
+comma-separated hostname substrings or globs, case-insensitively. `--format` is `table` or `json`;
+JSON goes to stdout with nothing else mixed in, diagnostics go to stderr. `--no-color` and `NO_COLOR`
+are honoured.
+
+### Credentials
+
+Exactly the variables the other commands read, from `.env` or the environment; **`NETLOG_*`
+variables are not read**:
+
+```
+NETOPS_USERNAME / NETOPS_PASSWORD                  all devices
+NETOPS_<GROUP>_USERNAME / NETOPS_<GROUP>_PASSWORD  one credential_group
+NETOPS_KEY_FILE                                    SSH private key
+NETOPS_ENABLE_PASSWORD                             Check Point expert-mode password
+NETOPS_JUMP_*                                      bastion host and credentials
+NETOPS_AFTER_HOURS_START / NETOPS_AFTER_HOURS_END  after-hours change window (hours 0-23)
+TELEGRAM_*                                         alerts, as for "netops telegram-test"
+```
+
+Telegram alerts for incidents and for devices that stop (or resume) answering are throttled by
+`TELEGRAM_COOLDOWN_SECONDS` (default 300 for `netops log`).
+
+### Platforms
+
+`vendor` in the inventory selects the log commands, parser and triage playbook. The netops vendor
+names (`cisco`, `junos`, `fortinet`, ...) and the older netlog keys (`cisco_ios`, `juniper_junos`,
+`fortigate`, ...) are both accepted. Supported: Cisco IOS/IOS-XE, Cisco Small Business, Cisco ASA,
+Huawei VRP, Juniper Junos, Aruba, Ruijie, FortiGate, Check Point Gaia, pfSense, VyOS, Arista EOS,
+MikroTik, Cumulus, Palo Alto and Sophos. Inventory rows are read leniently: only `hostname,address`
+are required, and a malformed row is reported and skipped instead of stopping the run.
+
+### Data directory
+
+Everything lives under `--data-dir` (default `data/`, ignored by git): `logs/YYYY-MM-DD.jsonl` (the
+events), `incidents/*.json` (triage reports), the watermarks, health, counters and cooldown state
+(`.netlog_*.json`) and, with `monitor --tui`, `monitor.log`. The on-disk formats are unchanged from
+`netlog`, so an existing data directory keeps working. One collector (`collect`/`monitor`) and one
+`listen` process may use a data directory at the same time (advisory file locks); `query`, `report`,
+`status`, `top` and the others only read, and can run alongside them.
+
+### The `netlog` name
+
+The binary also answers to its old name. `make build-netlog` (or `ln -s netops netlog`) gives:
+
+```bash
+netlog                 # = netops log          (usage, exit 1)
+netlog status --fail   # = netops log status --fail
+netlog init            # = netops init
+netlog version         # = netops version
+```
+
+### Migrating from standalone `netlog`
+
+| Before | Now |
+| :--- | :--- |
+| `NETLOG_USERNAME`, `NETLOG_PASSWORD`, `NETLOG_JUMP_*`, `NETLOG_AFTER_HOURS_*` | the `NETOPS_*` equivalents (no fallback) |
+| `--known-hosts-policy accept-new` (default) | `--host-key-policy` (default `update`; `accept-new` still available) |
+| `--insecure-ignore-host-key` | `--host-key-policy insecure` |
+| `--connect-timeout 5s`, `--command-timeout 20s` (defaults) | 10s and 30s, like every netops command |
+| `query --host`, `--format text` | `--limit` (`--host` still works), `--format table` (`text` still works) |
+| `netlog init`, `telegram-test`, `version` | `netops init`, `telegram-test`, `version` |
+| `status --stale-after` defaulted to 24h | defaults to 1h (`top` and `report` keep 24h) |
+| exit 2 for a usage error | exit 1, like every netops command (2 means "some devices failed") |
+
 ## Inventory
 
 ```csv
@@ -1156,6 +1281,13 @@ internal/audit           security-baseline rules, YAML-subset reader, evaluation
 internal/cve             CVE lookup: NVD / Cisco PSIRT / OSV sources, version matcher, offline cache (netops cve)
 internal/report          HTML report, Markdown changelog, JSON/CSV, result table
 internal/errcat          failure categories used in summaries and reports
+internal/fsutil          atomic file writes (state files, incident reports)
+internal/log/            the log monitor behind "netops log"; kept apart from internal/parser and
+                           internal/report, which handle configurations and backups:
+                           collector (SSH polling, clock skew), parser (vendor log normalisers),
+                           pipeline (classify, de-duplicate, anomaly rules), store (JSONL, state, health),
+                           triage (read-only incident capture), diagnose, listener (syslog),
+                           query, report (log digest), tui (netops log top)
 ```
 
 `task` depends only on small interfaces (`Transport`, `Session`), so its tests run against a fake

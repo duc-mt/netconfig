@@ -18,6 +18,9 @@ Thumbs.db
 coverage.out
 *.out
 
+# Runtime data of "netops log" (JSONL logs, incident reports, state, locks)
+/data/
+
 # Persistent route memory
 .netops_memory*
 .netconfig_memory*

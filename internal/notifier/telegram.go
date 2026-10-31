@@ -34,23 +34,12 @@ type TelegramConfig struct {
 	Silent          bool
 	ProxyURL        string
 	CooldownSeconds int
+	MinSeverity     string // "netops log" alert threshold (TELEGRAM_MIN_SEVERITY); see ConfigForLog
 }
 
 // ConfigFromResolver loads TelegramConfig from credentials.Resolver or process environment.
 func ConfigFromResolver(resolver *credentials.Resolver) TelegramConfig {
-	get := func(key string) string {
-		if resolver != nil {
-			if v, ok := resolver.DotEnv[key]; ok && v != "" {
-				return v
-			}
-			if resolver.LookupEnv != nil {
-				if v, ok := resolver.LookupEnv(key); ok && v != "" {
-					return v
-				}
-			}
-		}
-		return os.Getenv(key)
-	}
+	get := resolverLookup(resolver)
 
 	enabled := false
 	if v := get("TELEGRAM_ENABLED"); v != "" {
@@ -89,6 +78,24 @@ func ConfigFromResolver(resolver *credentials.Resolver) TelegramConfig {
 	}
 }
 
+// resolverLookup returns a function that reads a setting from the resolver's
+// .env values, then its environment lookup, then the process environment.
+func resolverLookup(resolver *credentials.Resolver) func(string) string {
+	return func(key string) string {
+		if resolver != nil {
+			if v, ok := resolver.DotEnv[key]; ok && v != "" {
+				return v
+			}
+			if resolver.LookupEnv != nil {
+				if v, ok := resolver.LookupEnv(key); ok && v != "" {
+					return v
+				}
+			}
+		}
+		return os.Getenv(key)
+	}
+}
+
 // ConfigFromEnv loads TelegramConfig directly from environment variables.
 func ConfigFromEnv() TelegramConfig {
 	return ConfigFromResolver(nil)
@@ -103,10 +110,21 @@ type TelegramNotifier struct {
 	wg      sync.WaitGroup
 	ctx     context.Context
 	cancel  context.CancelFunc
+
+	// Used by the "netops log" alerts (incident.go).
+	logger     Logger
+	cooldownMu sync.Mutex
+	lastSent   map[string]time.Time
 }
 
 // NewTelegram creates a TelegramNotifier. Returns nil if not enabled or tokens are missing.
 func NewTelegram(cfg TelegramConfig) *TelegramNotifier {
+	return NewTelegramWithLogger(cfg, nil)
+}
+
+// NewTelegramWithLogger is NewTelegram with a logger that receives delivery
+// failures, throttled alerts and dropped messages (nil discards them).
+func NewTelegramWithLogger(cfg TelegramConfig, log Logger) *TelegramNotifier {
 	if !cfg.Enabled || cfg.BotToken == "" || cfg.ChatID == "" {
 		return nil
 	}
@@ -119,6 +137,8 @@ func NewTelegram(cfg TelegramConfig) *TelegramNotifier {
 	if cfg.ProxyURL != "" {
 		if u, err := url.Parse(cfg.ProxyURL); err == nil {
 			transport.Proxy = http.ProxyURL(u)
+		} else if log != nil {
+			log.Warn("telegram: invalid proxy URL %q: %v", cfg.ProxyURL, err)
 		}
 	}
 
@@ -135,6 +155,9 @@ func NewTelegram(cfg TelegramConfig) *TelegramNotifier {
 		asyncCh: make(chan string, 100),
 		ctx:     ctx,
 		cancel:  cancel,
+
+		logger:   log,
+		lastSent: make(map[string]time.Time),
 	}
 
 	tn.wg.Add(1)
@@ -161,7 +184,9 @@ func (tn *TelegramNotifier) Close() {
 func (tn *TelegramNotifier) worker() {
 	defer tn.wg.Done()
 	for msg := range tn.asyncCh {
-		_ = tn.sendRaw(context.Background(), msg)
+		if err := tn.sendRaw(context.Background(), msg); err != nil && tn.logger != nil {
+			tn.logger.Warn("telegram send failed: %v", err)
+		}
 	}
 }
 

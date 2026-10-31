@@ -11,6 +11,8 @@
 # Notes:         Automated bash utility script
 # ==============================================================================
 # Universal launcher for netops: auto-detects OS & architecture and executes the appropriate binary.
+# Every argument is passed through unchanged, so all subcommands work, including
+# the log monitor:  ./run log status    ./run log monitor --interval 2m
 
 OS=""
 ARCH=""

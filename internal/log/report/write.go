@@ -1,0 +1,503 @@
+// ==============================================================================
+// Package report: table and JSON rendering of a Report.
+// Author:        Mai Tan Duc <ducmai.network@gmail.com>
+// Created:       2026-10-24
+// Version:       1.0.0
+// License:       MIT
+// ==============================================================================
+// Usage:         report.WriteTable(os.Stdout, rep, query.Style{Color: true})
+// Notes:         Go package implementation
+// ==============================================================================
+// The text output is a sequence of labelled sections, each an aligned table
+// built with the same query.Pad / Clip / Widest / Sanitize helpers as
+// "netops log query", so device-supplied text (hostnames, users, source IPs) is
+// stripped of control characters before it reaches the operator's terminal.
+// There is deliberately no unsanitised print path in this file: every string
+// that can originate on a device goes through query.Clip.
+//
+// The JSON output is one object with a key per section, with no formatting
+// and no ANSI. Slices are always arrays, never null.
+package report
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"netops/internal/log/collector"
+	"netops/internal/log/query"
+)
+
+// noData is the line printed for a section with no rows, worded like the
+// existing writers' "No matching events.".
+const noData = "No matching events."
+
+// Column caps for values that are not covered by the shared query constants.
+const (
+	maxDeviceCol = 64 // generous cap for enterprise switch hostnames
+	maxNumCol    = 20
+	maxIPCol     = 45 // longest textual IPv6 address
+	maxHostsCol  = 60
+	maxDayCol    = len(dayLayout)
+)
+
+// ==============================================================================
+// JSON
+// ==============================================================================
+
+// WriteJSON prints r as one indented JSON object with a key per section,
+// following query.WriteJSON's conventions (no HTML escaping, indented). A
+// nil slice or map in r is printed as an empty one so consumers never see
+// null for a section that merely had no rows; week_over_week is null when
+// the delta was not computed.
+func WriteJSON(w io.Writer, r Report) error {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	return enc.Encode(r.normalized())
+}
+
+// normalized replaces nil slices and maps with empty ones. Compute already
+// produces none; this protects a zero-value or hand-built Report.
+func (r Report) normalized() Report {
+	if r.NoisyDevices == nil {
+		r.NoisyDevices = []DeviceFaultCount{}
+	}
+	if r.ChangeAccountability.ByUser == nil {
+		r.ChangeAccountability.ByUser = []UserChangeCount{}
+	}
+	if r.ChangeAccountability.AfterHours == nil {
+		r.ChangeAccountability.AfterHours = []AfterHoursChange{}
+	}
+	if r.SecurityWatchlist == nil {
+		r.SecurityWatchlist = []WatchedSource{}
+	}
+	for i, s := range r.SecurityWatchlist {
+		if s.Hostnames == nil {
+			r.SecurityWatchlist[i].Hostnames = []string{}
+		}
+	}
+	if r.VolumeByCategory == nil {
+		r.VolumeByCategory = VolumeByCategory{}
+	}
+	if r.IncidentClosure.UnreachableHosts == nil {
+		r.IncidentClosure.UnreachableHosts = []UnreachableHost{}
+	}
+	if r.Outages.Longest == nil {
+		r.Outages.Longest = []Outage{}
+	}
+	if r.DeviceHealth.Unhealthy == nil {
+		r.DeviceHealth.Unhealthy = []DeviceStatus{}
+	}
+	if r.ClassificationCoverage == nil {
+		r.ClassificationCoverage = []VendorCoverage{}
+	}
+	if r.InterfaceDeltas == nil {
+		r.InterfaceDeltas = []collector.InterfaceDelta{}
+	}
+	if w := r.WeekOverWeek; w != nil && w.Categories == nil {
+		cp := *w
+		cp.Categories = []CategoryDelta{}
+		r.WeekOverWeek = &cp
+	}
+	return r
+}
+
+// ==============================================================================
+// Table
+// ==============================================================================
+
+// WriteTable prints r as labelled sections separated by blank lines. The
+// week-over-week section appears only when it was computed.
+func WriteTable(w io.Writer, r Report, st query.Style) error {
+	p := &printer{w: w}
+	writers := []func(*printer, Report, query.Style){writeNoisy, writeChanges, writeWatchlist, writeVolume}
+	if r.WeekOverWeek != nil {
+		writers = append(writers, writeDelta)
+	}
+	writers = append(writers, writeClosure, writeOutages, writeDeviceHealth, writeCoverage)
+	if len(r.InterfaceDeltas) > 0 {
+		writers = append(writers, writeInterfaceDeltas)
+	}
+
+	for i, write := range writers {
+		if i > 0 {
+			p.println("")
+		}
+		write(p, r, st)
+	}
+	return p.err
+}
+
+// printer remembers the first write error so the section writers need not
+// check every line; later writes become no-ops.
+type printer struct {
+	w   io.Writer
+	err error
+}
+
+func (p *printer) println(s string) {
+	if p.err != nil {
+		return
+	}
+	_, p.err = fmt.Fprintln(p.w, s)
+}
+
+type column = Column
+
+// grid prints cols and rows as an aligned table using NetOps-style rounded box borders.
+// Cell contents that exceed column width wrap across multiple lines inside their cells.
+func grid(p *printer, st query.Style, cols []column, rows [][]string, paint func(row int, line string) string) {
+	renderBoxTable(p, st, cols, rows, paint)
+}
+
+// heading prints a bold "=== title ===" line. The title may contain the
+// caller's --since text, so it is sanitised like everything else.
+func heading(p *printer, st query.Style, format string, args ...any) {
+	p.println(st.Bold("=== " + query.Sanitize(fmt.Sprintf(format, args...)) + " ==="))
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }
+
+// windowPhrase describes the requested window for headings: "last 7d",
+// "today", or "all time" when the window is open.
+func windowPhrase(o Options) string {
+	label := strings.ToLower(strings.TrimSpace(o.Label))
+	if label == "" && !o.Since.IsZero() && !o.Until.IsZero() {
+		label = durationLabel(o.Until.Sub(o.Since))
+	}
+	switch label {
+	case "":
+		return "all time"
+	case "today":
+		return "today"
+	}
+	return "last " + label
+}
+
+// durationLabel renders d as the largest whole unit: 7d, 36h, 90m.
+func durationLabel(d time.Duration) string {
+	switch {
+	case d <= 0:
+		return ""
+	case d%(24*time.Hour) == 0:
+		return itoa(int(d/(24*time.Hour))) + "d"
+	case d%time.Hour == 0:
+		return itoa(int(d/time.Hour)) + "h"
+	case d%time.Minute == 0:
+		return itoa(int(d/time.Minute)) + "m"
+	}
+	return d.Round(time.Second).String()
+}
+
+// ---- 1. noisy devices -------------------------------------------------------
+
+func writeNoisy(p *printer, r Report, st query.Style) {
+	heading(p, st, "Noisy Devices (top %d, %s)", r.Options.top(), windowPhrase(r.Options))
+	if len(r.NoisyDevices) == 0 {
+		p.println(noData)
+		return
+	}
+	rows := make([][]string, len(r.NoisyDevices))
+	for i, d := range r.NoisyDevices {
+		rows[i] = []string{query.Dash(d.Hostname), itoa(d.Count)}
+	}
+	grid(p, st, []column{{"DEVICE", maxDeviceCol, false}, {"FAULTS", maxNumCol, true}}, rows, nil)
+}
+
+// ---- 2. change accountability -----------------------------------------------
+
+func writeChanges(p *printer, r Report, st query.Style) {
+	ca := r.ChangeAccountability
+	heading(p, st, "Change Accountability (%s)", windowPhrase(r.Options))
+	if ca.Total == 0 {
+		p.println(noData)
+		return
+	}
+	rows := make([][]string, len(ca.ByUser))
+	for i, u := range ca.ByUser {
+		hosts := strings.Join(u.Hostnames, ", ")
+		rows[i] = []string{u.User, itoa(u.Count), itoa(u.AfterHours), hosts}
+	}
+	grid(p, st, []column{
+		{"USER", query.MaxUserCol, false},
+		{"CHANGES", maxNumCol, true},
+		{"AFTER-HOURS", maxNumCol, true},
+		{"HOSTS", maxHostsCol, false},
+	}, rows, nil)
+
+	p.println("")
+	p.println(st.Bold("After-hours changes: " + itoa(ca.AfterHoursCount)))
+	if ca.AfterHoursCount == 0 {
+		return
+	}
+	loc := st.Loc()
+	ah := make([][]string, len(ca.AfterHours))
+	for i, e := range ca.AfterHours {
+		ah[i] = []string{e.Timestamp.In(loc).Format("2006-01-02 15:04:05"), e.Hostname, e.User}
+	}
+	grid(p, st, []column{{"TIME", len("2006-01-02 15:04:05"), false}, {"DEVICE", maxDeviceCol, false}, {"USER", query.MaxUserCol, false}}, ah,
+		func(_ int, line string) string { return st.Yellow(line) })
+}
+
+// ---- 3. security watchlist --------------------------------------------------
+
+func writeWatchlist(p *printer, r Report, st query.Style) {
+	heading(p, st, "Security Watchlist (top %d, %s)", r.Options.top(), windowPhrase(r.Options))
+	if len(r.SecurityWatchlist) == 0 {
+		p.println(noData)
+		return
+	}
+	rows := make([][]string, len(r.SecurityWatchlist))
+	for i, s := range r.SecurityWatchlist {
+		rows[i] = []string{s.SourceIP, itoa(s.DistinctHosts), itoa(s.Events), itoa(s.Detections), strings.Join(s.Hostnames, ", ")}
+	}
+	cols := []column{{"SOURCE IP", maxIPCol, false}, {"DEVICES", maxNumCol, true}, {"FAILURES", maxNumCol, true}, {"DETECTED", maxNumCol, true}, {"HOSTS", maxHostsCol, false}}
+	grid(p, st, cols, rows, func(i int, line string) string {
+		if r.SecurityWatchlist[i].DistinctHosts > 1 {
+			return st.Red(line) // one source touching several devices
+		}
+		return line
+	})
+}
+
+// ---- 4. event volume --------------------------------------------------------
+
+func writeVolume(p *printer, r Report, st query.Style) {
+	heading(p, st, "Event Volume by Category/Day (UTC, %s)", windowPhrase(r.Options))
+	if len(r.VolumeByCategory) == 0 {
+		p.println(noData)
+		return
+	}
+	days := make([]string, 0, len(r.VolumeByCategory))
+	for d := range r.VolumeByCategory {
+		days = append(days, d)
+	}
+	sort.Strings(days)
+
+	cols := []column{{"DAY", maxDayCol, false}}
+	for _, c := range categories {
+		cols = append(cols, column{c, maxNumCol, true})
+	}
+	rows := make([][]string, len(days))
+	for i, d := range days {
+		row := []string{d}
+		for _, c := range categories {
+			row = append(row, itoa(r.VolumeByCategory[d][c]))
+		}
+		rows[i] = row
+	}
+	grid(p, st, cols, rows, nil)
+}
+
+// ---- 5. week-over-week ------------------------------------------------------
+
+func signed(n int) string {
+	if n > 0 {
+		return "+" + itoa(n)
+	}
+	return itoa(n)
+}
+
+func pctText(p *float64) string {
+	if p == nil {
+		return "n/a"
+	}
+	s := strconv.FormatFloat(*p, 'f', 1, 64)
+	if *p > 0 {
+		s = "+" + s
+	}
+	return s + "%"
+}
+
+func writeDelta(p *printer, r Report, st query.Style) {
+	w := r.WeekOverWeek
+	if r.Options.Until.Sub(r.Options.Since) == Week {
+		heading(p, st, "Week-over-Week (last 7d vs previous 7d)")
+	} else {
+		heading(p, st, "Window-over-Window (%s vs the equal window before it)", windowPhrase(r.Options))
+	}
+	if w.Total.Previous == 0 && w.Total.Current == 0 {
+		p.println(noData)
+		return
+	}
+	all := append(append([]CategoryDelta{}, w.Categories...), w.Total)
+	rows := make([][]string, len(all))
+	for i, d := range all {
+		rows[i] = []string{d.Category, itoa(d.Previous), itoa(d.Current), signed(d.Change), pctText(d.ChangePct)}
+	}
+	cols := []column{{"CATEGORY", 10, false}, {"PREVIOUS", maxNumCol, true}, {"CURRENT", maxNumCol, true}, {"CHANGE", maxNumCol, true}, {"CHANGE %", maxNumCol, true}}
+	grid(p, st, cols, rows, func(i int, line string) string {
+		if all[i].ChangePct == nil {
+			return st.Dim(line) // no baseline to compare against
+		}
+		return line
+	})
+}
+
+// ---- 6. incident closure ----------------------------------------------------
+
+func writeClosure(p *printer, r Report, st query.Style) {
+	ic := r.IncidentClosure
+	heading(p, st, "Triage Reach (%s)", windowPhrase(r.Options))
+	if ic.Total == 0 {
+		p.println("No incidents.")
+		return
+	}
+	p.println(fmt.Sprintf("%-27s %d", "Incidents:", ic.Total))
+	p.println(fmt.Sprintf("%-27s %d (%.1f%%)", "All diagnostics succeeded:", ic.Succeeded, ic.SucceededPct))
+	p.println(fmt.Sprintf("%-27s %d (%.1f%%)", "Unreachable during triage:", ic.Unreachable, ic.UnreachablePct))
+	p.println(fmt.Sprintf("%-27s %d (%.1f%%)", "Some commands failed:", ic.PartialFailure, ic.PartialFailurePct))
+	if len(ic.UnreachableHosts) == 0 {
+		return
+	}
+
+	p.println("")
+	p.println(st.Bold("Devices unreachable during triage:"))
+	rows := make([][]string, len(ic.UnreachableHosts))
+	for i, h := range ic.UnreachableHosts {
+		always := "-"
+		if h.Always {
+			always = "yes"
+		}
+		rows[i] = []string{h.Hostname, itoa(h.Unreachable), itoa(h.Incidents), always}
+	}
+	cols := []column{{"DEVICE", maxDeviceCol, false}, {"UNREACHABLE", maxNumCol, true}, {"INCIDENTS", maxNumCol, true}, {"ALWAYS", 6, true}}
+	grid(p, st, cols, rows, func(i int, line string) string {
+		if ic.UnreachableHosts[i].Always {
+			return st.Red(line)
+		}
+		return line
+	})
+}
+
+// ---- 7. outages -------------------------------------------------------------
+
+// durationText renders a number of seconds as its two largest units: 35s,
+// 4m10s, 2h13m, 3d02h. A zero second unit is dropped (4m, 2h).
+func durationText(sec int64) string {
+	if sec < 0 {
+		sec = 0
+	}
+	d := time.Duration(sec) * time.Second
+	two := func(big int64, bigUnit string, small int64, smallUnit string) string {
+		if small == 0 {
+			return strconv.FormatInt(big, 10) + bigUnit
+		}
+		return strconv.FormatInt(big, 10) + bigUnit + strconv.FormatInt(small, 10) + smallUnit
+	}
+	switch {
+	case d < time.Minute:
+		return strconv.FormatInt(sec, 10) + "s"
+	case d < time.Hour:
+		return two(sec/60, "m", sec%60, "s")
+	case d < 24*time.Hour:
+		return two(sec/3600, "h", sec%3600/60, "m")
+	}
+	return two(sec/86400, "d", sec%86400/3600, "h")
+}
+
+func writeOutages(p *printer, r Report, st query.Style) {
+	o := r.Outages
+	heading(p, st, "Outages (top %d by duration, %s)", r.Options.top(), windowPhrase(r.Options))
+	if o.Total == 0 {
+		p.println("No outages.")
+	} else {
+		p.println(fmt.Sprintf("Outages: %d (%d resolved, %d still open)", o.Total, o.Resolved, o.Open))
+		if o.Resolved > 0 {
+			p.println("Mean time to recover: " + durationText(o.MeanSecondsToRecover) + " (resolved outages only)")
+		}
+		p.println("Longest: " + durationText(o.LongestSeconds))
+	}
+	if o.Untracked > 0 {
+		p.println(fmt.Sprintf("Untracked: %d outage start(s) whose log line names no interface or neighbor, so no recovery can be matched", o.Untracked))
+	}
+	if len(o.Longest) == 0 {
+		return
+	}
+
+	p.println("")
+	loc := st.Loc()
+	rows := make([][]string, len(o.Longest))
+	for i, x := range o.Longest {
+		dur := durationText(x.DurationSeconds)
+		if x.Open {
+			dur += "+ (open)"
+		}
+		rows[i] = []string{x.Hostname, x.Kind, x.Object, x.Down.In(loc).Format("2006-01-02 15:04:05"), dur}
+	}
+	cols := []column{{"DEVICE", maxDeviceCol, false}, {"KIND", 4, false}, {"OBJECT", 30, false}, {"DOWN", len("2006-01-02 15:04:05"), false}, {"DURATION", 20, true}}
+	grid(p, st, cols, rows, func(i int, line string) string {
+		if o.Longest[i].Open {
+			return st.Red(line) // still down
+		}
+		return line
+	})
+}
+
+// ---- 9. classification coverage ---------------------------------------------
+
+func writeCoverage(p *printer, r Report, st query.Style) {
+	heading(p, st, "Classification Coverage (%s)", windowPhrase(r.Options))
+	if len(r.ClassificationCoverage) == 0 {
+		p.println(noData)
+		return
+	}
+	rows := make([][]string, len(r.ClassificationCoverage))
+	for i, c := range r.ClassificationCoverage {
+		rows[i] = []string{c.Vendor, itoa(c.Lines), itoa(c.Unclassified), strconv.FormatFloat(c.UnclassifiedPct, 'f', 1, 64) + "%"}
+	}
+	cols := []column{{"VENDOR", 20, false}, {"LINES", maxNumCol, true}, {"UNKNOWN", maxNumCol, true}, {"UNKNOWN %", maxNumCol, true}}
+	grid(p, st, cols, rows, func(i int, line string) string {
+		if c := r.ClassificationCoverage[i]; c.Lines >= 20 && c.UnclassifiedPct >= 90 {
+			return st.Yellow(line) // the classifier understands almost nothing of this vendor
+		}
+		return line
+	})
+}
+
+// ---- 10. interface deltas (drops & traffic) --------------------------------
+
+func writeInterfaceDeltas(p *printer, r Report, st query.Style) {
+	heading(p, st, "Interface Drops & Errors (Diff Stats)")
+	if len(r.InterfaceDeltas) == 0 {
+		p.println(noData)
+		return
+	}
+	rows := make([][]string, len(r.InterfaceDeltas))
+	for i, d := range r.InterfaceDeltas {
+		inRate := fmt.Sprintf("%.1f kbps", d.InBps/1000.0)
+		outRate := fmt.Sprintf("%.1f kbps", d.OutBps/1000.0)
+		rows[i] = []string{
+			d.Device,
+			d.Interface,
+			inRate,
+			outRate,
+			strconv.FormatUint(d.InDropDiff, 10),
+			strconv.FormatUint(d.OutDropDiff, 10),
+			strconv.FormatUint(d.InErrorDiff, 10),
+			strconv.FormatUint(d.OutErrorDiff, 10),
+		}
+	}
+	cols := []column{
+		{"DEVICE", 20, false},
+		{"INTERFACE", 20, false},
+		{"IN RATE", 15, true},
+		{"OUT RATE", 15, true},
+		{"IN DROPS", 12, true},
+		{"OUT DROPS", 12, true},
+		{"IN ERRS", 12, true},
+		{"OUT ERRS", 12, true},
+	}
+	grid(p, st, cols, rows, func(i int, line string) string {
+		d := r.InterfaceDeltas[i]
+		if d.InDropDiff > 0 || d.OutDropDiff > 0 || d.InErrorDiff > 0 || d.OutErrorDiff > 0 {
+			return st.Red(line)
+		}
+		return line
+	})
+}

@@ -25,6 +25,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -71,6 +72,7 @@ Subcommands:
   audit          audit configurations against a security baseline (netops audit -h)
   exec           run operational (show) commands on devices (netops exec -h)
   cve            check software versions against known CVEs, online or from a cache (netops cve -h)
+  log            network log monitor and auto-triage (netops log -h)
   telegram-test  test Telegram alert notifications (netops telegram-test -h)
   init           generate sample inventory.csv, commands.txt, and .env templates
   version        display version information
@@ -132,7 +134,34 @@ func (s *stringList) Set(v string) error {
 }
 
 func main() {
-	os.Exit(dispatch(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	os.Exit(dispatch(multicallArgs(filepath.Base(os.Args[0]), os.Args[1:]), os.Stdin, os.Stdout, os.Stderr))
+}
+
+// multicallArgs implements the BusyBox-style alias: the binary invoked as
+// "netlog" (a symlink or a copy, optionally "netlog-<anything>" or with a
+// ".exe" suffix) behaves like the standalone tool this command replaced.
+//
+//   - bare "netlog" is "netops log" (the log usage and an error exit)
+//   - "netlog init", "telegram-test" and "version" are the root commands of the
+//     same name, which the merge moved out from under the log subcommands
+//   - anything else is a log subcommand: "netlog status" is "netops log status"
+//
+// Under any other name the arguments are returned unchanged.
+func multicallArgs(execName string, args []string) []string {
+	name := strings.TrimSuffix(strings.ToLower(execName), ".exe")
+	if name != "netlog" && !strings.HasPrefix(name, "netlog-") {
+		return args
+	}
+	if len(args) == 0 {
+		return []string{"log"}
+	}
+	switch args[0] {
+	case "init", "-init", "--init", "telegram-test", "version", "-version", "--version":
+		return args
+	case "-v":
+		return append([]string{"version"}, args[1:]...)
+	}
+	return append([]string{"log"}, args...)
 }
 
 func printRootUsage(w io.Writer) {
@@ -205,7 +234,7 @@ func runConfig(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	}
 }
 
-// dispatch routes arguments to subcommands ("apply", "diff", "config", "backup", "init", "version").
+// dispatch routes arguments to subcommands ("apply", "diff", "config", "backup", "log", "init", "version").
 // Invoking netops without a subcommand or with an invalid subcommand is fatal.
 func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -231,6 +260,8 @@ func dispatch(args []string, stdin *os.File, stdout, stderr io.Writer) int {
 		return runAudit(args[1:], stdin, stdout, stderr)
 	case "cve":
 		return runCVE(args[1:], stdin, stdout, stderr)
+	case "log":
+		return runLog(args[1:], stdin, stdout, stderr)
 	case "diff":
 		return runDiff(args[1:], stdin, stdout, stderr)
 	case "init", "-init":
