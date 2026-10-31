@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"netops/internal/catalog"
 	"netops/internal/task"
 )
 
@@ -68,4 +69,49 @@ func TestExecHelp(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	mustContain(t, "help", stdout, "netops exec:", "operational")
+}
+
+func TestExecHelpVendor(t *testing.T) {
+	t.Run("list vendors", func(t *testing.T) {
+		code, stdout, _ := dispatchOut(t, "exec", "help")
+		if code != task.ExitOK {
+			t.Fatalf("exit %d", code)
+		}
+		mustContain(t, "stdout", stdout, "cisco_ios", "aruba_aos-s", "checkpoint", "juniper")
+	})
+
+	t.Run("specific vendor", func(t *testing.T) {
+		code, stdout, _ := dispatchOut(t, "exec", "help", "cisco_ios")
+		if code != task.ExitOK {
+			t.Fatalf("exit %d", code)
+		}
+		mustContain(t, "stdout", stdout, "show version", "show ip interface brief")
+	})
+
+	t.Run("flag vendor", func(t *testing.T) {
+		code, stdout, _ := dispatchOut(t, "exec", "-help-vendor", "aruba_aos-s")
+		if code != task.ExitOK {
+			t.Fatalf("exit %d", code)
+		}
+		mustContain(t, "stdout", stdout, "show system", "show cpu")
+	})
+}
+
+func TestExecProfileHealthcheck(t *testing.T) {
+	w := factsWS(t)
+	cmds, err := catalog.GetCommands("cisco")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cmds {
+		w.dev("sw-a").answers[c] = "ok\n"
+	}
+	code, _, stderr := w.run("exec", "-limit", "sw-a", "-profile", "healthcheck")
+	if code != task.ExitOK {
+		t.Fatalf("exit %d, want %d\n%s", code, task.ExitOK, stderr)
+	}
+	d := w.dev("sw-a")
+	if len(d.cmds) == 0 {
+		t.Fatal("device received no commands under healthcheck profile")
+	}
 }
