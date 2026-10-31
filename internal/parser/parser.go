@@ -34,11 +34,11 @@ type RouteInfo struct {
 }
 
 var (
-	reShowIntBrief = regexp.MustCompile(`(?i)(?:show\s+ip(?:v6)?\s+int(?:erface)?\s+br(?:ief)?|display\s+ip\s+int(?:erface)?\s+br(?:ief)?|get\s+router\s+info\s+int(?:erface)?\s+br(?:ief)?)`)
+	reShowIntBrief = regexp.MustCompile(`(?i)(?:show\s+ip(?:v6)?\s+int(?:erface)?\s+br(?:ief)?|display\s+ip\s+int(?:erface)?\s+br(?:ief)?)`)
 	reShowIntTerse = regexp.MustCompile(`(?i)show\s+int(?:erfaces)?\s+terse`)
 	reShowVyOSInt  = regexp.MustCompile(`(?i)show\s+int(?:erfaces)?$`)
 	reShowVersion  = regexp.MustCompile(`(?i)(?:show\s+version|display\s+version|get\s+system\s+status|show\s+system\s+info)`)
-	reShowRoute    = regexp.MustCompile(`(?i)(?:show\s+ip(?:v6)?\s+route|display\s+ip\s+routing-table|show\s+route)`)
+	reShowRoute    = regexp.MustCompile(`(?i)(?:show\s+ip(?:v6)?\s+route|display\s+ip\s+routing-table|show\s+route|get\s+router\s+info\s+routing-table.*)`)
 )
 
 // ParseCommandOutput parses raw command output into structured data based on the command.
@@ -90,9 +90,62 @@ func ParseCommandOutput(cmd, output string) any {
 }
 
 // ParseInterfaceBrief parses "show ip interface brief" (Cisco, Arista, Fortinet)
-// and "display ip interface brief" (Huawei).
+// and multi-vendor operational interface tables (Huawei, Cisco SB, Aruba, Junos, Check Point).
 func ParseInterfaceBrief(output string) ([]InterfaceInfo, bool) {
-	lines := strings.Split(output, "\n")
+	clean := cleanTerminal(output)
+
+	// 1. Juniper Junos "show interfaces terse"
+	if strings.Contains(clean, "Interface") && strings.Contains(clean, "Admin") && strings.Contains(clean, "Link") {
+		return ParseJunosInterfacesTerse(clean)
+	}
+
+	// 2. Cisco Small Business "show interfaces status"
+	if (strings.Contains(clean, "Flow") && strings.Contains(clean, "State")) ||
+		(strings.Contains(clean, "Port") && strings.Contains(clean, "Duplex") && strings.Contains(clean, "Speed")) {
+		if res, ok := parseCiscoSBInterfaceStatus(clean); ok && len(res) > 0 {
+			return res, true
+		}
+	}
+
+	// 3. Aruba AOS-S "show interfaces brief"
+	if strings.Contains(clean, "Status and Counters - Port Status") ||
+		(strings.Contains(clean, "Port") && strings.Contains(clean, "Enabled") && strings.Contains(clean, "Status")) {
+		if res, ok := parseArubaInterfaceBrief(clean); ok && len(res) > 0 {
+			return res, true
+		}
+	}
+
+	// 4. Fortinet FortiOS "get system interface physical"
+	if (strings.Contains(clean, "==[") || strings.Contains(clean, "== [")) && (strings.Contains(clean, "status:") || strings.Contains(clean, "mode:")) {
+		if res, ok := parseFortinetInterfacePhysical(clean); ok && len(res) > 0 {
+			return res, true
+		}
+	}
+
+	// 5. Check Point Gaia "show interfaces"
+	if (strings.Contains(clean, "name:") && strings.Contains(clean, "status:")) ||
+		(strings.Contains(clean, "Interface ") && strings.Contains(clean, "State:")) {
+		if res, ok := parseCheckPointInterfaces(clean); ok && len(res) > 0 {
+			return res, true
+		}
+	}
+
+	// 6. Huawei "display interface brief"
+	if strings.Contains(clean, "Interface") && strings.Contains(clean, "PHY") && strings.Contains(clean, "Protocol") {
+		if res, ok := parseHuaweiInterfaceBrief(clean); ok && len(res) > 0 {
+			return res, true
+		}
+	}
+
+	// 7. Ruijie RGOS "show interfaces status"
+	if strings.Contains(clean, "Interface") && strings.Contains(clean, "Status") && strings.Contains(clean, "Duplex") && strings.Contains(clean, "Speed") && strings.Contains(clean, "Type") {
+		if res, ok := parseRuijieInterfaceStatus(clean); ok && len(res) > 0 {
+			return res, true
+		}
+	}
+
+	// 8. Standard Cisco / Huawei IP interface brief tables
+	lines := strings.Split(clean, "\n")
 	var result []InterfaceInfo
 	headerIdx := -1
 
@@ -155,6 +208,246 @@ func ParseInterfaceBrief(output string) ([]InterfaceInfo, bool) {
 	return result, len(result) > 0
 }
 
+func parseHuaweiInterfaceBrief(output string) ([]InterfaceInfo, bool) {
+	lines := strings.Split(output, "\n")
+	var result []InterfaceInfo
+	headerIdx := -1
+	for i, line := range lines {
+		l := strings.TrimSpace(line)
+		if strings.HasPrefix(l, "Interface") && strings.Contains(l, "PHY") && strings.Contains(l, "Protocol") {
+			headerIdx = i
+			break
+		}
+	}
+	if headerIdx == -1 {
+		return nil, false
+	}
+	for i := headerIdx + 1; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" || strings.HasPrefix(line, "PHY:") || strings.HasPrefix(line, "*") || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "(") || strings.HasPrefix(line, "InUti") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		phy := fields[1]
+		proto := fields[2]
+		status := "down"
+		if strings.HasPrefix(strings.ToLower(phy), "up") {
+			status = "up"
+		} else if strings.HasPrefix(phy, "*") {
+			status = "administratively down"
+		}
+		result = append(result, InterfaceInfo{
+			Interface: fields[0],
+			Status:    status,
+			Protocol:  proto,
+		})
+	}
+	return result, len(result) > 0
+}
+
+func parseRuijieInterfaceStatus(output string) ([]InterfaceInfo, bool) {
+	lines := strings.Split(output, "\n")
+	var result []InterfaceInfo
+	headerIdx := -1
+	for i, line := range lines {
+		l := strings.TrimSpace(line)
+		if strings.HasPrefix(l, "Interface") && strings.Contains(l, "Status") && strings.Contains(l, "Duplex") && strings.Contains(l, "Speed") {
+			headerIdx = i
+			break
+		}
+	}
+	if headerIdx == -1 {
+		return nil, false
+	}
+	for i := headerIdx + 1; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" || strings.HasPrefix(line, "-") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		intfName := fields[0]
+		status := fields[1]
+		if (strings.HasPrefix(fields[0], "Gigabit") || strings.HasPrefix(fields[0], "TenGigabit") || strings.HasPrefix(fields[0], "Fast")) && len(fields) >= 3 {
+			intfName = fields[0] + " " + fields[1]
+			status = fields[2]
+		}
+		result = append(result, InterfaceInfo{
+			Interface: intfName,
+			Status:    status,
+		})
+	}
+	return result, len(result) > 0
+}
+
+var reCiscoSBPort = regexp.MustCompile(`(?i)^(fa\d+|gi\d+|ge\d+|te\d+|po\d+|eth\d+|e\d+|\d+/\d+(?:/\d+)?)\s+`)
+
+func parseCiscoSBInterfaceStatus(output string) ([]InterfaceInfo, bool) {
+	lines := strings.Split(output, "\n")
+	var result []InterfaceInfo
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "Port") || strings.HasPrefix(trimmed, "---") {
+			continue
+		}
+		if !reCiscoSBPort.MatchString(trimmed) {
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) < 2 {
+			continue
+		}
+		port := fields[0]
+		status := "down"
+		for _, f := range fields[1:] {
+			if strings.EqualFold(f, "up") {
+				status = "up"
+				break
+			}
+			if strings.EqualFold(f, "down") {
+				status = "down"
+				break
+			}
+		}
+		result = append(result, InterfaceInfo{
+			Interface: port,
+			Status:    status,
+		})
+	}
+	return result, len(result) > 0
+}
+
+var reArubaPort = regexp.MustCompile(`^\s*([0-9]+|[A-Z][0-9]+)\s+`)
+
+func parseArubaInterfaceBrief(output string) ([]InterfaceInfo, bool) {
+	lines := strings.Split(output, "\n")
+	var result []InterfaceInfo
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "Port") || strings.HasPrefix(trimmed, "---") || strings.HasPrefix(trimmed, "Status") {
+			continue
+		}
+		if !reArubaPort.MatchString(trimmed) {
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) < 2 {
+			continue
+		}
+		port := fields[0]
+		status := "down"
+		for _, f := range fields[1:] {
+			if strings.EqualFold(f, "up") {
+				status = "up"
+				break
+			}
+			if strings.EqualFold(f, "down") {
+				status = "down"
+				break
+			}
+		}
+		result = append(result, InterfaceInfo{
+			Interface: port,
+			Status:    status,
+		})
+	}
+	return result, len(result) > 0
+}
+
+var reFortiStatusUp = regexp.MustCompile(`(?i)status:\s*up`)
+
+var reFortiPortHeader = regexp.MustCompile(`==\s*\[([^\]]+)\]`)
+
+func parseFortinetInterfacePhysical(output string) ([]InterfaceInfo, bool) {
+	locs := reFortiPortHeader.FindAllStringSubmatchIndex(output, -1)
+	if len(locs) == 0 {
+		return nil, false
+	}
+	var result []InterfaceInfo
+	for i := 0; i < len(locs); i++ {
+		name := output[locs[i][2]:locs[i][3]]
+		if name == "onboard" || name == "slot" {
+			continue // container category header
+		}
+		end := len(output)
+		if i+1 < len(locs) {
+			end = locs[i+1][0]
+		}
+		body := output[locs[i][1]:end]
+		status := "down"
+		if reFortiStatusUp.MatchString(body) {
+			status = "up"
+		}
+		result = append(result, InterfaceInfo{
+			Interface: name,
+			Status:    status,
+		})
+	}
+	return result, len(result) > 0
+}
+
+var reCPName = regexp.MustCompile(`(?i)name:\s*(\S+)`)
+var reCPStatus = regexp.MustCompile(`(?i)status:\s*(\S+)`)
+var reCPIfName = regexp.MustCompile(`(?i)Interface\s+(\S+):`)
+var reCPState = regexp.MustCompile(`(?i)State:\s*(\S+)`)
+
+func parseCheckPointInterfaces(output string) ([]InterfaceInfo, bool) {
+	var result []InterfaceInfo
+	lines := strings.Split(output, "\n")
+	currName := ""
+	for _, line := range lines {
+		if m := reCPName.FindStringSubmatch(line); len(m) > 1 {
+			currName = m[1]
+			continue
+		}
+		if currName != "" {
+			if m := reCPStatus.FindStringSubmatch(line); len(m) > 1 {
+				st := strings.ToLower(m[1])
+				status := "down"
+				if strings.Contains(st, "up") || strings.Contains(st, "full") || strings.Contains(st, "half") || strings.Contains(st, "1/") || strings.Contains(st, "2.5/") || strings.Contains(st, "10/") {
+					status = "up"
+				}
+				result = append(result, InterfaceInfo{
+					Interface: currName,
+					Status:    status,
+				})
+				currName = ""
+			}
+		}
+	}
+
+	if len(result) == 0 {
+		// Fallback for "Interface eth0:\n State: Up"
+		for _, line := range lines {
+			if m := reCPIfName.FindStringSubmatch(line); len(m) > 1 {
+				currName = m[1]
+				continue
+			}
+			if currName != "" {
+				if m := reCPState.FindStringSubmatch(line); len(m) > 1 {
+					st := strings.ToLower(m[1])
+					status := "down"
+					if strings.Contains(st, "up") {
+						status = "up"
+					}
+					result = append(result, InterfaceInfo{
+						Interface: currName,
+						Status:    status,
+					})
+					currName = ""
+				}
+			}
+		}
+	}
+
+	return result, len(result) > 0
+}
+
 // ParseJunosInterfacesTerse parses Junos "show interfaces terse".
 func ParseJunosInterfacesTerse(output string) ([]InterfaceInfo, bool) {
 	lines := strings.Split(output, "\n")
@@ -187,6 +480,7 @@ func ParseJunosInterfacesTerse(output string) ([]InterfaceInfo, bool) {
 				Interface: fields[0],
 				Admin:     fields[1],
 				Link:      fields[2],
+				Status:    fields[2],
 			})
 			if len(fields) >= 5 {
 				result[len(result)-1].Proto = fields[3]
@@ -331,21 +625,24 @@ func ParseVersion(output string) (map[string]string, bool) {
 	return res, len(res) > 0
 }
 
-var reRouteCisco = regexp.MustCompile(`^([A-Z*]+)\s+([0-9./]+)(?:\s+\[([0-9/]+)\])?(?:\s+via\s+([0-9.]+))?(?:,\s+([0-9a-zA-Z/.:]+))?`)
+var (
+	reRouteCisco   = regexp.MustCompile(`^([A-Z*]+)\s+([0-9./]+)(?:\s+\[([0-9/]+)\])?(?:\s+(?:is directly connected|via\s+([0-9.]+)))?(?:,\s+(?:\d+:\d+:\d+,\s+)?([0-9a-zA-Z/._:-]+))?`)
+	reRouteHuawei  = regexp.MustCompile(`^([0-9.]+/\d+)\s+([A-Za-z]+)\s+(\d+)\s+(\d+)\s+[A-Za-z]*\s+([0-9.]+)\s+(\S+)`)
+	reRouteGeneric = regexp.MustCompile(`^([0-9.]+/\d+)\s+(?:via\s+([0-9.]+)|is directly connected)`)
+)
 
-// ParseRouteTable parses routing table outputs.
+// ParseRouteTable parses routing table outputs across multi-vendor syntaxes.
 func ParseRouteTable(output string) ([]RouteInfo, bool) {
 	lines := strings.Split(output, "\n")
 	var result []RouteInfo
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "Codes:") || strings.HasPrefix(line, "Gateway of") {
+		if line == "" || strings.HasPrefix(line, "Codes:") || strings.HasPrefix(line, "Gateway of") || strings.HasPrefix(line, "Destination/Mask") || strings.HasPrefix(line, "Route Table") {
 			continue
 		}
 
-		m := reRouteCisco.FindStringSubmatch(line)
-		if len(m) >= 3 && m[2] != "" {
+		if m := reRouteCisco.FindStringSubmatch(line); len(m) >= 3 && m[2] != "" {
 			ri := RouteInfo{
 				Protocol: strings.TrimSpace(m[1]),
 				Network:  strings.TrimSpace(m[2]),
@@ -365,6 +662,33 @@ func ParseRouteTable(output string) ([]RouteInfo, bool) {
 				ri.Interface = m[5]
 			}
 			result = append(result, ri)
+			continue
+		}
+
+		if m := reRouteHuawei.FindStringSubmatch(line); len(m) > 6 {
+			result = append(result, RouteInfo{
+				Network:   m[1],
+				Protocol:  m[2],
+				Distance:  m[3],
+				Metric:    m[4],
+				NextHop:   m[5],
+				Gateway:   m[5],
+				Interface: m[6],
+			})
+			continue
+		}
+
+		if m := reRouteGeneric.FindStringSubmatch(line); len(m) > 1 {
+			gw := ""
+			if len(m) > 2 {
+				gw = m[2]
+			}
+			result = append(result, RouteInfo{
+				Network: m[1],
+				Gateway: gw,
+				NextHop: gw,
+			})
+			continue
 		}
 	}
 
