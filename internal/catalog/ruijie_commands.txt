@@ -1,0 +1,23 @@
+show version
+show interfaces status
+show interfaces counters
+show interfaces counters errors
+show ip interface brief
+show ip route
+show vlan
+show mac-address-table
+show arp
+show aggregateport summary
+show switch virtual
+show spanning-tree
+show lldp neighbors
+show lldp neighbors detail
+show logging
+show cpu
+show memory
+show ntp status
+show clock
+show temperature
+show fan
+show power
+show spanning-tree summary

@@ -1,0 +1,12 @@
+# Healthcheck commands — H3C
+# Mỗi dòng 1 lệnh; dòng bắt đầu '#' là chú thích (bỏ qua).
+# Chỉnh sửa tuỳ theo model/firmware thực tế của bạn.
+display version
+display device
+display cpu-usage
+display memory
+display interface brief
+display ip routing-table
+display irf
+display link-aggregation summary
+display lldp neighbor-information

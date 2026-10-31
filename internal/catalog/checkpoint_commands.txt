@@ -1,0 +1,19 @@
+# Healthcheck commands — CHECK POINT (Quantum Spark / SMB — Gaia Embedded)
+# Dòng Spark 1500/1600/1800/1900/2000 dùng CLI clish RIÊNG, KHÁC Gaia enterprise
+# (KHÔNG dùng 'show version all', 'show asset all', 'show route').
+# Mỗi dòng 1 lệnh; dòng bắt đầu '#' là chú thích (bỏ qua).
+# Nếu model/phiên bản của bạn khác, chỉnh lại cho khớp (xem CLI Reference Guide).
+show software-version
+show device-details
+show diag
+show interfaces
+show internet-connections
+show static-routes
+show route-probe-stats
+show cluster-status
+show cluster-config
+fw ver
+fw stat
+cphaprob stat
+cpstat os -f all
+cpstat fw

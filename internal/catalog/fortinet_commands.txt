@@ -1,0 +1,9 @@
+get system status
+get system performance status
+get hardware status
+get system interface physical
+get router info routing-table all
+get system ha status
+execute log filter category 1
+diagnose lldprx neighbor summary
+# diagnose lldp rx neighbor summary

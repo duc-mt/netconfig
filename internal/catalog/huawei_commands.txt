@@ -1,0 +1,21 @@
+# Huawei VRP Operational & Diagnostic Commands
+display version
+display cpu-usage
+display memory
+display device
+display interface brief
+display interface description
+display vlan
+display port vlan
+display arp
+display lldp neighbor brief
+display lldp neighbor
+display eth-trunk
+display stp brief
+display poe power
+display ntp-service status
+display clock
+display temperature all
+display fan
+display power
+display device manufacture-info

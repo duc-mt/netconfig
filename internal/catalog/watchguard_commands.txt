@@ -1,0 +1,10 @@
+# Healthcheck commands — WATCHGUARD
+# Mỗi dòng 1 lệnh; dòng bắt đầu '#' là chú thích (bỏ qua).
+# Chỉnh sửa tuỳ theo model/firmware thực tế của bạn.
+show version
+show system
+show interface
+show route
+show ha
+show policy
+show log

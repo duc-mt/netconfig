@@ -1,0 +1,39 @@
+# ================================================================
+# Cisco NX-OS (Nexus) — Healthcheck commands
+# ----------------------------------------------------------------
+# Dùng cho switch trung tâm dữ liệu Cisco Nexus (N3K/N5K/N7K/N9K).
+# App tự chọn file này khi 'show version' có "NX-OS"/"Nexus".
+# NX-OS có các lệnh riêng (vpc, vrf all, system resources...) không có
+# trên IOS — xem cisco_ios_commands.txt cho Catalyst.
+#
+# Các dòng bắt đầu bằng '#' là ghi chú, sẽ bị bỏ qua khi nạp lệnh.
+# ================================================================
+
+# --- Hệ thống & tài nguyên ---
+show version
+show inventory
+show system resources
+show processes cpu sort
+show environment
+
+# --- Lớp 3 (nhiều VRF) ---
+show ip interface brief vrf all
+show ip route vrf all
+show vrf all
+
+# --- Lớp 2 / cổng ---
+show interface status
+show interface trunk
+show vlan brief
+show port-channel summary
+show vpc brief
+show mac address-table
+
+# --- STP & láng giềng ---
+show spanning-tree summary
+show cdp neighbors
+show lldp neighbors
+
+# --- Tính năng & nhật ký ---
+show feature
+show logging last 200

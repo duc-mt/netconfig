@@ -1,0 +1,37 @@
+# ================================================================
+# ArubaOS-CX (AOS-CX) — Healthcheck commands
+# ----------------------------------------------------------------
+# ArubaOS-CX là họ OS MỚI của Aruba, cú pháp GIỐNG Cisco (khác hẳn
+# ArubaOS-Switch/ProCurve). File này được app tự chọn khi 'show version'
+# có chuỗi "ArubaOS-CX". Nếu thiết bị là ProCurve/AOS-S, app dùng
+# aruba_aos-s_commands.txt.
+#
+# Các dòng bắt đầu bằng '#' là ghi chú, sẽ bị bỏ qua khi nạp lệnh.
+# ================================================================
+
+# --- Thông tin hệ thống & tài nguyên ---
+show version
+show system
+show environment temperature
+show module
+
+# --- Cấu hình mạng lớp 2/3 ---
+show vlan
+show ip interface brief
+show ip route
+show interface brief
+show lacp aggregates
+show lacp interfaces
+show spanning-tree
+
+# --- Láng giềng / phát hiện thiết bị ---
+show lldp neighbor-info
+show cdp neighbors
+
+# --- Bảng địa chỉ ---
+show mac-address-table
+show arp
+
+# --- VRF & nhật ký ---
+show vrf
+show logging

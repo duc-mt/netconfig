@@ -1,0 +1,13 @@
+# Healthcheck commands — ASA
+# Mỗi dòng 1 lệnh; dòng bắt đầu '#' là chú thích (bỏ qua).
+# Chỉnh sửa tuỳ theo model/firmware thực tế của bạn.
+show version
+show inventory
+show interface ip brief
+show route
+show failover
+show cpu usage
+show memory
+show conn count
+show processes cpu-usage non-zero
+show logging

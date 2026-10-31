@@ -1,0 +1,11 @@
+# Healthcheck commands — EXTREME
+# Mỗi dòng 1 lệnh; dòng bắt đầu '#' là chú thích (bỏ qua).
+# Chỉnh sửa tuỳ theo model/firmware thực tế của bạn.
+show version
+show switch
+show ports no-refresh
+show iproute
+show cpu-monitoring
+show memory
+show lldp neighbors
+show sharing

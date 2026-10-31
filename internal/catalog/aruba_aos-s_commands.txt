@@ -1,0 +1,40 @@
+# ================================================================
+# ArubaOS-Switch (AOS-S / HPE ProCurve) — Healthcheck commands
+# ----------------------------------------------------------------
+# LƯU Ý: Thiết bị dòng ProCurve / ArubaOS-Switch dùng cú pháp RIÊNG,
+# KHÔNG giống Cisco IOS/NX-OS hay ArubaOS-CX. Không dùng các lệnh
+# kiểu Cisco (show ip int brief, show processes cpu, show int status,
+# show logging last N, show vrrp brief/detail...) — chúng bị báo
+# "Invalid input" hoặc "invalid port".
+#
+# Các dòng bắt đầu bằng '#' là ghi chú, sẽ bị bỏ qua khi nạp lệnh.
+# ================================================================
+
+# --- Thông tin hệ thống & tài nguyên ---
+show version
+show system
+show cpu
+show memory
+show flash
+show uptime
+
+# --- Cấu hình mạng lớp 2/3 ---
+show vlans
+show ip
+show ip route
+show interfaces brief
+show trunks
+show lacp
+show spanning-tree
+
+# --- Láng giềng / phát hiện thiết bị ---
+show cdp neighbors detail
+show lldp info remote-device detail
+
+# --- Bảng địa chỉ ---
+show mac-address
+show arp
+
+# --- Bảo mật & nhật ký ---
+show port-security
+show logging

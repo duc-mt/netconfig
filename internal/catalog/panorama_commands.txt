@@ -1,0 +1,8 @@
+# Healthcheck commands — PANORAMA
+# Mỗi dòng 1 lệnh; dòng bắt đầu '#' là chú thích (bỏ qua).
+# Chỉnh sửa tuỳ theo model/firmware thực tế của bạn.
+show system info
+show system resources
+show high-availability all
+show devices all
+show log system recent

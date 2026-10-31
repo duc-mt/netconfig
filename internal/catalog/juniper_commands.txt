@@ -1,0 +1,16 @@
+show version
+show interfaces terse
+show interfaces descriptions
+show vlans
+show ethernet-switching table
+show arp
+show lldp neighbors
+show spanning-tree bridge
+show lacp interfaces
+show chassis routing-engine
+show log messages | last 50
+show system uptime
+show chassis hardware
+show chassis environment
+show chassis alarms
+show virtual-chassis status

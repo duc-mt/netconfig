@@ -1,0 +1,35 @@
+show version
+show system resources
+show inventory
+show ip int brief
+show ip route
+show processes cpu sorted
+show processes memory sorted
+show vpc brief
+show vrrp
+show vrrp brief
+show vrrp detail
+show port-security address
+show vlan
+show cdp neighbors
+show lldp neighbors
+show int trunk
+show int status
+show spanning-tree summary
+show port-channel summary
+show vrf
+show vrf all
+show ip interface brief vrf all
+show ip interface brief
+show ip route
+show ip route vrf all
+show aaa server brief
+show aaa server radius statistics
+show logging last 200
+show ntp status
+show sntp status
+show clock
+show environment all
+show switch
+show logging
+show spanning-tree detail

@@ -1,0 +1,11 @@
+# Healthcheck commands — HP
+# Mỗi dòng 1 lệnh; dòng bắt đầu '#' là chú thích (bỏ qua).
+# Chỉnh sửa tuỳ theo model/firmware thực tế của bạn.
+show version
+show system-information
+show interfaces brief
+show ip route
+show cpu
+show memory
+show lldp info remote-device
+show trunks

@@ -1,0 +1,12 @@
+# Healthcheck commands — PALOALTO
+# Mỗi dòng 1 lệnh; dòng bắt đầu '#' là chú thích (bỏ qua).
+# Chỉnh sửa tuỳ theo model/firmware thực tế của bạn.
+show system info
+show system resources
+show high-availability state
+show interface all
+show routing route
+show session info
+show running security-policy
+show system disk-space
+show log system recent

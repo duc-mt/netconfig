@@ -1,0 +1,10 @@
+# Healthcheck commands — NOKIA
+# Mỗi dòng 1 lệnh; dòng bắt đầu '#' là chú thích (bỏ qua).
+# Chỉnh sửa tuỳ theo model/firmware thực tế của bạn.
+show version
+show card state
+show port
+show router route-table
+show system cpu
+show system memory-pool
+admin display-config

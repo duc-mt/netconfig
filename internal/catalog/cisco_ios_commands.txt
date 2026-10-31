@@ -1,0 +1,40 @@
+# ================================================================
+# Cisco IOS / IOS-XE (Catalyst) — Healthcheck commands
+# ----------------------------------------------------------------
+# Dùng cho switch/router chạy Cisco IOS cổ điển và IOS-XE (Catalyst
+# 9200/9300/9500, 3850, ISR...). App tự chọn file này khi 'show version'
+# nhận diện IOS/IOS-XE. KHÔNG dùng cú pháp NX-OS (vpc, vrf all,
+# system resources...) — xem cisco_nxos_commands.txt cho Nexus.
+#
+# Các dòng bắt đầu bằng '#' là ghi chú, sẽ bị bỏ qua khi nạp lệnh.
+# ================================================================
+
+# --- Hệ thống & tài nguyên ---
+show version
+show inventory
+show processes cpu sorted
+show processes memory sorted
+show env all
+dir flash:
+
+# --- Lớp 3 ---
+show ip interface brief
+show ip route
+# show vrf (Layer 3 / VRF-enabled devices only)
+
+# --- Lớp 2 / cổng ---
+show interfaces status
+show interfaces trunk
+show vlan brief
+show etherchannel summary
+show mac address-table
+
+# --- STP & láng giềng ---
+show spanning-tree summary
+show cdp neighbors
+show lldp neighbors
+
+# --- Bảo mật, stack & nhật ký ---
+show port-security
+show switch
+# show logging (dumps entire buffer; use 'netops exec' when full event history is needed)

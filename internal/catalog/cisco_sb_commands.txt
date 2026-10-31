@@ -1,0 +1,22 @@
+# ================================================================
+# Cisco Small Business (SG300/SG350/CBS350/Catalyst 1300)
+# Healthcheck & Diagnostic commands
+# ================================================================
+
+# --- Hệ thống & tài nguyên ---
+show version
+show system
+show inventory
+show cpu utilization
+
+# --- Lớp 2 / cổng ---
+show interfaces status
+show interfaces description
+show vlan
+show mac address-table
+show arp
+
+# --- Spanning Tree & láng giềng ---
+show spanning-tree
+show cdp neighbors
+# show logging (dumps full buffer and may timeout on switches with thousands of events)

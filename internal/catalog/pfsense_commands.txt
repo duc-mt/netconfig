@@ -1,0 +1,9 @@
+# Healthcheck commands — PFSENSE
+# Mỗi dòng 1 lệnh; dòng bắt đầu '#' là chú thích (bỏ qua).
+# Chỉnh sửa tuỳ theo model/firmware thực tế của bạn.
+uname -a
+cat /etc/version
+ifconfig -a
+netstat -rn
+top -b -n 1
+pfctl -s info
