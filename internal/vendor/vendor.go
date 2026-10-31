@@ -294,7 +294,7 @@ var (
 	rePagerHuawei = regexp.MustCompile(`(?i)----\s*More\s*----`)
 	rePagerJunos  = regexp.MustCompile(`(?i)---\(more(?:\s+\d+%)?\)---`)
 
-	reCiscoErr      = regexp.MustCompile(`(?i)^\s*%\s*(?:invalid|incomplete|ambiguous|unrecognized|unknown|bad\s|authorization failed|access denied)`)
+	reCiscoErr      = regexp.MustCompile(`(?i)^\s*%\s*(?:invalid|incomplete|ambiguous|unrecognized|unknown|bad\s|authorization failed|access denied|user doesn't have|has been blocked|privilege)`)
 	reAristaErr     = regexp.MustCompile(`(?i)^\s*%\s*(?:invalid|incomplete|ambiguous|unrecognized|unknown|unavailable|error|bad\s|authorization failed|access denied)`)
 	reJunosErr      = regexp.MustCompile(`(?i)^\s*(?:syntax error|unknown command|error:|missing argument)`)
 	reHuaweiErr     = regexp.MustCompile(`(?i)^\s*error:`)

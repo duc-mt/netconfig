@@ -12,3 +12,5 @@ System Contact          :
 Product Name            : JL675A 6100 48G CL4 4SFP+ Swch
 Chassis Serial Nbr      : SG12345678
 Up Time                 : 23 days, 4 hours, 12 minutes
+=== show lldp info local-device ===
+

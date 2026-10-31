@@ -17,6 +17,7 @@ const (
 	reMACDotted = `[0-9a-fA-F]{4}\.[0-9a-fA-F]{4}\.[0-9a-fA-F]{4}`
 	reMACColon  = `[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}`
 	reMACHyphen = `[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}`
+	reMACAOS_S  = `[0-9a-fA-F]{6}-[0-9a-fA-F]{6}`
 	reIPv4      = `\d{1,3}(?:\.\d{1,3}){3}`
 )
 
@@ -58,7 +59,7 @@ func parseRows(output string, spec rowSpec) []LocatorRecord {
 	return out
 }
 
-var reVLANInName = regexp.MustCompile(`(?i)(?:vlan(?:if)?|vl|bdi|irb\.|vlan\.)\s*(\d+)$`)
+var reVLANInName = regexp.MustCompile(`(?i)(?:vlan(?:if)?|vl|bdi|irb\.|vlan\.|\S+\.)\s*(\d+)$`)
 
 // vlanFromName extracts the VLAN from an SVI style name ("Vlan30", "Vlanif30",
 // "irb.30"); 0 when the name carries none.
@@ -91,6 +92,7 @@ type locatorDriver struct {
 	style    MACStyle
 	macCmd   string // format with one %s for the MAC; "" = no MAC table query
 	macSpec  *rowSpec
+	macSpecs []*rowSpec
 	macPost  func([]LocatorRecord) []LocatorRecord
 	ipCmd    string // format with one %s for the IP; "" = no ARP query
 	ipSpec   *rowSpec
@@ -112,10 +114,21 @@ func (d locatorDriver) FindMACCommand(mac string) string {
 }
 
 func (d locatorDriver) ParseMAC(output string) []LocatorRecord {
-	if d.macSpec == nil {
+	var specs []*rowSpec
+	if d.macSpec != nil {
+		specs = append(specs, d.macSpec)
+	}
+	specs = append(specs, d.macSpecs...)
+	if len(specs) == 0 {
 		return nil
 	}
-	recs := parseRows(output, *d.macSpec)
+	var recs []LocatorRecord
+	for _, spec := range specs {
+		if spec == nil {
+			continue
+		}
+		recs = append(recs, parseRows(output, *spec)...)
+	}
 	if d.macPost != nil {
 		recs = d.macPost(recs)
 	}
@@ -211,7 +224,7 @@ var locatorDrivers = map[string]NetworkLocator{
 		style: MACColon, macCmd: "show mac address-table address %s",
 		macSpec: &rowSpec{re: rowRe(`^\s*(\d+)\s+(` + reMACColon + `)\s+(\S+)\s+\w+`), mac: 2, iface: 3, vlanC: 1},
 		ipCmd:   "show arp",
-		ipSpec:  &rowSpec{re: rowRe(`^\s*((?:vlan\s*\d+|\S+))\s+(` + reIPv4 + `)\s+(` + reMACColon + `)\s+\w+`), ip: 2, mac: 3, iface: 1},
+		ipSpec:  &rowSpec{re: rowRe(`^\s*((?:vlan\s*\d+|\S+))(?:\s+[a-zA-Z]\S*)?\s+(` + reIPv4 + `)\s+(` + reMACColon + `)\s+\w+`), ip: 2, mac: 3, iface: 1},
 	},
 	CiscoASA: locatorDriver{
 		ipCmd:  "show arp",
@@ -227,7 +240,7 @@ var locatorDrivers = map[string]NetworkLocator{
 		style: MACHuawei, macCmd: "display mac-address %s",
 		macSpec: &rowSpec{re: rowRe(`^\s*(` + reMACHyphen + `)\s+(\d+)(?:/\S+)?\s+(\S+)\s+\w+`), mac: 1, vlanC: 2, iface: 3},
 		ipCmd:   "display arp | include %s",
-		ipSpec:  &rowSpec{re: rowRe(`^\s*(` + reIPv4 + `)\s+(` + reMACHyphen + `)\s+(?:\d+|--)\s+\S+\s+(\S+)(?:\s+(\d+)/\S+)?`), ip: 1, mac: 2, iface: 3, vlanC: 4},
+		ipSpec:  &rowSpec{re: rowRe(`^\s*(` + reIPv4 + `)\s+(` + reMACHyphen + `)\s+(?:\d+|--)?\s+(?:[A-Z]\s+[-0-9/]+|\S+)\s+(\S+)(?:\s+(\d+)/\S+)?`), ip: 1, mac: 2, iface: 3, vlanC: 4},
 	},
 	Fortinet: locatorDriver{
 		ipCmd:  "get system arp",
@@ -254,16 +267,31 @@ var locatorDrivers = map[string]NetworkLocator{
 		ipCmd:   "show arp",
 		ipSpec:  &rowSpec{re: rowRe(`^\s*\S+\s+(` + reIPv4 + `)\s+\S+\s+(` + reMACDotted + `)\s+\S+\s+(.+?)\s*$`), ip: 1, mac: 2, iface: 3},
 	},
-	// Aruba: AOS-CX.
+	// Aruba: AOS-CX and AOS-S (Provision/ProCurve).
 	Aruba: locatorDriver{
 		style: MACColon, macCmd: "show mac-address-table | include %s",
-		macSpec: &rowSpec{re: rowRe(`^\s*(` + reMACColon + `)\s+(\d+)\s+\w+\s+(\S+)`), mac: 1, vlanC: 2, iface: 3},
-		ipCmd:   "show arp | include %s",
-		ipSpec:  &rowSpec{re: rowRe(`^\s*(` + reIPv4 + `)\s+(` + reMACColon + `)\s+(\S+)\s+(\S+)`), ip: 1, mac: 2, iface: 4, vlanNameC: 3},
+		macSpecs: []*rowSpec{
+			// AOS-CX: "aa:bb:cc:dd:ee:ff 10 static 1/1/1"
+			{re: rowRe(`^\s*(` + reMACColon + `)\s+(\d+)\s+\w+\s+(\S+)`), mac: 1, vlanC: 2, iface: 3},
+			// AOS-S: "000c29-50de58 24 111"
+			{re: rowRe(`^\s*(` + reMACAOS_S + `)\s+(\S+)\s+(\d+)`), mac: 1, iface: 2, vlanC: 3},
+		},
+		ipCmd: "show arp | include %s",
+		ipSpecs: []*rowSpec{
+			// AOS-CX: "10.0.0.1 aa:bb:cc:dd:ee:ff vlan10 1/1/1"
+			{re: rowRe(`^\s*(` + reIPv4 + `)\s+(` + reMACColon + `)\s+(\S+)\s+(\S+)`), ip: 1, mac: 2, iface: 4, vlanNameC: 3},
+			// AOS-S: "172.28.189.1 704ca5-d26b10 dynamic 24"
+			{re: rowRe(`^\s*(` + reIPv4 + `)\s+(` + reMACAOS_S + `)\s+\w+\s+(\S+)`), ip: 1, mac: 2, iface: 3},
+		},
 	},
 	CheckPoint: locatorDriver{
-		ipCmd:  "show arp dynamic all",
-		ipSpec: &rowSpec{re: rowRe(`^\s*(` + reIPv4 + `)\s+(?:\w+\s+)?(` + reMACColon + `)\s+(?:\w+\s+)?(\S+)\s*$`), ip: 1, mac: 2, iface: 3},
+		ipCmd: "arp %s",
+		ipSpecs: []*rowSpec{
+			// Gaia Embedded: "? (10.119.29.251) at 94:f7:ad:88:ff:01 [ether] on LAN3.324"
+			{re: rowRe(`(?:\S+\s+)?\((` + reIPv4 + `)\)\s+at\s+(` + reMACColon + `)\s+\[ether\]\s+on\s+(\S+)`), ip: 1, mac: 2, iface: 3},
+			// Gaia Enterprise: "10.119.29.251 94:f7:ad:88:ff:01 eth0"
+			{re: rowRe(`^\s*(` + reIPv4 + `)\s+(?:\w+\s+)?(` + reMACColon + `)\s+(?:\w+\s+)?(\S+)\s*$`), ip: 1, mac: 2, iface: 3},
+		},
 	},
 	PaloAlto: locatorDriver{
 		ipCmd:  "show arp all",

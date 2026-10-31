@@ -11,3 +11,8 @@ Serial Number:  1234567890
 up 8 days, 4:04
 === show hostname ===
 cp-gw1
+=== show software-version ===
+=== show diag ===
+=== show device-details ===
+=== uptime ===
+

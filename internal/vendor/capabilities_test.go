@@ -426,6 +426,214 @@ func TestCombineOutputsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFactsLiveVariants(t *testing.T) {
+	t.Run("Aruba_AOS_S", func(t *testing.T) {
+		p, _ := Lookup(Aruba)
+		f, ok := p.Facts()
+		if !ok {
+			t.Fatal("no facts driver")
+		}
+		output := `=== show version ===
+Image stamp: /ws/swbuildm/rel_beluru_qaoff/code/build/lakes
+                YA.16.11.0030
+=== show system ===
+  System Name        : DCTTN-BF-1F-SW01-NW-189-11-U21
+  Software revision  : YA.16.11.0030
+  Serial Number      : CN17FP71GK
+  Up Time            : 98 days
+=== show lldp info local-device ===
+  System Description    : HP J9776A 2530-24G Switch
+`
+		got := f.ParseFacts(output)
+		if got.Hostname != "DCTTN-BF-1F-SW01-NW-189-11-U21" {
+			t.Errorf("Hostname = %q, want DCTTN-BF-1F-SW01-NW-189-11-U21", got.Hostname)
+		}
+		if got.Model != "HP J9776A 2530-24G Switch" {
+			t.Errorf("Model = %q, want HP J9776A 2530-24G Switch", got.Model)
+		}
+		if got.Serial != "CN17FP71GK" {
+			t.Errorf("Serial = %q, want CN17FP71GK", got.Serial)
+		}
+		if got.Version != "YA.16.11.0030" {
+			t.Errorf("Version = %q, want YA.16.11.0030", got.Version)
+		}
+		if got.Uptime != "98 days" {
+			t.Errorf("Uptime = %q, want 98 days", got.Uptime)
+		}
+	})
+
+	t.Run("CheckPoint_Gaia_Embedded", func(t *testing.T) {
+		p, _ := Lookup(CheckPoint)
+		f, ok := p.Facts()
+		if !ok {
+			t.Fatal("no facts driver")
+		}
+		output := `=== show software-version ===
+This is Check Point's 1800 Appliance R82.00.10 - Build 325
+=== show diag ===
+Serial number: BA25703991
+Unit model: V3
+=== show device-details ===
+hostname: MNS-VPSHTP-2F-FW-02
+=== uptime ===
+ 10:43:06 up 35 days, 12:24, 1 users
+`
+		got := f.ParseFacts(output)
+		if got.Hostname != "MNS-VPSHTP-2F-FW-02" {
+			t.Errorf("Hostname = %q, want MNS-VPSHTP-2F-FW-02", got.Hostname)
+		}
+		if got.Model != "1800" {
+			t.Errorf("Model = %q, want 1800", got.Model)
+		}
+		if got.Serial != "BA25703991" {
+			t.Errorf("Serial = %q, want BA25703991", got.Serial)
+		}
+		if got.Version != "R82.00.10 - Build 325" {
+			t.Errorf("Version = %q, want R82.00.10 - Build 325", got.Version)
+		}
+		if got.Uptime != "35 days, 12:24" {
+			t.Errorf("Uptime = %q, want 35 days, 12:24", got.Uptime)
+		}
+	})
+
+	t.Run("CiscoSB_CBS350", func(t *testing.T) {
+		p, _ := Lookup(CiscoSB)
+		f, ok := p.Facts()
+		if !ok {
+			t.Fatal("no facts driver")
+		}
+		output := `=== show version ===
+Active-image: flash://system/images/image-1
+  Version: 2.4.0.94
+=== show system ===
+System Description:               SG350-28P 28-Port Gigabit PoE Managed Switch
+System Up Time (days,hour:min:sec): 42,15:30:10
+System Name:                      VPCMT8-6F-CORE
+=== show inventory ===
+NAME: "SG350-28P" DESCR: "SG350-28P 28-Port Gigabit PoE Managed Switch"
+PID: SG350-28P-K9 VID: V01 SN: DNI2248021A
+`
+		got := f.ParseFacts(output)
+		if got.Version != "2.4.0.94" {
+			t.Errorf("Version = %q, want 2.4.0.94", got.Version)
+		}
+		if got.Model != "SG350-28P-K9" {
+			t.Errorf("Model = %q, want SG350-28P-K9", got.Model)
+		}
+		if got.Serial != "DNI2248021A" {
+			t.Errorf("Serial = %q, want DNI2248021A", got.Serial)
+		}
+	})
+
+	t.Run("Huawei_iStack", func(t *testing.T) {
+		p, _ := Lookup(Huawei)
+		f, ok := p.Facts()
+		if !ok {
+			t.Fatal("no facts driver")
+		}
+		output := `=== display version ===
+Huawei Versatile Routing Platform Software
+VRP (R) software, Version 5.170 (S5735 V200R021C00SPC100)
+HUAWEI S5735-L24T4S-A1 uptime is 15 weeks, 2 days, 1 hour, 3 minutes
+=== display esn ===
+ESN of slot 0: 4E22C0019075
+`
+		got := f.ParseFacts(output)
+		if got.Serial != "4E22C0019075" {
+			t.Errorf("Serial = %q, want 4E22C0019075", got.Serial)
+		}
+		if got.Model != "S5735-L24T4S-A1" {
+			t.Errorf("Model = %q, want S5735-L24T4S-A1", got.Model)
+		}
+	})
+}
+
+func TestLocatorLiveVariants(t *testing.T) {
+	t.Run("Aruba_AOS_S", func(t *testing.T) {
+		p, _ := Lookup(Aruba)
+		loc, ok := p.Locator()
+		if !ok {
+			t.Fatal("no locator driver")
+		}
+		macOut := `Status and Counters - Port Address Table
+
+  MAC Address   Port  VLAN
+  ------------- ----- ----
+  000c29-50de58 24    111
+  14a2a0-2dd741 24    111
+`
+		macRecs := loc.ParseMAC(macOut)
+		if len(macRecs) != 2 {
+			t.Fatalf("ParseMAC got %d recs, want 2", len(macRecs))
+		}
+		if macRecs[0].MAC != "00:0c:29:50:de:58" || macRecs[0].Interface != "24" || macRecs[0].VLAN != 111 {
+			t.Errorf("macRecs[0] = %+v, want MAC=00:0c:29:50:de:58 Iface=24 VLAN=111", macRecs[0])
+		}
+
+		arpOut := `IP ARP table
+
+  IP Address       MAC Address       Type    Port
+  ---------------  ----------------- ------- ----
+  172.28.189.1     704ca5-d26b10     dynamic 24
+`
+		arpRecs := loc.ParseIP(arpOut)
+		if len(arpRecs) != 1 {
+			t.Fatalf("ParseIP got %d recs, want 1", len(arpRecs))
+		}
+		if arpRecs[0].IP != "172.28.189.1" || arpRecs[0].MAC != "70:4c:a5:d2:6b:10" || arpRecs[0].Interface != "24" {
+			t.Errorf("arpRecs[0] = %+v", arpRecs[0])
+		}
+	})
+
+	t.Run("CheckPoint_Gaia_Embedded", func(t *testing.T) {
+		p, _ := Lookup(CheckPoint)
+		loc, ok := p.Locator()
+		if !ok {
+			t.Fatal("no locator driver")
+		}
+		arpOut := `? (10.119.29.251) at 94:f7:ad:88:ff:01 [ether] on LAN3.324`
+		recs := loc.ParseIP(arpOut)
+		if len(recs) != 1 {
+			t.Fatalf("ParseIP got %d recs, want 1", len(recs))
+		}
+		if recs[0].IP != "10.119.29.251" || recs[0].MAC != "94:f7:ad:88:ff:01" || recs[0].Interface != "LAN3.324" || recs[0].VLAN != 324 {
+			t.Errorf("recs[0] = %+v", recs[0])
+		}
+	})
+
+	t.Run("CiscoSB_Interface_Column", func(t *testing.T) {
+		p, _ := Lookup(CiscoSB)
+		loc, ok := p.Locator()
+		if !ok {
+			t.Fatal("no locator driver")
+		}
+		arpOut := `vlan 111 gi9 172.28.188.65 00:09:0f:09:01:0c dynamic`
+		recs := loc.ParseIP(arpOut)
+		if len(recs) != 1 {
+			t.Fatalf("ParseIP got %d recs, want 1", len(recs))
+		}
+		if recs[0].IP != "172.28.188.65" || recs[0].MAC != "00:09:0f:09:01:0c" || recs[0].VLAN != 111 {
+			t.Errorf("recs[0] = %+v", recs[0])
+		}
+	})
+
+	t.Run("Huawei_Local_ARP", func(t *testing.T) {
+		p, _ := Lookup(Huawei)
+		loc, ok := p.Locator()
+		if !ok {
+			t.Fatal("no locator driver")
+		}
+		arpOut := `172.28.189.1    704c-a5d2-6b10          I -             Vlanif111`
+		recs := loc.ParseIP(arpOut)
+		if len(recs) != 1 {
+			t.Fatalf("ParseIP got %d recs, want 1", len(recs))
+		}
+		if recs[0].IP != "172.28.189.1" || recs[0].MAC != "70:4c:a5:d2:6b:10" || recs[0].VLAN != 111 {
+			t.Errorf("recs[0] = %+v", recs[0])
+		}
+	})
+}
+
 func rec(mac, ip, iface string, vlan int) LocatorRecord {
 	return LocatorRecord{MAC: mac, IP: ip, Interface: iface, VLAN: vlan}
 }

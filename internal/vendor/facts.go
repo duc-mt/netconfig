@@ -84,7 +84,10 @@ var factsDrivers = map[string]FactsCollector{
 		hostname: rxs(`(?i)^System Name:\s*(\S+)`),
 		model:    rxs(`\bPID:\s*(\S+)`),
 		serial:   rxs(`\bSN:\s*(\S+)`),
-		version:  rxs(`(?i)^SW version\s+(\S+)`),
+		version: rxs(
+			`(?i)^SW version\s+(\S+)`,
+			`(?i)^\s*Version:\s*(\S+)`,
+		),
 		uptime:   rxs(`(?i)^System Up Time\s*(?:\([^)]*\))?\s*:\s*(\S+)`),
 	},
 	CiscoASA: factsDriver{
@@ -116,6 +119,7 @@ var factsDrivers = map[string]FactsCollector{
 		commands: "display version\ndisplay esn",
 		model:    rxs(`^(?:HUAWEI|Huawei|Quidway|H3C)\s+(\S+)\s+.*?uptime is`),
 		serial: rxs(
+			`(?i)ESN of (?:device|slot \d+):\s*(\S+)`,
 			`(?i)ESN of device:\s*(\S+)`,
 			`BarCode=(\S+)`,
 		),
@@ -153,25 +157,55 @@ var factsDrivers = map[string]FactsCollector{
 		version:  rxs(`^System software version\s*:\s*(.+?)\s*$`),
 		uptime:   rxs(`^System uptime\s*:\s*(.+?)\s*$`),
 	},
-	// Aruba: AOS-CX. AOS-S ("show system information") is not covered.
+	// Aruba: AOS-CX and AOS-S / Provision (ProCurve).
 	Aruba: factsDriver{
-		commands: "show version\nshow system",
-		hostname: rxs(`^Hostname\s*:\s*(\S+)`),
-		model:    rxs(`^Product Name\s*:\s*(.+?)\s*$`),
+		commands: "show version\nshow system\nshow lldp info local-device",
+		hostname: rxs(
+			`^Hostname\s*:\s*(\S+)`,
+			`(?i)^\s*System Name\s*:\s*(\S+)`,
+		),
+		model: rxs(
+			`^Product Name\s*:\s*(.+?)\s*$`,
+			`(?i)^\s*System Description\s*:\s*(.+?)\s*$`,
+		),
 		serial: rxs(
 			`^Chassis Serial Nbr\s*:\s*(\S+)`,
-			`^Serial Number\s*:\s*(\S+)`,
+			`(?i)Serial Number\s*:\s*(\S+)`,
 		),
-		version: rxs(`^Version\s*:\s*(\S+)`),
-		uptime:  rxs(`^Up Time\s*:\s*(.+?)\s*$`),
+		version: rxs(
+			`^Version\s*:\s*(\S+)`,
+			`(?i)^\s*Software revision\s*:\s*(\S+)`,
+			`(?i)^\s*Firmware release\s*:\s*(\S+)`,
+			`\b(YA\.\d+\.\d+\.\d+)\b`,
+		),
+		uptime: rxs(
+			`(?i)Up Time\s*:\s*([^\n\r]+?)(?:\s{2,}\S|\s*$)`,
+		),
 	},
 	CheckPoint: factsDriver{
-		commands: "show version all\nshow asset all\nshow uptime\nshow hostname",
-		hostname: rxs(sec("show hostname", `(\S+)`)),
-		model:    rxs(`(?i)^Platform:\s*(.+?)\s*$`),
-		serial:   rxs(`(?i)^Serial Number:\s*(\S+)`),
-		version:  rxs(`^Product version\s+(.+?)\s*$`),
-		uptime:   rxs(sec("show uptime", `\s*(?:\d+:\d+(?::\d+)?\s+)?up\s+(.+?)\s*$`)),
+		commands: "show version all\nshow asset all\nshow uptime\nshow hostname\nshow software-version\nshow diag\nshow device-details\nuptime",
+		hostname: rxs(
+			sec("show hostname", `(\S+)`),
+			`(?i)^\s*hostname:\s*(\S+)`,
+		),
+		model: rxs(
+			`(?i)^Platform:\s*(.+?)\s*$`,
+			`(?i)This is Check Point's\s+(\S+)`,
+			`(?i)^\s*Unit model:\s*(.+?)\s*$`,
+		),
+		serial: rxs(
+			`(?i)^Serial Number:\s*(\S+)`,
+			`(?i)^\s*Serial [Nn]umber:\s*(\S+)`,
+		),
+		version: rxs(
+			`^Product version\s+(.+?)\s*$`,
+			`(?i)Appliance\s+(R\d+[^-\s]+(?:\s*-\s*Build\s*\d+)?)`,
+			`(?i)Build\s+(\d+)`,
+		),
+		uptime: rxs(
+			sec("show uptime", `\s*(?:\d+:\d+(?::\d+)?\s+)?up\s+(.+?)\s*$`),
+			`\bup\s+(.+?),\s+\d+\s+users?\b`,
+		),
 	},
 	PaloAlto: factsDriver{
 		commands: "show system info",
