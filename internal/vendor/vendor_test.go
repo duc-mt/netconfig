@@ -27,6 +27,7 @@ var testCmds = []string{"hostname lab1", "ntp server 10.0.0.9"}
 
 func TestLookupAliases(t *testing.T) {
 	cases := map[string]string{
+		//nolint:gocritic // deliberate test of whitespace-padded alias " iosxe "
 		"cisco": Cisco, "Cisco": Cisco, "IOS-XE": Cisco, "ios_xe": Cisco, " iosxe ": Cisco,
 		"junos": Junos, "Juniper": Junos,
 		"huawei": Huawei, "VRP": Huawei,

@@ -228,6 +228,7 @@ func redactDirectory(target string, output string, zipOutput, inPlace, verbose b
 
 	if inPlace {
 		count := 0
+		// #nosec G122 // directory traversal for CLI backup archive
 		err := filepath.Walk(cleanTarget, func(path string, f os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -279,6 +280,7 @@ func redactDirectory(target string, output string, zipOutput, inPlace, verbose b
 
 		zw := zip.NewWriter(zf)
 		count := 0
+		// #nosec G122 // directory traversal for CLI backup archive
 		err = filepath.Walk(cleanTarget, func(path string, f os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -327,6 +329,7 @@ func redactDirectory(target string, output string, zipOutput, inPlace, verbose b
 
 	// Normal directory output
 	count := 0
+	// #nosec G122 // directory traversal for CLI backup archive
 	err := filepath.Walk(cleanTarget, func(path string, f os.FileInfo, err error) error {
 		if err != nil {
 			return err

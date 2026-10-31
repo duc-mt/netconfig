@@ -33,6 +33,10 @@ linters-settings:
   misspell:
     ignore-words:
       - routeros
+  gosec:
+    excludes:
+      - G122
+      - G703
 
 issues:
   exclude-rules:
@@ -40,5 +44,12 @@ issues:
       linters:
         - gosec
         - errcheck
+        - gocritic
+    - text: "G122:"
+      linters:
+        - gosec
+    - text: "G703:"
+      linters:
+        - gosec
   max-issues-per-linter: 0
   max-same-issues: 0

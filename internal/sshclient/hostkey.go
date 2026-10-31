@@ -367,6 +367,7 @@ func removeAndReplaceHostKey(path string, lineNums map[int]bool, hostname string
 
 	out := strings.Join(remainingLines, "\n") + "\n"
 	tmp := fmt.Sprintf("%s.tmp.%d", path, time.Now().UnixNano())
+	// #nosec G703 // CLI-controlled known_hosts destination path
 	if err := os.WriteFile(tmp, []byte(out), 0o600); err != nil {
 		return err
 	}
@@ -400,6 +401,7 @@ func ensureFile(path string) error {
 			return fmt.Errorf("create known_hosts directory: %w", err)
 		}
 	}
+	// #nosec G703 // CLI-controlled known_hosts destination path
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return fmt.Errorf("create known_hosts %q: %w", path, err)
@@ -408,6 +410,7 @@ func ensureFile(path string) error {
 }
 
 func appendKnownHost(path, hostname string, key ssh.PublicKey) error {
+	// #nosec G703 // CLI-controlled known_hosts destination path
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		return err
