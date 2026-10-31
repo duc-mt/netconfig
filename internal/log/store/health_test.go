@@ -112,6 +112,14 @@ func TestHealthCorruptFileDoesNotStopCollection(t *testing.T) {
 	}
 }
 
+// The defaults are shared by "netops log status", "top" and the report: a
+// monitor that has not even tried to poll for an hour is not running.
+func TestDefaultThresholds(t *testing.T) {
+	if DefaultStaleAfter != time.Hour || DefaultSilentAfter != 24*time.Hour {
+		t.Errorf("DefaultStaleAfter/DefaultSilentAfter = %s/%s, want 1h/24h", DefaultStaleAfter, DefaultSilentAfter)
+	}
+}
+
 func TestDeviceStates(t *testing.T) {
 	day := 24 * time.Hour
 	now := hT0.Add(10 * day)
@@ -130,7 +138,8 @@ func TestDeviceStates(t *testing.T) {
 			d.LastAttempt = now.Add(-3 * day)
 			d.ConsecutiveFailures = 3
 		}, StatusStale},
-		{"just inside the stale limit", func(d *DeviceHealth) { d.LastAttempt = now.Add(-day) }, StatusOK},
+		{"just inside the stale limit", func(d *DeviceHealth) { d.LastAttempt = now.Add(-DefaultStaleAfter) }, StatusOK},
+		{"just past the stale limit", func(d *DeviceHealth) { d.LastAttempt = now.Add(-DefaultStaleAfter - time.Minute) }, StatusStale},
 		{"unparseable", func(d *DeviceHealth) { d.Unparseable = true }, StatusUnparseable},
 		{"silent: reachable but no new logs for two days", func(d *DeviceHealth) { d.LastNewLogs = now.Add(-2 * day) }, StatusSilent},
 		{"just inside the silent limit", func(d *DeviceHealth) { d.LastNewLogs = now.Add(-day) }, StatusOK},

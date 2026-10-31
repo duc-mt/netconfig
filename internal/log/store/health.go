@@ -15,7 +15,7 @@
 // failed. "netops log status" and "netops log report" read it; nothing here affects what
 // is collected.
 //
-// The file is data/.netlog_health.json, written atomically like the
+// The file is data/.netops_log_health.json, written atomically like the
 // watermark state. Unlike the watermarks it is only diagnostics, so a corrupt
 // file is reported and replaced by an empty one rather than stopping a run.
 package store
@@ -32,15 +32,19 @@ import (
 	"netops/internal/fsutil"
 )
 
-const healthFileName = ".netlog_health.json"
+const healthFileName = ".netops_log_health.json"
 
 // HealthPath returns the collection-health file path.
 func HealthPath(dataDir string) string { return filepath.Join(dataDir, healthFileName) }
 
-// Default thresholds for Status. A monitor polling every few minutes would use
-// far smaller ones; a nightly cron job needs these or more.
+// Default thresholds for Status. They are the single definition behind
+// "netops log status", "top" and the report, so the three always agree on which
+// devices need attention. A monitor polls every few minutes, so an hour without
+// even an attempt means it is not running; a device can be quiet for a day.
+// Pass larger values (--stale-after, --silent-after) when polling from a cron
+// job that runs less often.
 const (
-	DefaultStaleAfter  = 24 * time.Hour // no poll attempt at all for this long
+	DefaultStaleAfter  = time.Hour      // no poll attempt at all for this long
 	DefaultSilentAfter = 24 * time.Hour // polls succeed but no new log line for this long
 )
 

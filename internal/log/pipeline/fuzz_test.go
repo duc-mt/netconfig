@@ -25,7 +25,7 @@ var clockSeeds = []string{
 	"Tue Oct 20 09:44:01 PM +0530 2026",
 }
 
-var clockVendors = []string{"cisco_ios", "vyos", "huawei_vrp", "fortigate", "mikrotik", "juniper_junos", "generic"}
+var clockVendors = []string{"cisco", "vyos", "huawei", "fortinet", "mikrotik", "junos", "generic"}
 
 func FuzzParseDeviceClock(f *testing.F) {
 	for i := range clockVendors {

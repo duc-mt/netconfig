@@ -47,32 +47,32 @@ func TestClassifierRules(t *testing.T) {
 	tests := []struct {
 		name, key, line, cat, event, sev string
 	}{
-		{"ios config", "cisco_ios", "Oct 20 09:30:15: %SYS-5-CONFIG_I: Configured from console by bachngo on vty0 (10.10.10.50)", "CONFIG", EventConfigChange, "WARNING"},
+		{"ios config", "cisco", "Oct 20 09:30:15: %SYS-5-CONFIG_I: Configured from console by bachngo on vty0 (10.10.10.50)", "CONFIG", EventConfigChange, "WARNING"},
 		{"vyos commit", "vyos", "2026-10-20T09:44:01+07:00 R1 commit[1234]: [user: tanvt] Applying config changes", "CONFIG", EventConfigChange, "WARNING"},
-		{"huawei shutdown", "huawei_vrp", "Oct 20 2026 09:31:02+07:00 H %%01SHELL/5/CMDRECORD(l)[1]:bachngo: interface GigabitEthernet0/0/1 shutdown", "CONFIG", EventConfigChange, "WARNING"},
-		{"huawei display is not a change", "huawei_vrp", "Oct 20 2026 09:31:02+07:00 H %%01SHELL/5/CMDRECORD(l)[1]:bachngo: display ip interface brief", "SYSTEM", EventCLICommand, "INFO"},
-		{"huawei long display", "huawei_vrp", `Oct 20 2026 09:31:02+07:00 H %%01SHELL/6/CMDRECORD(s)[1]:Record command information. (Task=VTY0, Ip=1.1.1.1, VpnName=, User=a, Command="dis cu")`, "SYSTEM", EventCLICommand, "INFO"},
-		{"junos commit", "juniper_junos", "Oct 20 09:30:15  sw1 mgd[1]: UI_COMMIT: User 'tanvt' requested 'commit' operation", "CONFIG", EventConfigChange, "WARNING"},
+		{"huawei shutdown", "huawei", "Oct 20 2026 09:31:02+07:00 H %%01SHELL/5/CMDRECORD(l)[1]:bachngo: interface GigabitEthernet0/0/1 shutdown", "CONFIG", EventConfigChange, "WARNING"},
+		{"huawei display is not a change", "huawei", "Oct 20 2026 09:31:02+07:00 H %%01SHELL/5/CMDRECORD(l)[1]:bachngo: display ip interface brief", "SYSTEM", EventCLICommand, "INFO"},
+		{"huawei long display", "huawei", `Oct 20 2026 09:31:02+07:00 H %%01SHELL/6/CMDRECORD(s)[1]:Record command information. (Task=VTY0, Ip=1.1.1.1, VpnName=, User=a, Command="dis cu")`, "SYSTEM", EventCLICommand, "INFO"},
+		{"junos commit", "junos", "Oct 20 09:30:15  sw1 mgd[1]: UI_COMMIT: User 'tanvt' requested 'commit' operation", "CONFIG", EventConfigChange, "WARNING"},
 		{"ssh accepted", "vyos", "Oct 20 09:44:05 vyos sshd[77]: Accepted password for tanvt from 10.1.1.1 port 4444 ssh2", "AUTH", EventLoginSuccess, "INFO"},
-		{"cisco login success", "cisco_ios", "Oct 20 09:30:15: %SEC_LOGIN-5-LOGIN_SUCCESS: Login Success [user: admin] [Source: 10.1.1.1] [localport: 22]", "AUTH", EventLoginSuccess, "INFO"},
+		{"cisco login success", "cisco", "Oct 20 09:30:15: %SEC_LOGIN-5-LOGIN_SUCCESS: Login Success [user: admin] [Source: 10.1.1.1] [localport: 22]", "AUTH", EventLoginSuccess, "INFO"},
 		{"ssh failed", "vyos", "Oct 20 09:44:05 vyos sshd[77]: Failed password for invalid user admin from 203.0.113.9 port 4444 ssh2", "AUTH", EventLoginFailure, "WARNING"},
-		{"cisco login failed", "cisco_ios", "Oct 20 09:30:15: %SEC_LOGIN-4-LOGIN_FAILED: Login failed [user: x] [Source: 1.2.3.4] [localport: 22]", "AUTH", EventLoginFailure, "WARNING"},
-		{"ios link", "cisco_ios", "Oct 20 09:31:02.001: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down", "FAULT", EventLinkDown, "ERROR"},
-		{"huawei link", "huawei_vrp", "Oct 20 2026 09:31:02+07:00 H %%01IFNET/4/LINK_STATE(l)[1]:The line protocol on the interface GigabitEthernet0/0/1 has entered the DOWN state.", "FAULT", EventLinkDown, "ERROR"},
+		{"cisco login failed", "cisco", "Oct 20 09:30:15: %SEC_LOGIN-4-LOGIN_FAILED: Login failed [user: x] [Source: 1.2.3.4] [localport: 22]", "AUTH", EventLoginFailure, "WARNING"},
+		{"ios link", "cisco", "Oct 20 09:31:02.001: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down", "FAULT", EventLinkDown, "ERROR"},
+		{"huawei link", "huawei", "Oct 20 2026 09:31:02+07:00 H %%01IFNET/4/LINK_STATE(l)[1]:The line protocol on the interface GigabitEthernet0/0/1 has entered the DOWN state.", "FAULT", EventLinkDown, "ERROR"},
 		{"vyos kernel link", "vyos", "2026-10-20T09:44:03+07:00 R1 kernel: e1000e: eth1 NIC Link is Down", "FAULT", EventLinkDown, "ERROR"},
-		{"junos link trap", "juniper_junos", "Oct 20 09:30:17  sw1 mib2d[1]: SNMP_TRAP_LINK_DOWN: ifIndex 501, ifAdminStatus up(1), ifOperStatus down(2), ifName ge-0/0/1", "FAULT", EventLinkDown, "ERROR"},
-		{"ospf with 'interface down' text stays OSPF", "cisco_ios", "Oct 20 09:31:02: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.255.4 on Gi0/1 from FULL to DOWN, Neighbor Down: Interface down or detached", "FAULT", EventOSPFAdjDown, "ERROR"},
+		{"junos link trap", "junos", "Oct 20 09:30:17  sw1 mib2d[1]: SNMP_TRAP_LINK_DOWN: ifIndex 501, ifAdminStatus up(1), ifOperStatus down(2), ifName ge-0/0/1", "FAULT", EventLinkDown, "ERROR"},
+		{"ospf with 'interface down' text stays OSPF", "cisco", "Oct 20 09:31:02: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.255.4 on Gi0/1 from FULL to DOWN, Neighbor Down: Interface down or detached", "FAULT", EventOSPFAdjDown, "ERROR"},
 		{"frr ospf", "vyos", "Oct 20 09:44:05 R1 ospfd[1]: %ADJCHG: Nbr 10.0.0.2 on eth1:10.0.0.1: Full -> Down (InactivityTimer)", "FAULT", EventOSPFAdjDown, "ERROR"},
-		{"junos ospf", "juniper_junos", "Oct 20 09:30:16  sw1 rpd[1]: RPD_OSPF_NBRDOWN: OSPF neighbor 10.1.1.2 (realm ospf-v2 ge-0/0/1.0 area 0.0.0.0) state changed from Full to Down", "FAULT", EventOSPFAdjDown, "ERROR"},
-		{"cisco bgp", "cisco_ios", "Oct 20 09:31:02: %BGP-5-ADJCHANGE: neighbor 10.1.1.1 Down Peer closed the session", "FAULT", EventBGPPeerDown, "ERROR"},
-		{"junos bgp", "juniper_junos", "Oct 20 09:30:16  sw1 rpd[1]: RPD_BGP_NEIGHBOR_STATE_CHANGED: BGP peer 10.2.2.2 (External AS 65001) changed state from Established to Idle", "FAULT", EventBGPPeerDown, "ERROR"},
+		{"junos ospf", "junos", "Oct 20 09:30:16  sw1 rpd[1]: RPD_OSPF_NBRDOWN: OSPF neighbor 10.1.1.2 (realm ospf-v2 ge-0/0/1.0 area 0.0.0.0) state changed from Full to Down", "FAULT", EventOSPFAdjDown, "ERROR"},
+		{"cisco bgp", "cisco", "Oct 20 09:31:02: %BGP-5-ADJCHANGE: neighbor 10.1.1.1 Down Peer closed the session", "FAULT", EventBGPPeerDown, "ERROR"},
+		{"junos bgp", "junos", "Oct 20 09:30:16  sw1 rpd[1]: RPD_BGP_NEIGHBOR_STATE_CHANGED: BGP peer 10.2.2.2 (External AS 65001) changed state from Established to Idle", "FAULT", EventBGPPeerDown, "ERROR"},
 		{"vrrp", "vyos", "Oct 20 09:44:05 R1 Keepalived_vrrp[9]: (VRRP1) Entering BACKUP STATE", "FAULT", EventVRRPTransition, "WARNING"},
 		{"vrrp fault", "vyos", "Oct 20 09:44:05 R1 Keepalived_vrrp[9]: Entering FAULT STATE", "FAULT", EventVRRPTransition, "WARNING"},
 		{"vrrp master", "vyos", "Oct 20 09:44:05 R1 Keepalived_vrrp[9]: Entering MASTER STATE", "SYSTEM", EventVRRPTransition, "INFO"},
 		{"vrrp lower pri advert", "vyos", "Oct 20 09:44:05 R1 Keepalived_vrrp[9]: (LAN) Received advert from 10.134.4.3 with lower priority 100, ours 150, forcing new election", "SYSTEM", EventHAChange, "INFO"},
-		{"stp", "cisco_ios", "Oct 20 09:31:02: %SPANTREE-5-TOPOTRAP: Topology Change Trap for vlan 100", "FAULT", EventSTPTCN, "WARNING"},
-		{"cpu", "cisco_ios", "Oct 20 09:31:02: %SYS-3-CPUHOG: CPU utilization for five seconds: 97%/3%", "SYSTEM", EventHighCPU, "WARNING"},
-		{"unknown", "cisco_ios", "Oct 20 09:31:02: %SYS-6-LOGGINGHOST_STARTSTOP: Logging to host 10.0.0.9 port 514 started", "SYSTEM", EventUnknown, "INFO"},
+		{"stp", "cisco", "Oct 20 09:31:02: %SPANTREE-5-TOPOTRAP: Topology Change Trap for vlan 100", "FAULT", EventSTPTCN, "WARNING"},
+		{"cpu", "cisco", "Oct 20 09:31:02: %SYS-3-CPUHOG: CPU utilization for five seconds: 97%/3%", "SYSTEM", EventHighCPU, "WARNING"},
+		{"unknown", "cisco", "Oct 20 09:31:02: %SYS-6-LOGGINGHOST_STARTSTOP: Logging to host 10.0.0.9 port 514 started", "SYSTEM", EventUnknown, "INFO"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -187,23 +187,23 @@ func TestParseDeviceClock(t *testing.T) {
 		ref               time.Time
 		want              time.Time
 	}{
-		{"cisco wallclock ignores zone label", "cisco_ios", "*09:30:15.123 UTC Tue Oct 20 2026\n",
+		{"cisco wallclock ignores zone label", "cisco", "*09:30:15.123 UTC Tue Oct 20 2026\n",
 			time.Date(2026, 10, 20, 9, 30, 10, 0, ict), time.Date(2026, 10, 20, 9, 30, 15, 123e6, ict)},
 		{"vyos honours +07 on a UTC server", "vyos", "Tue Oct 20 09:44:01 +07 2026\n",
 			time.Date(2026, 10, 20, 2, 44, 0, 0, utc), time.Date(2026, 10, 20, 2, 44, 1, 0, utc)},
 		{"vyos AM/PM", "vyos", "Tue Oct 20 09:44:01 PM +07 2026",
 			time.Date(2026, 10, 20, 14, 44, 0, 0, utc), time.Date(2026, 10, 20, 14, 44, 1, 0, utc)},
-		{"huawei zone on its own line", "huawei_vrp", "2026-10-20 09:31:02\nTuesday\nTime Zone(Vietnam) : UTC+07:00\n",
+		{"huawei zone on its own line", "huawei", "2026-10-20 09:31:02\nTuesday\nTime Zone(Vietnam) : UTC+07:00\n",
 			time.Date(2026, 10, 20, 2, 31, 0, 0, utc), time.Date(2026, 10, 20, 2, 31, 2, 0, utc)},
-		{"huawei inline offset", "huawei_vrp", "2026-10-20 09:31:02+07:00\n",
+		{"huawei inline offset", "huawei", "2026-10-20 09:31:02+07:00\n",
 			time.Date(2026, 10, 20, 2, 31, 0, 0, utc), time.Date(2026, 10, 20, 2, 31, 2, 0, utc)},
-		{"junos current time line first", "juniper_junos", "Current time: 2026-10-20 09:44:01 ICT\nSystem booted: 2026-09-01 08:00:00 ICT (7w0d 01:44 ago)\n",
+		{"junos current time line first", "junos", "Current time: 2026-10-20 09:44:01 ICT\nSystem booted: 2026-09-01 08:00:00 ICT (7w0d 01:44 ago)\n",
 			time.Date(2026, 10, 20, 9, 44, 0, 0, ict), time.Date(2026, 10, 20, 9, 44, 1, 0, ict)},
 		{"mikrotik split lines", "mikrotik", "                   date: oct/20/2026\n                   time: 09:31:02\n          time-zone-name: Asia/Ho_Chi_Minh\n",
 			time.Date(2026, 10, 20, 9, 31, 0, 0, ict), time.Date(2026, 10, 20, 9, 31, 2, 0, ict)},
-		{"time only, device just past midnight", "fortigate", "current time is: 00:00:05\n",
+		{"time only, device just past midnight", "fortinet", "current time is: 00:00:05\n",
 			time.Date(2026, 10, 20, 23, 59, 50, 0, utc), time.Date(2026, 10, 21, 0, 0, 5, 0, utc)},
-		{"fortigate get system status with ancient virus db", "fortigate",
+		{"fortigate get system status with ancient virus db", "fortinet",
 			"Version: FortiGate-100E v7.0.12\nVirus-DB: 91.02634(2018-04-09 10:20)\nHostname: FG1\nSystem time: Tue Oct 20 09:31:02 2026\n",
 			time.Date(2026, 10, 20, 9, 31, 0, 0, utc), time.Date(2026, 10, 20, 9, 31, 2, 0, utc)},
 		{"time only, device just before midnight", "generic", "23:59:55",
@@ -220,12 +220,12 @@ func TestParseDeviceClock(t *testing.T) {
 			}
 		})
 	}
-	if _, err := ParseDeviceClock("cisco_ios", "% Invalid input detected", time.Now()); err == nil {
+	if _, err := ParseDeviceClock("cisco", "% Invalid input detected", time.Now()); err == nil {
 		t.Error("garbage output must be an error")
 	}
 	// The whole point: skew = device reading - server time.
 	ref := time.Date(2026, 10, 20, 9, 30, 10, 0, ict)
-	dt, _ := ParseDeviceClock("cisco_ios", "09:30:15.123 +07 Tue Oct 20 2026", ref)
+	dt, _ := ParseDeviceClock("cisco", "09:30:15.123 +07 Tue Oct 20 2026", ref)
 	if skew := dt.Sub(ref).Milliseconds(); skew != 5123 {
 		t.Errorf("skew = %dms, want 5123", skew)
 	}
@@ -272,7 +272,7 @@ func entry(host, raw string, at time.Time) collector.LogEntry {
 
 func newMarks(t *testing.T) (*Watermarks, string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), ".netlog_state.json")
+	path := filepath.Join(t.TempDir(), ".netops_log_state.json")
 	st, err := store.LoadState(path)
 	if err != nil {
 		t.Fatal(err)

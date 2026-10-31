@@ -8,7 +8,7 @@
 // Notes:         Go package implementation
 // ==============================================================================
 // State maps hostname -> WatermarkState and persists it to
-// data/.netlog_state.json. Writes go through fsutil.WriteFileAtomic (temp
+// data/.netops_log_state.json. Writes go through fsutil.WriteFileAtomic (temp
 // file in the same directory, fsync, rename) so a crash can never leave a
 // half-written state file. The temp file name is randomised rather than the
 // fixed ".tmp" of the original sketch, which also makes two overlapping cron

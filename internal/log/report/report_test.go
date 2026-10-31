@@ -26,7 +26,7 @@ func mk(host, cat, event, user, srcIP string, ts time.Time) collector.LogEntry {
 	return collector.LogEntry{
 		ID: collector.EntryID(host, fmt.Sprint(event, user, srcIP, ts.UnixNano())), Hostname: host, Category: cat,
 		Severity: collector.SeverityInfo, Event: event, User: user, SourceIP: srcIP,
-		Summary: event, Raw: event, Timestamp: ts.UTC(), Vendor: "cisco_ios",
+		Summary: event, Raw: event, Timestamp: ts.UTC(), Vendor: "cisco",
 	}
 }
 
@@ -819,17 +819,17 @@ func TestClassificationCoverage(t *testing.T) {
 	es := cat(
 		repeat(3, func(int) collector.LogEntry { return vend("pfsense", "UNKNOWN") }),
 		repeat(1, func(int) collector.LogEntry { return vend("pfsense", "CONFIG_CHANGE") }),
-		repeat(2, func(int) collector.LogEntry { return vend("cisco_ios", "UNKNOWN") }),
-		repeat(2, func(int) collector.LogEntry { return vend("cisco_ios", "LINK_UP") }),
-		repeat(1, func(int) collector.LogEntry { return vend("fortigate", "LOGIN_FAILURE") }),
+		repeat(2, func(int) collector.LogEntry { return vend("cisco", "UNKNOWN") }),
+		repeat(2, func(int) collector.LogEntry { return vend("cisco", "LINK_UP") }),
+		repeat(1, func(int) collector.LogEntry { return vend("fortinet", "LOGIN_FAILURE") }),
 		repeat(1, func(int) collector.LogEntry { return vend("", "") }), // never classified, vendor unknown
 	)
 	got := Compute(es, nil, Options{}).ClassificationCoverage
 	want := []VendorCoverage{
 		{"pfsense", 4, 3, 75},
-		{"cisco_ios", 4, 2, 50},
+		{"cisco", 4, 2, 50},
 		{"(unknown)", 1, 1, 100}, // an entry with no event was never classified: it counts as unknown
-		{"fortigate", 1, 0, 0},
+		{"fortinet", 1, 0, 0},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got  %+v\nwant %+v", got, want)

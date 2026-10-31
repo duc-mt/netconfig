@@ -693,7 +693,7 @@ func (s *Server) process(m rawMsg) []collector.LogEntry {
 		}
 		dev = inventory.Device{Hostname: name, Address: m.remote.String(), Vendor: "generic"}
 	}
-	key, ok := vendor.CanonicalKey(dev.Vendor)
+	key, ok := vendor.LogPlatform(dev.Vendor)
 	if !ok {
 		key = "generic"
 	}

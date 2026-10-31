@@ -18,7 +18,7 @@ import (
 	"netops/internal/log/collector"
 )
 
-const countersFileName = ".netlog_counters.json"
+const countersFileName = ".netops_log_counters.json"
 
 // CountersPath returns the path to the persisted interface counters JSON file.
 func CountersPath(dataDir string) string {
@@ -28,7 +28,7 @@ func CountersPath(dataDir string) string {
 // DeviceCounters holds a map of interface name to InterfaceCounter.
 type DeviceCounters map[string]collector.InterfaceCounter
 
-// FleetCounters is the root schema persisted in .netlog_counters.json.
+// FleetCounters is the root schema persisted in .netops_log_counters.json.
 type FleetCounters struct {
 	UpdatedAt time.Time                 `json:"updated_at"`
 	Devices   map[string]DeviceCounters `json:"devices"`

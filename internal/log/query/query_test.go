@@ -500,7 +500,7 @@ func TestScanOrderAndEmpty(t *testing.T) {
 	}
 
 	calls := 0
-	for _, d := range []string{t.TempDir(), "/nonexistent/netlog-data"} {
+	for _, d := range []string{t.TempDir(), "/nonexistent/netops-log-data"} {
 		if err := Scan(d, Filter{}, func(collector.LogEntry) { calls++ }); err != nil {
 			t.Errorf("a data directory with no logs is not an error: %v", err)
 		}

@@ -114,7 +114,7 @@ func TestRunIncludesProbeAndPoE(t *testing.T) {
 		}
 		return ""
 	})
-	dev := inventory.Device{Hostname: "SW1", Address: host, Port: port, Vendor: "cisco_ios", Group: "default"}
+	dev := inventory.Device{Hostname: "SW1", Address: host, Port: port, Vendor: "cisco", Group: "default"}
 	d := testDialer(t, false)
 	defer d.CloseJumps()
 
@@ -170,7 +170,7 @@ func TestRunWithoutProbeOrPoE(t *testing.T) {
 	defer d.CloseJumps()
 
 	// No PoE command for this platform and the probe switched off.
-	dev := inventory.Device{Hostname: "R1", Address: host, Port: port, Vendor: "juniper_junos", Group: "default"}
+	dev := inventory.Device{Hostname: "R1", Address: host, Port: port, Vendor: "junos", Group: "default"}
 	rep := Run(context.Background(), d, dev, Options{NoProbe: true})
 	if !rep.Connected || rep.ProbeSection != nil || rep.PoESection != nil {
 		t.Fatalf("probe=%v poe=%v", rep.ProbeSection, rep.PoESection)
@@ -188,7 +188,7 @@ func TestProbeShownWhenSSHFailsAndSkippedBehindJump(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	d := testDialer(t, false)
 	defer d.CloseJumps()
-	dev := inventory.Device{Hostname: "SW1", Address: host, Port: port, Vendor: "cisco_ios", Group: "default"}
+	dev := inventory.Device{Hostname: "SW1", Address: host, Port: port, Vendor: "cisco", Group: "default"}
 	rep := Run(context.Background(), d, dev, Options{Probe: ProbeOptions{openICMP: denyICMP}})
 	if rep.Connected || rep.ProbeSection == nil || rep.ProbeSection.Status != StatusError {
 		t.Fatalf("connected=%v probe=%+v", rep.Connected, rep.ProbeSection)
@@ -202,7 +202,7 @@ func TestProbeShownWhenSSHFailsAndSkippedBehindJump(t *testing.T) {
 	// Through a jump host a direct probe measures the wrong path.
 	dj := testDialer(t, true)
 	defer dj.CloseJumps()
-	devJ := inventory.Device{Hostname: "SW2", Address: "10.255.255.1", Port: 22, Vendor: "cisco_ios", Group: "default", JumpHost: "bastion-a"}
+	devJ := inventory.Device{Hostname: "SW2", Address: "10.255.255.1", Port: 22, Vendor: "cisco", Group: "default", JumpHost: "bastion-a"}
 	rep = Run(context.Background(), dj, devJ, Options{Probe: ProbeOptions{openICMP: denyICMP}})
 	if rep.ProbeSection == nil || rep.ProbeSection.Status != StatusUnknown || !strings.Contains(strings.Join(rep.ProbeSection.Notes, ""), "jump host") {
 		t.Errorf("probe behind a jump host: %+v", rep.ProbeSection)

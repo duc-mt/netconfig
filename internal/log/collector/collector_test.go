@@ -51,7 +51,7 @@ func TestStagger(t *testing.T) {
 }
 
 func TestPlansAndID(t *testing.T) {
-	for in, want := range map[string]string{"cisco": "cisco_ios", "huawei": "huawei_vrp", "junos": "juniper_junos", "weird": "generic", "fortinet": "fortigate", "ASA": "cisco_asa"} {
+	for in, want := range map[string]string{"cisco": "cisco", "huawei": "huawei", "junos": "junos", "weird": "generic", "fortinet": "fortinet", "ASA": "cisco_asa"} {
 		k, _, err := resolvePlan(inventory.Device{Vendor: in})
 		if err != nil || k != want {
 			t.Fatalf("%s -> %s %v", in, k, err)
@@ -62,7 +62,7 @@ func TestPlansAndID(t *testing.T) {
 		t.Fatalf("sophos should be unsupported, got %v", err)
 	}
 	// pfSense and Check Point read plain-text syslog files with tail.
-	for in, want := range map[string]string{"pfsense": "pfsense", "checkpoint": "checkpoint_gaia", "gaia": "checkpoint_gaia"} {
+	for in, want := range map[string]string{"pfsense": "pfsense", "checkpoint": "checkpoint", "gaia": "checkpoint"} {
 		k, plan, err := resolvePlan(inventory.Device{Vendor: in})
 		if err != nil || k != want || len(plan.Commands) != 1 || !strings.HasPrefix(plan.Commands[0], "tail ") || plan.Interactive {
 			t.Fatalf("%s -> %s %+v %v", in, k, plan, err)
@@ -167,10 +167,10 @@ func TestRunEndToEnd(t *testing.T) {
 	host, port := startServer(t, &served)
 
 	devs := []inventory.Device{
-		{Hostname: "sw1", Address: host, Port: port, Vendor: "cisco_ios", Group: "default"},
+		{Hostname: "sw1", Address: host, Port: port, Vendor: "cisco", Group: "default"},
 		{Hostname: "sw2", Address: host, Port: port, Vendor: "cisco", Group: "default"},
 		{Hostname: "pf", Address: host, Port: port, Vendor: "sophos", Group: "default"},
-		{Hostname: "dead", Address: "127.0.0.1", Port: 1, Vendor: "cisco_ios", Group: "default"},
+		{Hostname: "dead", Address: "127.0.0.1", Port: 1, Vendor: "cisco", Group: "default"},
 	}
 	parser := func(vendorKey, out string, ref time.Time) (time.Time, error) {
 		return time.Parse(time.RFC3339Nano, strings.TrimSpace(out))
@@ -198,7 +198,7 @@ func TestRunEndToEnd(t *testing.T) {
 		if r.SkewMs < 4000 || r.SkewMs > 6000 {
 			t.Fatalf("%s skew %d, want ~5000", h, r.SkewMs)
 		}
-		if r.FetchedAt.IsZero() || r.VendorKey != "cisco_ios" {
+		if r.FetchedAt.IsZero() || r.VendorKey != "cisco" {
 			t.Fatalf("%s: %+v", h, r)
 		}
 	}
@@ -222,14 +222,14 @@ func TestSkewFailureIsNonFatal(t *testing.T) {
 	var served atomic.Int32
 	host, port := startServer(t, &served)
 	// vyos uses "date", which the fake server rejects -> skew fails, but the vyos log cmd is also rejected;
-	// use cisco_ios with a parser that errors instead.
+	// use cisco with a parser that errors instead.
 	c := New(Config{
 		Concurrency: 1,
 		SSH:         sshclient.ExecOptions{ConnectTimeout: 2 * time.Second, CommandTimeout: 2 * time.Second, HostKeyCallback: ssh.InsecureIgnoreHostKey()},
 		CredStore:   store,
 		ClockParser: func(string, string, time.Time) (time.Time, error) { return time.Time{}, context.DeadlineExceeded },
 	})
-	for r := range c.Run(context.Background(), []inventory.Device{{Hostname: "a", Address: host, Port: port, Vendor: "cisco_ios", Group: "default"}}) {
+	for r := range c.Run(context.Background(), []inventory.Device{{Hostname: "a", Address: host, Port: port, Vendor: "cisco", Group: "default"}}) {
 		if r.Err != nil || r.SkewOK || r.SkewErr == nil || r.Raw == "" {
 			t.Fatalf("%+v", r)
 		}
@@ -372,13 +372,13 @@ func TestInteractivePlanWaitsForSlowDevice(t *testing.T) {
 	})
 	started := time.Now()
 	var res Result
-	for r := range c.Run(context.Background(), []inventory.Device{{Hostname: "FGT-01", Address: host, Port: port, Vendor: "fortigate", Group: "default"}}) {
+	for r := range c.Run(context.Background(), []inventory.Device{{Hostname: "FGT-01", Address: host, Port: port, Vendor: "fortinet", Group: "default"}}) {
 		res = r
 	}
 	if res.Err != nil {
 		t.Fatalf("interactive poll failed after %v: %v", time.Since(started), res.Err)
 	}
-	if !strings.Contains(res.Raw, "Admin login failed") || res.VendorKey != "fortigate" {
+	if !strings.Contains(res.Raw, "Admin login failed") || res.VendorKey != "fortinet" {
 		t.Fatalf("log page missing from output: %q", res.Raw)
 	}
 	t.Logf("interactive poll took %v", time.Since(started).Round(100*time.Millisecond))
@@ -428,7 +428,7 @@ func pollFortigate(t *testing.T, host string, port int) Result {
 		CredStore:   store,
 	})
 	var res Result
-	for r := range c.Run(context.Background(), []inventory.Device{{Hostname: "FGT-01", Address: host, Port: port, Vendor: "fortigate", Group: "default"}}) {
+	for r := range c.Run(context.Background(), []inventory.Device{{Hostname: "FGT-01", Address: host, Port: port, Vendor: "fortinet", Group: "default"}}) {
 		res = r
 	}
 	return res
@@ -481,12 +481,12 @@ func TestAtPrompt(t *testing.T) {
 // could never be selected, so the entry would be dead without any error.
 func TestPlansUseKnownVendorKeys(t *testing.T) {
 	for key := range logPlans {
-		if !vendor.IsKnown(key) {
+		if !vendor.IsLogPlatform(key) {
 			t.Errorf("logPlans has unknown platform key %q", key)
 		}
 	}
 	for key := range clockCommands {
-		if !vendor.IsKnown(key) {
+		if !vendor.IsLogPlatform(key) {
 			t.Errorf("clockCommands has unknown platform key %q", key)
 		}
 	}

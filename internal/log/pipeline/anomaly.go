@@ -62,9 +62,6 @@ const (
 	// PlaybookConfigChange captures a configuration comparison right after a
 	// CONFIG_CHANGE / AFTER_HOURS_CHANGE (see DetectorConfig.ConfigSignals).
 	PlaybookConfigChange = "config_change"
-
-	// PlaybookConfigDiff is an alias for PlaybookConfigChange.
-	PlaybookConfigDiff = PlaybookConfigChange
 )
 
 // Signal priorities.

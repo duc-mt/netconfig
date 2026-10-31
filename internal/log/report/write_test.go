@@ -180,12 +180,12 @@ Untracked: 1 outage start(s) whose log line names no interface or neighbor, so n
 ╰─────────┴─────────────┴──────────────┴───────┴───────────────┴─────────────────────────────────────────────────╯
 
 === Classification Coverage (last 7d) ===
-╭───────────┬───────┬─────────┬───────────╮
-│ VENDOR    │ LINES │ UNKNOWN │ UNKNOWN % │
-├───────────┼───────┼─────────┼───────────┤
-│ pfsense   │     6 │       6 │    100.0% │
-│ cisco_ios │    28 │       0 │      0.0% │
-╰───────────┴───────┴─────────┴───────────╯
+╭─────────┬───────┬─────────┬───────────╮
+│ VENDOR  │ LINES │ UNKNOWN │ UNKNOWN % │
+├─────────┼───────┼─────────┼───────────┤
+│ pfsense │     6 │       6 │    100.0% │
+│ cisco   │    28 │       0 │      0.0% │
+╰─────────┴───────┴─────────┴───────────╯
 `
 	got := table(t, fixture(), query.Style{Location: ict})
 	if got != want {

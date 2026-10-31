@@ -139,7 +139,7 @@ func TestAnalysePoEThresholdAndStatus(t *testing.T) {
 }
 
 func TestPoECommands(t *testing.T) {
-	want := map[string]string{"cisco_ios": "show power inline", "aruba": "show power-over-ethernet", "huawei_vrp": "display poe power-state"}
+	want := map[string]string{"cisco": "show power inline", "aruba": "show power-over-ethernet", "huawei": "display poe power-state"}
 	for key, cmd := range want {
 		if got := PoECommand(key); got != cmd {
 			t.Errorf("PoECommand(%s) = %q", key, got)
@@ -148,7 +148,7 @@ func TestPoECommands(t *testing.T) {
 			t.Errorf("%s: %v", cmd, err)
 		}
 	}
-	for _, key := range []string{"ruijie", "juniper_junos", "arista", "cisco_asa", "cisco_sb", "mikrotik", "generic", ""} {
+	for _, key := range []string{"ruijie", "junos", "arista", "cisco_asa", "cisco_sb", "mikrotik", "generic", ""} {
 		if PoECommand(key) != "" {
 			t.Errorf("%s must have no PoE command", key)
 		}

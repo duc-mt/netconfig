@@ -18,29 +18,29 @@ func TestRecoveryPairs(t *testing.T) {
 		name, key, line, cat, event, object string
 	}{
 		// Cisco IOS link
-		{"ios link down", "cisco_ios", "Oct 20 09:31:02.001: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down", "FAULT", EventLinkDown, "GigabitEthernet0/1"},
-		{"ios link up", "cisco_ios", "Oct 20 09:31:09.001: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up", "SYSTEM", EventLinkUp, "GigabitEthernet0/1"},
-		{"ios line protocol down", "cisco_ios", "Oct 20 09:31:02.002: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down", "FAULT", EventLinkDown, "GigabitEthernet0/1"},
-		{"ios line protocol up", "cisco_ios", "Oct 20 09:31:09.002: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up", "SYSTEM", EventLinkUp, "GigabitEthernet0/1"},
+		{"ios link down", "cisco", "Oct 20 09:31:02.001: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down", "FAULT", EventLinkDown, "GigabitEthernet0/1"},
+		{"ios link up", "cisco", "Oct 20 09:31:09.001: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up", "SYSTEM", EventLinkUp, "GigabitEthernet0/1"},
+		{"ios line protocol down", "cisco", "Oct 20 09:31:02.002: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down", "FAULT", EventLinkDown, "GigabitEthernet0/1"},
+		{"ios line protocol up", "cisco", "Oct 20 09:31:09.002: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up", "SYSTEM", EventLinkUp, "GigabitEthernet0/1"},
 
 		// Cisco OSPF: both lines contain FULL, only the direction differs
-		{"ospf down", "cisco_ios", "000123: *Oct 20 09:31:02.001 UTC: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.255.4 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired", "FAULT", EventOSPFAdjDown, "10.255.255.4"},
-		{"ospf up", "cisco_ios", "000124: *Oct 20 09:31:40.001 UTC: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.255.4 on GigabitEthernet0/1 from LOADING to FULL, Loading Done", "SYSTEM", EventOSPFAdjUp, "10.255.255.4"},
+		{"ospf down", "cisco", "000123: *Oct 20 09:31:02.001 UTC: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.255.4 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired", "FAULT", EventOSPFAdjDown, "10.255.255.4"},
+		{"ospf up", "cisco", "000124: *Oct 20 09:31:40.001 UTC: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.255.4 on GigabitEthernet0/1 from LOADING to FULL, Loading Done", "SYSTEM", EventOSPFAdjUp, "10.255.255.4"},
 
 		// Junos OSPF and link trap
-		{"junos ospf down", "juniper_junos", "Oct 20 09:30:16  sw1 rpd[1500]: RPD_OSPF_NBRDOWN: OSPF neighbor 10.1.1.2 (realm ospf-v2 ge-0/0/0.0 area 0.0.0.0) state changed from Full to Down due to KillNbr", "FAULT", EventOSPFAdjDown, "10.1.1.2"},
-		{"junos ospf up", "juniper_junos", "Oct 20 09:30:46  sw1 rpd[1500]: RPD_OSPF_NBRUP: OSPF neighbor 10.1.1.2 (realm ospf-v2 ge-0/0/0.0 area 0.0.0.0) state changed from Loading to Full due to LoadDone", "SYSTEM", EventOSPFAdjUp, "10.1.1.2"},
-		{"junos link down", "juniper_junos", "Oct 20 09:30:16  sw1 mib2d[1]: SNMP_TRAP_LINK_DOWN: ifIndex 507, ifAdminStatus up(1), ifOperStatus down(2), ifName ge-0/0/1", "FAULT", EventLinkDown, "ge-0/0/1"},
-		{"junos link up", "juniper_junos", "Oct 20 09:30:26  sw1 mib2d[1]: SNMP_TRAP_LINK_UP: ifIndex 507, ifAdminStatus up(1), ifOperStatus up(1), ifName ge-0/0/1", "SYSTEM", EventLinkUp, "ge-0/0/1"},
+		{"junos ospf down", "junos", "Oct 20 09:30:16  sw1 rpd[1500]: RPD_OSPF_NBRDOWN: OSPF neighbor 10.1.1.2 (realm ospf-v2 ge-0/0/0.0 area 0.0.0.0) state changed from Full to Down due to KillNbr", "FAULT", EventOSPFAdjDown, "10.1.1.2"},
+		{"junos ospf up", "junos", "Oct 20 09:30:46  sw1 rpd[1500]: RPD_OSPF_NBRUP: OSPF neighbor 10.1.1.2 (realm ospf-v2 ge-0/0/0.0 area 0.0.0.0) state changed from Loading to Full due to LoadDone", "SYSTEM", EventOSPFAdjUp, "10.1.1.2"},
+		{"junos link down", "junos", "Oct 20 09:30:16  sw1 mib2d[1]: SNMP_TRAP_LINK_DOWN: ifIndex 507, ifAdminStatus up(1), ifOperStatus down(2), ifName ge-0/0/1", "FAULT", EventLinkDown, "ge-0/0/1"},
+		{"junos link up", "junos", "Oct 20 09:30:26  sw1 mib2d[1]: SNMP_TRAP_LINK_UP: ifIndex 507, ifAdminStatus up(1), ifOperStatus up(1), ifName ge-0/0/1", "SYSTEM", EventLinkUp, "ge-0/0/1"},
 
 		// BGP
-		{"bgp down", "cisco_ios", "Oct 20 09:31:02.001: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Down BGP Notification sent", "FAULT", EventBGPPeerDown, "10.0.0.1"},
-		{"bgp up", "cisco_ios", "Oct 20 09:32:02.001: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up", "SYSTEM", EventBGPPeerUp, "10.0.0.1"},
+		{"bgp down", "cisco", "Oct 20 09:31:02.001: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Down BGP Notification sent", "FAULT", EventBGPPeerDown, "10.0.0.1"},
+		{"bgp up", "cisco", "Oct 20 09:32:02.001: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up", "SYSTEM", EventBGPPeerUp, "10.0.0.1"},
 		{"frr bgp up", "vyos", "2026-10-20T09:44:01+07:00 R1 bgpd[123]: %ADJCHANGE: neighbor 10.0.0.1 Up", "SYSTEM", EventBGPPeerUp, "10.0.0.1"},
 
 		// Huawei
-		{"huawei link down", "huawei_vrp", "Oct 20 2026 09:31:02+07:00 H %%01IFNET/4/LINK_STATE(l)[1]:The line protocol IP on the interface GigabitEthernet0/0/1 has entered the DOWN state.", "FAULT", EventLinkDown, "GigabitEthernet0/0/1"},
-		{"huawei link up", "huawei_vrp", "Oct 20 2026 09:31:09+07:00 H %%01IFNET/4/LINK_STATE(l)[2]:The line protocol IP on the interface GigabitEthernet0/0/1 has entered the UP state.", "SYSTEM", EventLinkUp, "GigabitEthernet0/0/1"},
+		{"huawei link down", "huawei", "Oct 20 2026 09:31:02+07:00 H %%01IFNET/4/LINK_STATE(l)[1]:The line protocol IP on the interface GigabitEthernet0/0/1 has entered the DOWN state.", "FAULT", EventLinkDown, "GigabitEthernet0/0/1"},
+		{"huawei link up", "huawei", "Oct 20 2026 09:31:09+07:00 H %%01IFNET/4/LINK_STATE(l)[2]:The line protocol IP on the interface GigabitEthernet0/0/1 has entered the UP state.", "SYSTEM", EventLinkUp, "GigabitEthernet0/0/1"},
 
 		// Linux kernel
 		{"linux link down", "vyos", "Oct 20 09:44:05 vyos kernel: [123.45] eth1: Link is Down", "FAULT", EventLinkDown, "eth1"},
@@ -63,7 +63,7 @@ func TestRecoveryEventsAreNotFaults(t *testing.T) {
 		"Oct 20 09:31:09.001: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up",
 		"Oct 20 09:32:02.001: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up",
 	} {
-		if e := classified(t, "cisco_ios", line); e.Category == "FAULT" || e.Severity != "INFO" {
+		if e := classified(t, "cisco", line); e.Category == "FAULT" || e.Severity != "INFO" {
 			t.Errorf("%s classified %s/%s", line, e.Category, e.Severity)
 		}
 	}
@@ -80,7 +80,7 @@ func TestNotARecovery(t *testing.T) {
 		"temperature normal":     "Oct 20 09:30:15: %ENVM-6-INFO: Temperature is normal",
 		"fan speed":              "Oct 20 09:30:15: %ENVM-6-INFO: Fan speed set to auto",
 	} {
-		if e := classified(t, "cisco_ios", line); e.Event != EventUnknown || e.Object != "" {
+		if e := classified(t, "cisco", line); e.Event != EventUnknown || e.Object != "" {
 			t.Errorf("%s: got %s object %q, want UNKNOWN", name, e.Event, e.Object)
 		}
 	}
@@ -90,16 +90,16 @@ func TestAdditionalFaultClasses(t *testing.T) {
 	tests := []struct {
 		name, key, line, event string
 	}{
-		{"fortigate ha", "fortigate", `3: date=2026-10-20 time=09:30:15 tz="+0700" subtype="ha" level="critical" msg="Virtual cluster 1 detected a new primary"`, EventHAChange},
+		{"fortigate ha", "fortinet", `3: date=2026-10-20 time=09:30:15 tz="+0700" subtype="ha" level="critical" msg="Virtual cluster 1 detected a new primary"`, EventHAChange},
 		{"asa failover", "cisco_asa", "Oct 20 2026 09:30:15: %ASA-1-104001: (Primary) Switching to ACTIVE - Other unit wants me Active.", EventHAChange},
 		{"asa lost failover", "cisco_asa", "Oct 20 2026 09:30:15: %ASA-1-105005: (Primary) Lost Failover communications with mate on interface inside", EventHAChange},
 		// The reason text says "is down": HA must win over the link rule.
 		{"clusterxl", "generic", "Oct 20 09:30:15 gw1 kernel: [fw4_0];CLUS-114904-1: State change: Active -> Standby | Reason: Interface eth1 is down", EventHAChange},
-		{"fan failed", "cisco_ios", "Oct 20 09:30:15: %ENVMON-2-FAN_FAILED: Fan 1 has failed", EventHardwareFault},
-		{"temp high", "cisco_ios", "Oct 20 09:30:15: %ENVM-1-TEMP: Temperature is too high on slot 1", EventHardwareFault},
-		{"psu removed", "cisco_ios", "Oct 20 09:30:15: %PLATFORM-2-PS: Power supply 2 removed", EventHardwareFault},
-		{"bpduguard", "cisco_ios", "Oct 20 09:30:15: %PM-4-ERR_DISABLE: bpduguard error detected on Gi0/1, putting Gi0/1 in err-disable state", EventPortErrDisable},
-		{"port security", "cisco_ios", "Oct 20 09:30:15: %PORT_SECURITY-2-PSECURE_VIOLATION: Security violation occurred, caused by MAC address 0000.1111.2222 on port GigabitEthernet0/2.", EventPortErrDisable},
+		{"fan failed", "cisco", "Oct 20 09:30:15: %ENVMON-2-FAN_FAILED: Fan 1 has failed", EventHardwareFault},
+		{"temp high", "cisco", "Oct 20 09:30:15: %ENVM-1-TEMP: Temperature is too high on slot 1", EventHardwareFault},
+		{"psu removed", "cisco", "Oct 20 09:30:15: %PLATFORM-2-PS: Power supply 2 removed", EventHardwareFault},
+		{"bpduguard", "cisco", "Oct 20 09:30:15: %PM-4-ERR_DISABLE: bpduguard error detected on Gi0/1, putting Gi0/1 in err-disable state", EventPortErrDisable},
+		{"port security", "cisco", "Oct 20 09:30:15: %PORT_SECURITY-2-PSECURE_VIOLATION: Security violation occurred, caused by MAC address 0000.1111.2222 on port GigabitEthernet0/2.", EventPortErrDisable},
 	}
 	for _, c := range tests {
 		t.Run(c.name, func(t *testing.T) {
@@ -116,9 +116,9 @@ func TestAdditionalFaultClasses(t *testing.T) {
 func TestNewEventsRaiseNoSignals(t *testing.T) {
 	f := newFixture()
 	for _, c := range []struct{ key, line string }{
-		{"cisco_ios", "Oct 20 09:31:09.001: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up"},
-		{"cisco_ios", "Oct 20 09:30:15: %ENVMON-2-FAN_FAILED: Fan 1 has failed"},
-		{"cisco_ios", "Oct 20 09:30:15: %PM-4-ERR_DISABLE: bpduguard error detected on Gi0/1, putting Gi0/1 in err-disable state"},
+		{"cisco", "Oct 20 09:31:09.001: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up"},
+		{"cisco", "Oct 20 09:30:15: %ENVMON-2-FAN_FAILED: Fan 1 has failed"},
+		{"cisco", "Oct 20 09:30:15: %PM-4-ERR_DISABLE: bpduguard error detected on Gi0/1, putting Gi0/1 in err-disable state"},
 		{"cisco_asa", "Oct 20 2026 09:30:15: %ASA-1-104001: (Primary) Switching to ACTIVE - Other unit wants me Active."},
 	} {
 		e := classified(t, c.key, c.line)

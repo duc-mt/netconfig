@@ -15,7 +15,7 @@ import (
 	"netops/internal/log/collector"
 )
 
-var fuzzKeys = []string{"vyos", "cisco_ios", "cisco_asa", "cisco_sb", "huawei_vrp", "juniper_junos", "fortigate", "mikrotik", "pfsense", "checkpoint_gaia", "arista", "generic"}
+var fuzzKeys = []string{"vyos", "cisco", "cisco_asa", "cisco_sb", "huawei", "junos", "fortinet", "mikrotik", "pfsense", "checkpoint", "arista", "generic"}
 
 var fuzzSeeds = []string{
 	"Oct 20 09:30:15.123: %SYS-5-CONFIG_I: Configured from console by bachngo on vty0 (10.10.10.50)",

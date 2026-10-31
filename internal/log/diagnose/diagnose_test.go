@@ -18,7 +18,7 @@ import (
 
 // Every shipped command, with and without an interface, must pass GATE 1.
 func TestAllCommandsPassGate1(t *testing.T) {
-	for _, key := range vendor.Keys() {
+	for _, key := range vendor.LogPlatforms() {
 		for _, iface := range []string{"", "Gi0/1"} {
 			for _, s := range Commands(key, iface) {
 				if err := triage.Check(s.Command); err != nil {
@@ -31,7 +31,7 @@ func TestAllCommandsPassGate1(t *testing.T) {
 
 func TestCommandsInterface(t *testing.T) {
 	got := map[string]string{}
-	for _, s := range Commands("cisco_ios", "Gi0/1") {
+	for _, s := range Commands("cisco", "Gi0/1") {
 		got[s.Name] = s.Command
 	}
 	if got[SecOptics] != "show interfaces Gi0/1 transceiver detail" {
@@ -81,7 +81,7 @@ func TestAnalyse(t *testing.T) {
 }
 
 func TestRender(t *testing.T) {
-	r := Report{Connected: true, VendorKey: "cisco_ios", Sections: []Section{
+	r := Report{Connected: true, VendorKey: "cisco", Sections: []Section{
 		{Name: SecBGP, Command: "show ip bgp summary", Status: StatusWarn, Notes: []string{"BGP session(s) not Established"}, Output: "x\ny"},
 	}}
 	r.Device.Hostname = "r1"

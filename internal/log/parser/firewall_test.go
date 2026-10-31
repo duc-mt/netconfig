@@ -92,7 +92,7 @@ func TestGaiaSamples(t *testing.T) {
 	}
 	for _, c := range tests {
 		t.Run(c.name, func(t *testing.T) {
-			e := parseOne(t, "checkpoint_gaia", c.line)
+			e := parseOne(t, "checkpoint", c.line)
 			if !e.DeviceTS.Equal(c.ts) || e.User != c.user || e.SourceIP != c.src {
 				t.Errorf("got ts=%v user=%q src=%q, want ts=%v user=%q src=%q", e.DeviceTS, e.User, e.SourceIP, c.ts, c.user, c.src)
 			}
@@ -109,7 +109,7 @@ func TestGaiaDropsMalformedLines(t *testing.T) {
 		"repeat marker":  "last message repeated 3 times",
 		"implausible yr": "Oct 20 09:30:15 1970 gw1 sshd[1]: x",
 	} {
-		if got := Parse("checkpoint_gaia", line, testDev, testOpt); len(got) != 0 {
+		if got := Parse("checkpoint", line, testDev, testOpt); len(got) != 0 {
 			t.Errorf("%s: want the line dropped, got %+v", name, got)
 		}
 	}

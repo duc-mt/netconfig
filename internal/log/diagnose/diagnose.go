@@ -71,17 +71,17 @@ type plan struct {
 // interface is requested; a command that still contains it is skipped, and
 // the section's allIfaces variant is used instead where one exists.
 var plans = map[string]plan{
-	"cisco_ios": {"show environment all", "show ip bgp summary", "show ip ospf neighbor", "show interfaces counters errors", "show interfaces transceiver detail"},
+	"cisco":     {"show environment all", "show ip bgp summary", "show ip ospf neighbor", "show interfaces counters errors", "show interfaces transceiver detail"},
 	"cisco_sb":  {"", "", "", "show interfaces counters", ""},
 	"cisco_asa": {"show environment", "show bgp summary", "show ospf neighbor", "show interface", ""},
-	"huawei_vrp": {"display alarm active", "display bgp peer", "display ospf peer",
+	"huawei": {"display alarm active", "display bgp peer", "display ospf peer",
 		"display interface brief", "display transceiver diagnosis interface"},
-	"juniper_junos": {"show chassis alarms", "show bgp summary", "show ospf neighbor",
+	"junos": {"show chassis alarms", "show bgp summary", "show ospf neighbor",
 		"show interfaces extensive", "show interfaces diagnostics optics"},
 	"arista": {"show system environment all", "show ip bgp summary", "show ip ospf neighbor", "show interfaces counters errors", "show interfaces transceiver"},
 	"ruijie": {"show environment", "show ip bgp summary", "show ip ospf neighbor", "show interfaces counters", "show interfaces transceiver"},
 	"aruba":  {"show environment", "show bgp summary", "show ip ospf neighbor", "show interface brief", "show interface transceiver"},
-	"fortigate": {"get system status", "get router info bgp summary", "get router info ospf neighbor",
+	"fortinet": {"get system status", "get router info bgp summary", "get router info ospf neighbor",
 		"get system interface physical", ""},
 	"vyos":    {"show system uptime", "show ip bgp summary", "show ip ospf neighbor", "show interfaces", ""},
 	"generic": {"", "", "", "show interfaces", ""},
@@ -177,7 +177,7 @@ func Commands(vendorKey, iface string) []Section {
 	errs, optics := withIface(p.errs), withIface(p.optics)
 	if iface != "" {
 		switch vendorKey {
-		case "cisco_ios":
+		case "cisco":
 			errs = "show interfaces " + iface + " counters errors"
 			optics = "show interfaces " + iface + " transceiver detail"
 		case "arista", "ruijie":
@@ -186,12 +186,12 @@ func Commands(vendorKey, iface string) []Section {
 		case "aruba":
 			errs = "show interface " + iface
 			optics = "show interface " + iface + " transceiver"
-		case "juniper_junos":
+		case "junos":
 			errs = "show interfaces " + iface + " extensive"
 			optics = "show interfaces diagnostics optics " + iface
-		case "huawei_vrp":
+		case "huawei":
 			errs = "display interface " + iface
-		case "fortigate":
+		case "fortinet":
 			errs = "get hardware nic " + iface
 		}
 	}
@@ -214,7 +214,7 @@ func Commands(vendorKey, iface string) []Section {
 // Run connects to dev and executes the vendor's checks. It never returns an
 // error: failures are recorded in the Report.
 func Run(ctx context.Context, d *collector.Dialer, dev inventory.Device, o Options) Report {
-	key, ok := vendor.CanonicalKey(dev.Vendor)
+	key, ok := vendor.LogPlatform(dev.Vendor)
 	if !ok {
 		key = "generic"
 	}

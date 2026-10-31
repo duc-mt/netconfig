@@ -236,8 +236,8 @@ func newPeerRig(t *testing.T, cdpOfR1 string) *peerRig {
 		}
 		return "R2 output of " + cmd + "\n"
 	})
-	rig.d1 = inventory.Device{Hostname: "R1", Address: host1, Port: port1, Vendor: "cisco_ios", Group: "default"}
-	rig.d2 = inventory.Device{Hostname: "R2", Address: host2, Port: port2, Vendor: "cisco_ios", Group: "default"}
+	rig.d1 = inventory.Device{Hostname: "R1", Address: host1, Port: port1, Vendor: "cisco", Group: "default"}
+	rig.d2 = inventory.Device{Hostname: "R2", Address: host2, Port: port2, Vendor: "cisco", Group: "default"}
 	rig.eng, rig.dir, rig.hook = newEngine(t)
 	rig.eng.cfg.Inventory = []inventory.Device{rig.d1, rig.d2}
 	return rig
@@ -408,7 +408,7 @@ func TestConfigChangeCapturesDiffInTheIncident(t *testing.T) {
 	const diff = "!Contents of Running Config - startup config\n+interface Loopback99\n+ ip address 192.0.2.1 255.255.255.255\n"
 	fd, host, port := startFakeDevice(t, func(cmd string) string { return diff })
 	eng, dir, hook := newEngine(t)
-	dev := inventory.Device{Hostname: "R1", Address: host, Port: port, Vendor: "cisco_ios", Group: "default"}
+	dev := inventory.Device{Hostname: "R1", Address: host, Port: port, Vendor: "cisco", Group: "default"}
 
 	sig := signal("CONFIG_CHANGE", pipeline.PlaybookConfigChange, "%SYS-5-CONFIG_I: Configured from console by tanvt on vty0 (10.1.1.5)")
 	sig.Entry.Category = collector.CategoryConfig

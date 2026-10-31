@@ -175,28 +175,28 @@ var fortiPrompt = regexp.MustCompile(`^[\w.-]+(?: \([\w./-]+\))? [#$] ?$`)
 // ciscoPrompt matches Cisco IOS and Small Business CLI prompts such as "SW-01# " or "SW-01> ".
 var ciscoPrompt = regexp.MustCompile(`^[\w.\-/:~()]+[#>] ?$`)
 
-// logPlans maps a canonical vendor key (see vendor.CanonicalKey) to its log
+// logPlans maps a canonical vendor key (see vendor.LogPlatform) to its log
 // fetch plan. None of these commands modify device state.
 var logPlans = map[string]fetchPlan{
-	"vyos":          {Commands: []string{"/opt/vyatta/bin/vyatta-op-cmd-wrapper show log tail 100"}},
-	"cisco_ios":     {Commands: []string{"show logging"}},
-	"cisco_asa":     {Commands: []string{"show logging"}},
-	"cisco_sb":      {Interactive: true, Commands: []string{"terminal datadump", "show logging"}, Prompt: ciscoPrompt},
-	"huawei_vrp":    {Commands: []string{"display logbuffer"}},
-	"juniper_junos": {Commands: []string{"show log messages | last 100"}},
-	"fortigate":     {Interactive: true, Commands: []string{"execute log filter category 1", "execute log display"}, Prompt: fortiPrompt},
-	"aruba":         {Commands: []string{"show logging"}},
-	"ruijie":        {Commands: []string{"show logging"}},
-	"mikrotik":      {Commands: []string{"/log print"}},
+	"vyos":      {Commands: []string{"/opt/vyatta/bin/vyatta-op-cmd-wrapper show log tail 100"}},
+	"cisco":     {Commands: []string{"show logging"}},
+	"cisco_asa": {Commands: []string{"show logging"}},
+	"cisco_sb":  {Interactive: true, Commands: []string{"terminal datadump", "show logging"}, Prompt: ciscoPrompt},
+	"huawei":    {Commands: []string{"display logbuffer"}},
+	"junos":     {Commands: []string{"show log messages | last 100"}},
+	"fortinet":  {Interactive: true, Commands: []string{"execute log filter category 1", "execute log display"}, Prompt: fortiPrompt},
+	"aruba":     {Commands: []string{"show logging"}},
+	"ruijie":    {Commands: []string{"show logging"}},
+	"mikrotik":  {Commands: []string{"/log print"}},
 
 	// pfSense 2.5+ keeps plain-text syslog files.
 	// Check Point Gaia can land in clish, so it uses CheckPointGaia expert mode handling.
-	"pfsense":         {Commands: []string{"tail -q -n 300 /var/log/system.log /var/log/auth.log"}},
-	"checkpoint_gaia": {CheckPointGaia: true, Commands: []string{"tail -n 300 /var/log/messages"}},
-	"arista":          {Commands: []string{"show logging last 100 lines"}},
-	"cumulus":         {Commands: []string{"tail -n 300 /var/log/syslog"}},
-	"paloalto":        {Commands: []string{"show log system"}},
-	"generic":         {Commands: []string{"show logging"}},
+	"pfsense":    {Commands: []string{"tail -q -n 300 /var/log/system.log /var/log/auth.log"}},
+	"checkpoint": {CheckPointGaia: true, Commands: []string{"tail -n 300 /var/log/messages"}},
+	"arista":     {Commands: []string{"show logging last 100 lines"}},
+	"cumulus":    {Commands: []string{"tail -n 300 /var/log/syslog"}},
+	"paloalto":   {Commands: []string{"show log system"}},
+	"generic":    {Commands: []string{"show logging"}},
 }
 
 // defaultClockCommand is used for any vendor without an explicit entry in
@@ -207,19 +207,19 @@ const defaultClockCommand = "show clock"
 // clockCommands maps a canonical vendor key to the command that prints the
 // device's current time.
 var clockCommands = map[string]string{
-	"cisco_ios":       "show clock",
-	"arista":          "show clock",
-	"aruba":           "show clock",
-	"ruijie":          "show clock",
-	"huawei_vrp":      "display clock",
-	"vyos":            "date",
-	"pfsense":         "date",
-	"checkpoint_gaia": "date",
-	"cumulus":         "date",
-	"juniper_junos":   "show system uptime",
-	"mikrotik":        "/system clock print",
-	"fortigate":       "get system status",
-	"generic":         "show clock",
+	"cisco":      "show clock",
+	"arista":     "show clock",
+	"aruba":      "show clock",
+	"ruijie":     "show clock",
+	"huawei":     "display clock",
+	"vyos":       "date",
+	"pfsense":    "date",
+	"checkpoint": "date",
+	"cumulus":    "date",
+	"junos":      "show system uptime",
+	"mikrotik":   "/system clock print",
+	"fortinet":   "get system status",
+	"generic":    "show clock",
 }
 
 // clockCommandFor returns the clock command for a canonical vendor key.
@@ -236,7 +236,7 @@ func clockCommandFor(vendorKey string) string {
 // registry knows but netops log cannot read logs from is an error, so we never
 // send a wrong command to, say, a pfSense console menu.
 func resolvePlan(dev inventory.Device) (string, fetchPlan, error) {
-	key, ok := vendor.CanonicalKey(dev.Vendor)
+	key, ok := vendor.LogPlatform(dev.Vendor)
 	if !ok {
 		key = "generic"
 	}

@@ -144,7 +144,7 @@ func TestHostileLogTextCannotSmuggleCommands(t *testing.T) {
 		"Interface eth1|tftp 1.2.3.4 changed state to down",
 	}
 	for _, raw := range hostile {
-		for _, key := range []string{"vyos", "cisco_ios", "huawei_vrp", "juniper_junos", "arista"} {
+		for _, key := range []string{"vyos", "cisco", "huawei", "junos", "arista"} {
 			for _, pb := range []string{pipeline.PlaybookLinkDown, pipeline.PlaybookOSPFAdjDown, pipeline.PlaybookBGPPeerDown} {
 				for _, cmd := range Commands(key, pb, collector.LogEntry{Raw: raw}) {
 					if err := Check(cmd); err != nil {
@@ -171,36 +171,36 @@ func TestPlaybookCommands(t *testing.T) {
 		{"vyos vlan link", "vyos", "link_flap", "kernel: eth1.100: Link is Down",
 			"show interfaces ethernet eth1 vif 100 ; show interfaces ethernet eth1 vif 100 physical"},
 		{"vyos link, unknown iface", "vyos", "link_down", "link went down", "show interfaces"},
-		{"cisco link", "cisco_ios", "link_down", "%LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down",
+		{"cisco link", "cisco", "link_down", "%LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down",
 			"show interfaces GigabitEthernet0/1 ; show interfaces GigabitEthernet0/1 transceiver detail ; show interfaces GigabitEthernet0/1 counters errors"},
-		{"cisco link, no iface -> broader command only", "cisco_ios", "link_down", "something went down", "show ip interface brief"},
-		{"huawei link", "huawei_vrp", "link_down", "The line protocol on the interface GigabitEthernet0/0/1 has entered the DOWN state.",
+		{"cisco link, no iface -> broader command only", "cisco", "link_down", "something went down", "show ip interface brief"},
+		{"huawei link", "huawei", "link_down", "The line protocol on the interface GigabitEthernet0/0/1 has entered the DOWN state.",
 			"display interface GigabitEthernet0/0/1 ; display transceiver diagnosis interface GigabitEthernet0/0/1"},
 		{"generic link", "aruba", "link_down", "Interface 1/1/24 is down", "show interface 1/1/24 ; show interface 1/1/24 transceiver"},
-		{"cisco ospf", "cisco_ios", "ospf_adj_down", "%OSPF-5-ADJCHG: Process 1, Nbr 10.255.255.4 on Gi0/1 from FULL to DOWN",
+		{"cisco ospf", "cisco", "ospf_adj_down", "%OSPF-5-ADJCHG: Process 1, Nbr 10.255.255.4 on Gi0/1 from FULL to DOWN",
 			"show ip ospf neighbor ; show ip ospf interface Gi0/1"},
-		{"cisco ospf, no iface", "cisco_ios", "ospf_adj_down", "OSPF neighbor down", "show ip ospf neighbor ; show ip ospf interface"},
-		{"huawei ospf", "huawei_vrp", "ospf_adj_down", "OSPF neighbor Down", "display ospf peer ; display ospf interface"},
-		{"junos ospf", "juniper_junos", "ospf_adj_down", "x", "show ospf neighbor ; show ospf interface"},
-		{"fortigate ospf", "fortigate", "ospf_adj_down", "x", "get router info ospf neighbor ; get router info ospf interface"},
+		{"cisco ospf, no iface", "cisco", "ospf_adj_down", "OSPF neighbor down", "show ip ospf neighbor ; show ip ospf interface"},
+		{"huawei ospf", "huawei", "ospf_adj_down", "OSPF neighbor Down", "display ospf peer ; display ospf interface"},
+		{"junos ospf", "junos", "ospf_adj_down", "x", "show ospf neighbor ; show ospf interface"},
+		{"fortigate ospf", "fortinet", "ospf_adj_down", "x", "get router info ospf neighbor ; get router info ospf interface"},
 		{"arista bgp", "arista", "bgp_peer_down", "bgp neighbor 192.0.2.9 down", "show ip bgp summary ; show ip bgp neighbors 192.0.2.9"},
-		{"cisco optics", "cisco_ios", "optics_alarm", "Transceiver Rx power low on interface TenGigabitEthernet1/0/1", "show interfaces TenGigabitEthernet1/0/1 transceiver detail ; show interfaces TenGigabitEthernet1/0/1 counters errors"},
-		{"huawei optics", "huawei_vrp", "optics_alarm", "optical module Rx power low on interface XGigabitEthernet0/0/1", "display transceiver diagnosis interface XGigabitEthernet0/0/1 ; display interface XGigabitEthernet0/0/1"},
-		{"cisco link ddm", "cisco_ios", "link_down", "Interface Gi0/1 changed state to down", "show interfaces Gi0/1 ; show interfaces Gi0/1 transceiver detail ; show interfaces Gi0/1 counters errors"},
+		{"cisco optics", "cisco", "optics_alarm", "Transceiver Rx power low on interface TenGigabitEthernet1/0/1", "show interfaces TenGigabitEthernet1/0/1 transceiver detail ; show interfaces TenGigabitEthernet1/0/1 counters errors"},
+		{"huawei optics", "huawei", "optics_alarm", "optical module Rx power low on interface XGigabitEthernet0/0/1", "display transceiver diagnosis interface XGigabitEthernet0/0/1 ; display interface XGigabitEthernet0/0/1"},
+		{"cisco link ddm", "cisco", "link_down", "Interface Gi0/1 changed state to down", "show interfaces Gi0/1 ; show interfaces Gi0/1 transceiver detail ; show interfaces Gi0/1 counters errors"},
 		{"vyos bgp", "vyos", "bgp_peer_down", "bgpd: %ADJCHANGE: neighbor 192.0.2.2 Down", "show ip bgp summary ; show ip bgp neighbors 192.0.2.2"},
-		{"bgp without peer -> summary only", "cisco_ios", "bgp_peer_down", "BGP down", "show ip bgp summary"},
-		{"junos bgp", "juniper_junos", "bgp_peer_down", "x", "show bgp summary"},
+		{"bgp without peer -> summary only", "cisco", "bgp_peer_down", "BGP down", "show ip bgp summary"},
+		{"junos bgp", "junos", "bgp_peer_down", "x", "show bgp summary"},
 		{"vrrp", "vyos", "vrrp_transition", "x", "show vrrp"},
-		{"stp", "cisco_ios", "stp_tcn", "x", "show spanning-tree detail"},
-		{"cpu cisco", "cisco_ios", "high_cpu", "x", "show processes cpu sorted | head 15"},
-		{"cpu huawei", "huawei_vrp", "high_cpu", "x", "display cpu-usage"},
+		{"stp", "cisco", "stp_tcn", "x", "show spanning-tree detail"},
+		{"cpu cisco", "cisco", "high_cpu", "x", "show processes cpu sorted | head 15"},
+		{"cpu huawei", "huawei", "high_cpu", "x", "display cpu-usage"},
 		{"cpu vyos", "vyos", "high_cpu", "x", "show system processes"},
 		{"brute vyos", "vyos", "brute_force", "x", "show users"},
-		{"brute huawei", "huawei_vrp", "brute_force", "x", "display users online"},
-		{"junos link: fallback", "juniper_junos", "link_down", "x", "show interfaces terse"},
+		{"brute huawei", "huawei", "brute_force", "x", "display users online"},
+		{"junos link: fallback", "junos", "link_down", "x", "show interfaces terse"},
 		{"mikrotik: no playbook", "mikrotik", "ospf_adj_down", "x", ""},
-		{"fortigate link: fallback", "fortigate", "link_down", "x", "get system interface physical"},
-		{"unknown playbook", "cisco_ios", "nope", "x", ""},
+		{"fortigate link: fallback", "fortinet", "link_down", "x", "get system interface physical"},
+		{"unknown playbook", "cisco", "nope", "x", ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -258,7 +258,7 @@ func TestCooldownGate(t *testing.T) {
 }
 
 func TestCooldownPersistsAcrossRuns(t *testing.T) {
-	path := filepath.Join(t.TempDir(), ".netlog_cooldown.json")
+	path := filepath.Join(t.TempDir(), ".netops_log_cooldown.json")
 	a, err := NewCooldown(path)
 	if err != nil {
 		t.Fatal(err)
@@ -448,7 +448,7 @@ func readIncidents(t *testing.T, dir string) []collector.IncidentReport {
 func TestEngineRunsPlaybookAndWritesIncident(t *testing.T) {
 	fd, host, port := startFakeDevice(t, func(cmd string) string { return "output of " + cmd + "\n" })
 	eng, dir, hook := newEngine(t)
-	dev := inventory.Device{Hostname: "R1", Address: host, Port: port, Vendor: "cisco_ios", Group: "default"}
+	dev := inventory.Device{Hostname: "R1", Address: host, Port: port, Vendor: "cisco", Group: "default"}
 
 	sig := signal("OSPF_ADJ_DOWN", pipeline.PlaybookOSPFAdjDown,
 		"%OSPF-5-ADJCHG: Process 1, Nbr 10.255.255.4 on Gi0/1 from FULL to DOWN, Neighbor Down: Dead timer expired",
@@ -493,7 +493,7 @@ func TestEngineRunsPlaybookAndWritesIncident(t *testing.T) {
 func TestEngineCooldownOpensNoSession(t *testing.T) {
 	fd, host, port := startFakeDevice(t, func(string) string { return "ok\n" })
 	eng, dir, _ := newEngine(t)
-	dev := inventory.Device{Hostname: "R1", Address: host, Port: port, Vendor: "cisco_ios", Group: "default"}
+	dev := inventory.Device{Hostname: "R1", Address: host, Port: port, Vendor: "cisco", Group: "default"}
 	sig := signal("OSPF_ADJ_DOWN", pipeline.PlaybookOSPFAdjDown, "Nbr 1.1.1.1 on Gi0/1 from FULL to DOWN")
 
 	eng.Handle(context.Background(), sig, dev)
@@ -530,7 +530,7 @@ func TestEngineNoPlaybookOrBlockedCommandOpensNoSession(t *testing.T) {
 	eng.Handle(context.Background(), signal("LINK_DOWN", pipeline.PlaybookLinkDown, "igb1 link down"), mt)
 
 	// An unknown playbook name: nothing happens.
-	cs := inventory.Device{Hostname: "R1", Address: host, Port: port, Vendor: "cisco_ios", Group: "default"}
+	cs := inventory.Device{Hostname: "R1", Address: host, Port: port, Vendor: "cisco", Group: "default"}
 	eng.Handle(context.Background(), signal("LINK_DOWN", "does_not_exist", "x"), cs)
 
 	eng.Wait()
@@ -581,7 +581,7 @@ func TestEngineVyOSWrapperHeadAndTruncation(t *testing.T) {
 	}
 
 	// "| head 15" is applied client-side: the device never sees "head".
-	cs := inventory.Device{Hostname: "R2", Address: host, Port: port, Vendor: "cisco_ios", Group: "default"}
+	cs := inventory.Device{Hostname: "R2", Address: host, Port: port, Vendor: "cisco", Group: "default"}
 	hs := signal("HIGH_CPU", pipeline.PlaybookHighCPU, "CPU utilization 97%")
 	hs.Entry.Hostname = "R2"
 	eng.Handle(context.Background(), hs, cs)
@@ -594,7 +594,7 @@ func TestEngineVyOSWrapperHeadAndTruncation(t *testing.T) {
 
 func TestEngineRecordsUnreachableDevice(t *testing.T) {
 	eng, dir, _ := newEngine(t)
-	dev := inventory.Device{Hostname: "R1", Address: "127.0.0.1", Port: 1, Vendor: "cisco_ios", Group: "default"}
+	dev := inventory.Device{Hostname: "R1", Address: "127.0.0.1", Port: 1, Vendor: "cisco", Group: "default"}
 	eng.Handle(context.Background(), signal("OSPF_ADJ_DOWN", pipeline.PlaybookOSPFAdjDown, "Nbr 1.1.1.1 on Gi0/1 from FULL to DOWN"), dev)
 	eng.Wait()
 
@@ -830,10 +830,10 @@ func TestNewVendorPlaybooks(t *testing.T) {
 		{"paloalto cpu", "paloalto", "high_cpu", "x", "show system info"},
 		{"paloalto ospf", "paloalto", "ospf_adj_down", "x", "show routing route"},
 		{"paloalto bgp", "paloalto", "bgp_peer_down", "x", "show routing route"},
-		{"cisco config diff", "cisco_ios", "config_change", "x", "show archive config differences nvram:startup-config system:running-config"},
-		{"junos config diff", "juniper_junos", "config_change", "x", "show system rollback compare 0 1"},
+		{"cisco config diff", "cisco", "config_change", "x", "show archive config differences nvram:startup-config system:running-config"},
+		{"junos config diff", "junos", "config_change", "x", "show system rollback compare 0 1"},
 		{"arista config diff", "arista", "config_change", "x", "show diff rollback-patch"},
-		{"huawei config diff", "huawei_vrp", "config_change", "x", "display configuration changes system-committed"},
+		{"huawei config diff", "huawei", "config_change", "x", "display configuration changes system-committed"},
 		{"vyos config diff: none", "vyos", "config_change", "x", ""},
 	}
 	for _, tc := range tests {

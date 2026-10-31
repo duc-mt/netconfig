@@ -13,8 +13,8 @@
 //
 //	<data>/logs/YYYY-MM-DD.jsonl      one normalized LogEntry per line (UTC day)
 //	<data>/incidents/<ts>_<host>_<event>.json   one IncidentReport per file
-//	<data>/.netlog_state.json         per-device watermarks (atomic writes)
-//	<data>/.netlog_cooldown.json      triage cooldown timestamps (atomic writes)
+//	<data>/.netops_log_state.json         per-device watermarks (atomic writes)
+//	<data>/.netops_log_cooldown.json      triage cooldown timestamps (atomic writes)
 //
 // Plain JSON files keep the binary CGO-free and the data greppable with jq.
 package store
@@ -38,8 +38,8 @@ import (
 const (
 	logsSubdir      = "logs"
 	incidentsSubdir = "incidents"
-	stateFileName   = ".netlog_state.json"
-	cooldownName    = ".netlog_cooldown.json"
+	stateFileName   = ".netops_log_state.json"
+	cooldownName    = ".netops_log_cooldown.json"
 )
 
 // Permissions: directories are owner-only; files are group-readable so a

@@ -221,7 +221,7 @@ func (e *Engine) Handle(ctx context.Context, sig pipeline.TriageSignal, dev inve
 	host := dev.Hostname
 	event := sig.Entry.Event
 
-	key, ok := vendor.CanonicalKey(dev.Vendor)
+	key, ok := vendor.LogPlatform(dev.Vendor)
 	if !ok {
 		key = "generic"
 	}
@@ -403,7 +403,7 @@ func (e *Engine) spawnPeer(ctx context.Context, j job, report *collector.Inciden
 		return fmt.Sprintf("Peer triage skipped: neighbour %s (%s) is not in the inventory.", n.RemoteName, n.RemotePort)
 	}
 
-	pkey, known := vendor.CanonicalKey(peerDev.Vendor)
+	pkey, known := vendor.LogPlatform(peerDev.Vendor)
 	if !known {
 		pkey = "generic"
 	}

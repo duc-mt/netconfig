@@ -18,7 +18,7 @@
 // Event types not in that list (VRRP, STP, high CPU) get the conservative
 // default of 5 minutes rather than no limit.
 //
-// Cooldown timestamps are persisted to data/.netlog_cooldown.json when a path
+// Cooldown timestamps are persisted to data/.netops_log_cooldown.json when a path
 // is given. That matters for cron-style "netops log collect" runs, where every
 // invocation is a fresh process: without it the in-memory tracker would reset
 // on each run and the cooldown would never hold.

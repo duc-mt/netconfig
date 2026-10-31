@@ -73,20 +73,20 @@ func (o Options) loc() *time.Location {
 	return o.Location
 }
 
-// For returns the parser for a canonical vendor key (see vendor.CanonicalKey).
+// For returns the parser for a canonical vendor key (see vendor.LogPlatform).
 // Unknown and unlisted vendors get the tolerant generic parser.
 func For(vendorKey string, opts Options) Parser {
 	var p Parser
 	switch vendorKey {
 	case "vyos":
 		p = &vyosParser{key: vendorKey, opts: opts}
-	case "cisco_ios", "cisco_asa", "cisco_sb":
+	case "cisco", "cisco_asa", "cisco_sb":
 		p = &ciscoParser{key: vendorKey, opts: opts}
-	case "huawei_vrp":
+	case "huawei":
 		p = &huaweiParser{key: vendorKey, opts: opts}
-	case "juniper_junos":
+	case "junos":
 		p = &junosParser{key: vendorKey, opts: opts}
-	case "fortigate":
+	case "fortinet":
 		p = &fortigateParser{key: vendorKey, opts: opts}
 	case "mikrotik":
 		p = &mikrotikParser{key: vendorKey, opts: opts}
@@ -96,7 +96,7 @@ func For(vendorKey string, opts Options) Parser {
 		p = newPaloAltoParser(vendorKey, opts)
 	case "pfsense":
 		p = &pfsenseParser{key: vendorKey, opts: opts}
-	case "checkpoint_gaia":
+	case "checkpoint":
 		p = &gaiaParser{key: vendorKey, opts: opts}
 	default:
 		p = newGenericParser(vendorKey, opts)

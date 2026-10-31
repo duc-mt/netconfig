@@ -41,9 +41,9 @@ const PoEUsageWarnPercent = 90.0
 
 // poeCommands maps a canonical vendor key to its PoE command.
 var poeCommands = map[string]string{
-	"cisco_ios":  "show power inline",
-	"aruba":      "show power-over-ethernet",
-	"huawei_vrp": "display poe power-state",
+	"cisco":  "show power inline",
+	"aruba":  "show power-over-ethernet",
+	"huawei": "display poe power-state",
 }
 
 // PoECommand returns the PoE command for a vendor key, or "" if there is none.

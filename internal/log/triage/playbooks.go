@@ -5,7 +5,7 @@
 // Version:       1.0.0
 // License:       MIT
 // ==============================================================================
-// Usage:         cmds := triage.Commands("cisco_ios", "ospf_adj_down", entry)
+// Usage:         cmds := triage.Commands("cisco", "ospf_adj_down", entry)
 // Notes:         Go package implementation
 // ==============================================================================
 // A playbook maps a triggering event to the read-only commands worth running
@@ -41,12 +41,12 @@ type step struct {
 const (
 	famVyOS    = "vyos"
 	famCisco   = "cisco"
-	famHuawei  = "huawei_vrp"
-	famJunos   = "juniper_junos"
+	famHuawei  = "huawei"
+	famJunos   = "junos"
 	famArista  = "arista"
 	famRuijie  = "ruijie"
 	famAruba   = "aruba"
-	famForti   = "fortigate"
+	famForti   = "fortinet"
 	famGeneric = "generic"
 
 	famCumulus  = "cumulus"
@@ -59,11 +59,11 @@ func family(vendorKey string) string {
 	switch vendorKey {
 	case "vyos":
 		return famVyOS
-	case "cisco_ios", "cisco_asa", "cisco_sb":
+	case "cisco", "cisco_asa", "cisco_sb":
 		return famCisco
-	case "huawei_vrp":
+	case "huawei":
 		return famHuawei
-	case "juniper_junos":
+	case "junos":
 		return famJunos
 	case "arista":
 		return famArista
@@ -71,7 +71,7 @@ func family(vendorKey string) string {
 		return famRuijie
 	case "aruba":
 		return famAruba
-	case "fortigate":
+	case "fortinet":
 		return famForti
 	case "cumulus":
 		return famCumulus

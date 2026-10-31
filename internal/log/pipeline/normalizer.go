@@ -82,9 +82,9 @@ func FutureTolerance(vendorKey string, skewKnown bool) time.Duration {
 
 // zoneHonoringVendors log with an explicit UTC offset; see the package doc.
 var zoneHonoringVendors = map[string]bool{
-	"vyos":       true,
-	"huawei_vrp": true,
-	"fortigate":  true,
+	"vyos":     true,
+	"huawei":   true,
+	"fortinet": true,
 }
 
 var (
@@ -119,7 +119,7 @@ func ParseDeviceClock(vendorKey, output string, ref time.Time) (time.Time, error
 	// (e.g. "Virus-DB: 91.02634(2018-04-09 10:20)") which would mislead generic
 	// date parsers into thinking the device clock is years in the past.
 	// If "System time:" is present, restrict parsing to that line.
-	if vendorKey == "fortigate" {
+	if vendorKey == "fortinet" {
 		for _, line := range strings.Split(output, "\n") {
 			if strings.HasPrefix(strings.TrimSpace(line), "System time:") {
 				output = line

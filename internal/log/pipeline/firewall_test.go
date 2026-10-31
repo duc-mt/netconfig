@@ -30,13 +30,13 @@ func TestFirewallPlatformsClassify(t *testing.T) {
 		{"pf link up", "pfsense", "Oct 20 09:33:20 gw1 kernel: igb0: link state changed to UP", "SYSTEM", EventLinkUp, "", "", "igb0"},
 
 		// Check Point Gaia
-		{"gaia ssh login", "checkpoint_gaia", "Oct 20 09:30:15 2026 gw1 sshd[1234]: Accepted password for admin from 10.0.0.5 port 5555 ssh2", "AUTH", EventLoginSuccess, "admin", "10.0.0.5", ""},
-		{"gaia ssh failure", "checkpoint_gaia", "Oct 20 09:31:00 2026 gw1 sshd[1]: Failed password for admin from 203.0.113.9 port 22 ssh2", "AUTH", EventLoginFailure, "admin", "203.0.113.9", ""},
-		{"gaia clish set", "checkpoint_gaia", "Oct 20 09:31:00 2026 gw1 clish[2345]: cmd by admin: Start executing : set hostname gw1 (cmd md5: abc123)", "CONFIG", EventConfigChange, "admin", "", ""},
-		{"gaia clish add", "checkpoint_gaia", "Oct 20 09:31:30 2026 gw1 clish[2345]: cmd by admin: Start executing : add user bob uid 0 homedir /home/bob (cmd md5: abc123)", "CONFIG", EventConfigChange, "admin", "", ""},
-		{"gaia clusterxl", "checkpoint_gaia", "Oct 20 09:32:00 2026 gw1 kernel: [fw4_0];CLUS-114904-1: State change: Active -> Standby | Reason: Interface eth1 is down", "FAULT", EventHAChange, "", "", ""},
-		{"gaia link down", "checkpoint_gaia", "Oct 20 09:33:00 2026 gw1 kernel: e1000e: eth1 NIC Link is Down", "FAULT", EventLinkDown, "", "", "eth1"},
-		{"gaia link up", "checkpoint_gaia", "Oct 20 09:33:20 2026 gw1 kernel: e1000e: eth1 NIC Link is Up 1000 Mbps Full Duplex", "SYSTEM", EventLinkUp, "", "", "eth1"},
+		{"gaia ssh login", "checkpoint", "Oct 20 09:30:15 2026 gw1 sshd[1234]: Accepted password for admin from 10.0.0.5 port 5555 ssh2", "AUTH", EventLoginSuccess, "admin", "10.0.0.5", ""},
+		{"gaia ssh failure", "checkpoint", "Oct 20 09:31:00 2026 gw1 sshd[1]: Failed password for admin from 203.0.113.9 port 22 ssh2", "AUTH", EventLoginFailure, "admin", "203.0.113.9", ""},
+		{"gaia clish set", "checkpoint", "Oct 20 09:31:00 2026 gw1 clish[2345]: cmd by admin: Start executing : set hostname gw1 (cmd md5: abc123)", "CONFIG", EventConfigChange, "admin", "", ""},
+		{"gaia clish add", "checkpoint", "Oct 20 09:31:30 2026 gw1 clish[2345]: cmd by admin: Start executing : add user bob uid 0 homedir /home/bob (cmd md5: abc123)", "CONFIG", EventConfigChange, "admin", "", ""},
+		{"gaia clusterxl", "checkpoint", "Oct 20 09:32:00 2026 gw1 kernel: [fw4_0];CLUS-114904-1: State change: Active -> Standby | Reason: Interface eth1 is down", "FAULT", EventHAChange, "", "", ""},
+		{"gaia link down", "checkpoint", "Oct 20 09:33:00 2026 gw1 kernel: e1000e: eth1 NIC Link is Down", "FAULT", EventLinkDown, "", "", "eth1"},
+		{"gaia link up", "checkpoint", "Oct 20 09:33:20 2026 gw1 kernel: e1000e: eth1 NIC Link is Up 1000 Mbps Full Duplex", "SYSTEM", EventLinkUp, "", "", "eth1"},
 	}
 	for _, c := range tests {
 		t.Run(c.name, func(t *testing.T) {
@@ -59,7 +59,7 @@ func TestGaiaReadOnlyCommandsAreNotChanges(t *testing.T) {
 		"delete user bob":    true,
 	} {
 		line := "Oct 20 09:31:00 2026 gw1 clish[2345]: cmd by admin: Start executing : " + cmd + " (cmd md5: abc123)"
-		if e := classified(t, "checkpoint_gaia", line); (e.Event == EventConfigChange) != isChange {
+		if e := classified(t, "checkpoint", line); (e.Event == EventConfigChange) != isChange {
 			t.Errorf("%q classified %s, want change=%v", cmd, e.Event, isChange)
 		}
 	}
