@@ -57,6 +57,13 @@ func StaticCommands(cmds []string) CommandSource {
 	return func(inventory.Device) ([]string, error) { return cmds, nil }
 }
 
+// VendorCommands dynamically resolves commands for each device by its vendor.
+func VendorCommands(resolver func(vendor string) ([]string, error)) CommandSource {
+	return func(d inventory.Device) ([]string, error) {
+		return resolver(d.Vendor)
+	}
+}
+
 // TemplateData is what a command template can reference.
 //
 //	{{ .Hostname }} {{ .Address }} {{ .Port }} {{ .Vendor }} {{ .Group }}

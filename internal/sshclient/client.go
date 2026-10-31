@@ -68,6 +68,7 @@ type Config struct {
 
 	HostKey          HostKeyCallback // required; there is deliberately no insecure default
 	LegacyAlgorithms bool            // also offer SHA-1 key exchange and CBC ciphers (old IOS, VRP, ...)
+	NoRSASHA2        bool            // omit rsa-sha2-256 and rsa-sha2-512 (required for Cisco SF/SG series that choke on RFC 8332)
 	AutoConfirm      bool            // answer "[y/n]"-style dialogs
 	Logf             func(format string, args ...any)
 	TCPMSS           int // TCP MSS clamping (0 = default 1360, <0 = disable)
@@ -92,7 +93,8 @@ func Connect(ctx context.Context, cfg Config) (*Shell, error) {
 		cfg.Logf = func(string, ...any) {}
 	}
 
-	cc, err := buildClientConfig(cfg.Username, cfg.Password, cfg.KeyFile, cfg.HostKey, cfg.LegacyAlgorithms)
+	noRSASHA2 := cfg.NoRSASHA2 || (cfg.Profile != nil && cfg.Profile.Name == "cisco_sb")
+	cc, err := buildClientConfig(cfg.Username, cfg.Password, cfg.KeyFile, cfg.HostKey, cfg.LegacyAlgorithms, noRSASHA2)
 	if err != nil {
 		return nil, &Error{Kind: KindAuth, Op: "connect", Err: err}
 	}
@@ -191,7 +193,8 @@ func ConnectViaJump(ctx context.Context, jumpClient *ssh.Client, cfg Config) (*S
 		cfg.Logf = func(string, ...any) {}
 	}
 
-	cc, err := buildClientConfig(cfg.Username, cfg.Password, cfg.KeyFile, cfg.HostKey, cfg.LegacyAlgorithms)
+	noRSASHA2 := cfg.NoRSASHA2 || (cfg.Profile != nil && cfg.Profile.Name == "cisco_sb")
+	cc, err := buildClientConfig(cfg.Username, cfg.Password, cfg.KeyFile, cfg.HostKey, cfg.LegacyAlgorithms, noRSASHA2)
 	if err != nil {
 		return nil, &Error{Kind: KindAuth, Op: "connect via jump", Err: err}
 	}
@@ -247,7 +250,7 @@ func CheckKeyPermissions(path string) string {
 	return ""
 }
 
-func buildClientConfig(username, password, keyFile string, hk HostKeyCallback, legacy bool) (*ssh.ClientConfig, error) {
+func buildClientConfig(username, password, keyFile string, hk HostKeyCallback, legacy bool, noRSASHA2 ...bool) (*ssh.ClientConfig, error) {
 	var authMethods []ssh.AuthMethod
 
 	if keyFile != "" {
@@ -300,6 +303,7 @@ func buildClientConfig(username, password, keyFile string, hk HostKeyCallback, l
 		ssh.KeyAlgoRSA,
 	}
 	legacyHostKeys := []string{
+		ssh.KeyAlgoRSA,
 		ssh.KeyAlgoDSA, //nolint:staticcheck // SA1019: required for legacy network appliances
 	}
 
@@ -330,12 +334,12 @@ func buildClientConfig(username, password, keyFile string, hk HostKeyCallback, l
 		"diffie-hellman-group-exchange-sha256",
 	}
 	legacyKex := []string{
-		"diffie-hellman-group14-sha1",
 		"diffie-hellman-group-exchange-sha1",
+		"diffie-hellman-group14-sha1",
 		"diffie-hellman-group1-sha1",
 	}
 
-	hostKeys := modernHostKeys
+	hostKeys := slices.Clone(modernHostKeys)
 	ciphers := modernCiphers
 	kex := modernKex
 
@@ -343,6 +347,29 @@ func buildClientConfig(username, password, keyFile string, hk HostKeyCallback, l
 		hostKeys = append(slices.Clone(modernHostKeys), legacyHostKeys...)
 		ciphers = append(slices.Clone(modernCiphers), legacyCiphers...)
 		kex = append(slices.Clone(modernKex), legacyKex...)
+	}
+
+	if len(noRSASHA2) > 0 && noRSASHA2[0] {
+		hostKeys = []string{
+			ssh.KeyAlgoRSA,
+			ssh.KeyAlgoED25519,
+			ssh.KeyAlgoECDSA256,
+		}
+		ciphers = []string{
+			"aes128-ctr",
+			"aes192-ctr",
+			"aes256-ctr",
+			"aes128-cbc",
+			"3des-cbc",
+		}
+		// Cisco SF/SG Small Business switches run OpenSSH 5.9p1.RL which fails
+		// if offered a large list of key exchange algorithms ("packet too large").
+		// Bounding kex, ciphers, and host keys keeps the KEXINIT packet small (<512 bytes)
+		// while supporting both real SF/SG appliances and mock SSH test environments.
+		kex = []string{
+			"diffie-hellman-group-exchange-sha1",
+			"diffie-hellman-group14-sha1",
+		}
 	}
 
 	return &ssh.ClientConfig{
@@ -424,7 +451,9 @@ func classifyHandshake(err error, user string) error {
 		return &Error{Kind: KindAuth, Op: "authenticate", Err: fmt.Errorf("authentication failed for user %q", user)}
 	case isTimeout(err), strings.Contains(msg, "i/o timeout"):
 		return &Error{Kind: KindTimeout, Op: "handshake", Err: err}
-	case strings.Contains(msg, "no common algorithm"):
+	case strings.Contains(msg, "no common algorithm"),
+		strings.Contains(msg, "packet too large"),
+		strings.Contains(msg, "invalid packet length"):
 		return &Error{Kind: KindConnect, Op: "handshake", Err: fmt.Errorf("%w (the device may need legacy algorithms: try -legacy-algorithms)", err)}
 	default:
 		return &Error{Kind: KindConnect, Op: "handshake", Err: err}

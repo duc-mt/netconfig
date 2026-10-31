@@ -535,6 +535,10 @@ func (r *Runner) executeAttempt(ctx context.Context, job Job, res *Result) {
 			fmt.Fprintf(&outputLines, "=== %s ===\n%s\n", logging.RedactCommand(step.Line), redactText(out))
 			if r.Opts.OpMode {
 				r.Log.Block(logging.LevelInfo, host, "  | ", redactText(out))
+				if res.RawOutput == nil {
+					res.RawOutput = make(map[string]string)
+				}
+				res.RawOutput[step.Line] = out
 				if r.Opts.Format == "json" {
 					if res.ParsedOutput == nil {
 						res.ParsedOutput = make(map[string]any)

@@ -164,6 +164,9 @@ type Result struct {
 	// ParsedOutput contains structured data extracted from operational
 	// command responses (e.g. -op -format json). Keyed by command string.
 	ParsedOutput map[string]any
+
+	// RawOutput contains raw text output of operational commands.
+	RawOutput map[string]string
 }
 
 // RollbackOutcome is the outcome of an automatic rollback attempted after a

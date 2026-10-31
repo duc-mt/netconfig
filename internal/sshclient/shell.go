@@ -270,7 +270,11 @@ func (s *Shell) login(ctx context.Context, cfg Config) error {
 			return err
 		}
 		if prof.UserPrompt.MatchString(s.prompt) {
-			return &Error{Kind: KindAuth, Op: "enable", Err: errors.New("privileged mode was refused (check NETOPS_<GROUP>_ENABLE_PASSWORD)")}
+			if prof.Prompt != nil && prof.Prompt.MatchString(s.prompt) {
+				s.logf("warning: enable was refused, continuing in unprivileged mode (%s)", s.prompt)
+			} else {
+				return &Error{Kind: KindAuth, Op: "enable", Err: errors.New("privileged mode was refused (check NETOPS_<GROUP>_ENABLE_PASSWORD)")}
+			}
 		}
 	}
 
